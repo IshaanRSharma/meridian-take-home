@@ -1,0 +1,97 @@
+{
+  "$comment": [
+    "Ground truth for the eval suite: five shipments, one row each, as supplied",
+    "by Meridian. This is the expected_output shape the generated agent must",
+    "produce per shipment.",
+    "",
+    "Discipline (Claude.md §9): the SHAPE of this file informs the reviewer's",
+    "questions; the VALUES are the repair loop's oracle. Deriving business rules",
+    "from these numbers and encoding them directly fits the spec to the test set",
+    "rather than to the process. Anything inferred here is a hypothesis to put to",
+    "the process owner, never an answer.",
+    "",
+    "Column names are verbatim from the source table, including the one that",
+    "misnames its own unit — see notes.mismatched_asn_unit."
+  ],
+
+  "source": "Meridian evaluation set, 5 shipments",
+  "unit": "one row per shipment, not per email and not per invoice",
+
+  "shipments": [
+    {
+      "shipment_no": "CAAU4056270",
+      "identifier_kind": "container",
+      "invoices_successful": 0,
+      "invoices_failed": 1,
+      "invoices_total": 1,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 2,
+      "failed_coa": 0,
+      "coa_success": 5,
+      "coa_total": 5,
+      "status": "ACTIVE"
+    },
+    {
+      "shipment_no": "MNBU3974949",
+      "identifier_kind": "container",
+      "invoices_successful": 1,
+      "invoices_failed": 0,
+      "invoices_total": 1,
+      "invoices_mismatched_asn": 14,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 17,
+      "coa_total": 17,
+      "status": "RESOLVED"
+    },
+    {
+      "shipment_no": "176-26926281",
+      "identifier_kind": "air_waybill",
+      "invoices_successful": 1,
+      "invoices_failed": 0,
+      "invoices_total": 1,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 0,
+      "failed_coa": 2,
+      "coa_success": 0,
+      "coa_total": 2,
+      "status": "ACTIVE"
+    },
+    {
+      "shipment_no": "TTNU8982561",
+      "identifier_kind": "container",
+      "invoices_successful": 2,
+      "invoices_failed": 0,
+      "invoices_total": 2,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 7,
+      "coa_total": 7,
+      "status": "RESOLVED"
+    },
+    {
+      "shipment_no": "MNBU4371364",
+      "identifier_kind": "container",
+      "invoices_successful": 3,
+      "invoices_failed": 0,
+      "invoices_total": 3,
+      "invoices_mismatched_asn": 9,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 3,
+      "coa_total": 3,
+      "status": "RESOLVED"
+    }
+  ],
+
+  "notes": {
+    "coa_total_is_derived": "coa_success + failed_coa == coa_total holds on all five rows. coa_total is the number of batches the invoices list, so completeness is derived from the invoice and nothing configures a count.",
+    "invoices_per_shipment": "1, 1, 1, 2, 3 — a shipment carries up to three invoices, so one row spans several emails.",
+    "mismatched_asn_unit": "MNBU3974949 reports 1 invoice and 14 mismatched ASN; MNBU4371364 reports 3 invoices and 9. The column is named 'Invoices (Mismatched ASN)' but cannot be counting invoices. Unit unknown — most likely line items. A question for the process owner.",
+    "asn_does_not_block": "Both shipments with ASN mismatches (14 and 9) are RESOLVED. Two independent data points that ASN mismatch is non-blocking. Resolves Claude.md §8's open item.",
+    "goods_hypothesis": "CAAU4056270 is the only row with goods_failed > 0, and the only row with invoices_failed > 0. The SOP's line-item check reads the 'Description of Goods' section, so goods_failed is probably that check counted per line item, and an invoice fails when any of its line items does. One data point — a hypothesis, not a finding.",
+    "status_hypothesis": "ACTIVE on every row where invoices_failed, goods_failed or failed_coa is non-zero; RESOLVED otherwise, with ASN excluded. Fits 5 of 5. Still a hypothesis: only the process owner can say what closes a shipment, and the SOP ends at 'report the discrepancy'.",
+    "identifier_kind_varies": "Four rows are ISO container numbers; 176-26926281 is an air waybill. The shipment key depends on mode of transport, which the SOP never mentions."
+  }
+}

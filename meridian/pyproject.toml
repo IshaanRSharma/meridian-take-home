@@ -1,0 +1,115 @@
+[project]
+name = "meridian"
+version = "0.1.0"
+description = "Turns tacit process knowledge into a running, self-repairing agent."
+requires-python = ">=3.12,<3.13"
+
+# Dependencies are added by the unit that first needs them, not declared up
+# front. The committed stack is Claude.md §2; carrying a dependency before its
+# unit lands makes the diff lie about what the code actually uses.
+dependencies = [
+    "pydantic>=2.9",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "mypy>=1.13",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meridian"]
+
+# ─────────────────────────────────────────────────────────────────────────
+# ruff
+# ─────────────────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "F",     # pyflakes
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "I",     # import sorting
+    "N",     # pep8-naming
+    "D",     # pydocstyle — public API carries its reason
+    "UP",    # pyupgrade
+    "ASYNC", # blocking calls in async code
+    "S",     # bandit
+    "B",     # bugbear
+    "A",     # builtin shadowing
+    "C4",    # comprehensions
+    "DTZ",   # naive datetimes — determinism matters here (Claude.md §16)
+    "T20",   # no stray print()
+    "PT",    # pytest style
+    "RET",   # return simplification
+    "SIM",   # simplification
+    "ARG",   # unused arguments
+    "PTH",   # pathlib over os.path
+    "ERA",   # commented-out code
+    "PL",    # pylint subset
+    "RUF",
+]
+ignore = [
+    "D203",  # conflicts with D211 (no blank line before class docstring)
+    "D213",  # conflicts with D212 (summary on first line)
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests document themselves through their names; asserts and magic numbers are
+# the point of a test, and fixtures legitimately arrive as unused arguments.
+"tests/**" = ["D", "S101", "PLR2004", "ARG001", "ARG002"]
+
+# ─────────────────────────────────────────────────────────────────────────
+# mypy — strict. The schema IS the contract (Claude.md §2), so the type
+# checker is the thing that keeps that claim true.
+# ─────────────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+packages = ["meridian"]
+strict = true
+warn_unreachable = true
+warn_no_return = true
+disallow_any_explicit = false          # jsonb payloads are genuinely dynamic
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false          # test bodies need no return annotations
+
+[tool.pydantic-mypy]
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# ─────────────────────────────────────────────────────────────────────────
+# pytest
+# ─────────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers --strict-config"
+markers = [
+    "db: requires the local Postgres from docker-compose (make db)",
+    "llm: makes a real OpenAI call; skipped unless OPENAI_API_KEY is set",
+]
+
+[tool.coverage.run]
+source = ["src/meridian"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]

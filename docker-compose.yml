@@ -1,0 +1,40 @@
+# Local services only. Production Postgres is Supabase; this Postgres exists so
+# integration tests never touch a shared database (Claude.md §4).
+#
+# Neither service is a dependency of the unit tests. `make test` runs offline.
+
+name: meridian
+
+services:
+  # Same major version as Supabase, so migrations that pass here pass there.
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: meridian
+      POSTGRES_PASSWORD: meridian
+      POSTGRES_DB: meridian
+    ports:
+      - "54329:5432" # deliberately not 5432 — no clash with a local install
+    volumes:
+      - ./.data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meridian -d meridian"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # A Temporal worker polls a task queue indefinitely, which is why none of
+  # this could ever have been serverless (Claude.md §2).
+  temporal:
+    image: temporalio/temporal:1.8.2
+    command:
+      - server
+      - start-dev
+      - --ip=0.0.0.0
+      - --db-filename=/home/temporal/data/temporal.db
+      - --log-level=warn
+    ports:
+      - "7233:7233" # gRPC — TEMPORAL_ADDRESS
+      - "8233:8233" # web UI
+    volumes:
+      - ./.data/temporal:/home/temporal/data

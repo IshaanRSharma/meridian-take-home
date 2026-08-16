@@ -1,0 +1,38 @@
+# ── python ───────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ── node ─────────────────────────────────────────────────────────────────
+node_modules/
+dist/
+.vite/
+
+# ── secrets and local state ──────────────────────────────────────────────
+.env
+.env.local
+*.pem
+
+# Meridian's own material — theirs, not ours to redistribute.
+# Our design notes under docs/design/ are committed.
+docs/*.pdf
+docs/take-home-brief.md
+
+# ── local service data (docker-compose volumes) ──────────────────────────
+.data/
+
+# ── editors and os ───────────────────────────────────────────────────────
+.DS_Store
+.idea/
+*.swp
+
+# Generated agents ARE committed — see Claude.md §7 "agents/ is committed".
+# Nothing under agents/ belongs here.
