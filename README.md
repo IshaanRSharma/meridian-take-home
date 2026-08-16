@@ -126,8 +126,8 @@ Budget and cut list in [`SCOPE.md`](./SCOPE.md).
 
 - [x] repo skeleton, tooling, local services
 - [ ] **0** Composio OAuth, inbox snapshot to `fixtures/emails/`
-- [ ] **1** `domain/` — primitives, graph, review, frozen
-- [ ] **2** migrations, `store.py`, seed board
+- [x] **1** `domain/` — primitives, graph, review, frozen
+- [ ] **2** migrations, `repositories/`, seed board
 - [ ] **3** `compiler/` — *checkpoint: a spec freezes*
 - [ ] **4** `cli.py`
 - [ ] **5** `api/` skeleton + Railway — three services, deployed thin and early

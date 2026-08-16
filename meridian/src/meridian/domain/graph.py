@@ -148,7 +148,7 @@ class EntityPrimitive(DomainModel):
         return ()
 
 
-Step = EventPrimitive | ActionPrimitive | CheckPrimitive
+FlowNode = EventPrimitive | ActionPrimitive | CheckPrimitive
 Primitive = Annotated[
     EventPrimitive | ActionPrimitive | CheckPrimitive | EntityPrimitive,
     Field(discriminator="primitive_type"),
@@ -262,7 +262,7 @@ class Board(DomainModel):
         """Whether any card carries this key."""
         return any(p.key == key for p in self.primitives)
 
-    def steps(self) -> tuple[Step, ...]:
+    def nodes(self) -> tuple[FlowNode, ...]:
         """Every card that participates in the state machine."""
         return tuple(p for p in self.primitives if not isinstance(p, EntityPrimitive))
 
@@ -285,16 +285,16 @@ class Board(DomainModel):
     # --- edges -------------------------------------------------------------
 
     def outgoing(self, key: str) -> tuple[Edge, ...]:
-        """Edges leaving this step."""
+        """Edges leaving this node."""
         return tuple(e for e in self.edges if e.from_key == key)
 
     def incoming(self, key: str) -> tuple[Edge, ...]:
-        """Edges arriving at this step."""
+        """Edges arriving at this node."""
         return tuple(e for e in self.edges if e.to_key == key)
 
-    def terminals(self) -> tuple[Step, ...]:
+    def terminals(self) -> tuple[FlowNode, ...]:
         """Steps with nowhere to go next."""
-        return tuple(s for s in self.steps() if not self.outgoing(s.key))
+        return tuple(s for s in self.nodes() if not self.outgoing(s.key))
 
     # --- reachability ------------------------------------------------------
 
@@ -304,21 +304,21 @@ class Board(DomainModel):
         Breadth-first over a graph that may contain cycles, so the visited set is
         what makes it terminate rather than an assumption about edge direction.
         """
-        step_keys = {s.key for s in self.steps()}
+        node_keys = {s.key for s in self.nodes()}
         seen: set[str] = set()
         frontier = [e.key for e in self.events()]
         while frontier:
             key = frontier.pop()
-            if key in seen or key not in step_keys:
+            if key in seen or key not in node_keys:
                 continue
             seen.add(key)
             frontier.extend(edge.to_key for edge in self.outgoing(key))
         return frozenset(seen)
 
-    def unreachable(self) -> tuple[Step, ...]:
+    def unreachable(self) -> tuple[FlowNode, ...]:
         """Steps no Event can reach."""
         reached = self.reachable_from_events()
-        return tuple(s for s in self.steps() if s.key not in reached)
+        return tuple(s for s in self.nodes() if s.key not in reached)
 
     def downstream(self, key: str) -> frozenset[str]:
         """Every step reachable from this one, excluding itself unless a cycle returns."""
@@ -364,13 +364,13 @@ class Board(DomainModel):
 
     # --- entities ----------------------------------------------------------
 
-    def readers_of(self, entity_key: str) -> tuple[Step, ...]:
+    def readers_of(self, entity_key: str) -> tuple[FlowNode, ...]:
         """Steps that read this entity, whether by capturing it or taking it as input."""
-        return tuple(step for step in self.steps() if entity_key in step.reads())
+        return tuple(node for node in self.nodes() if entity_key in node.reads())
 
-    def producers_of(self, entity_key: str) -> tuple[Step, ...]:
+    def producers_of(self, entity_key: str) -> tuple[FlowNode, ...]:
         """Steps that bring this entity into existence."""
-        return tuple(step for step in self.steps() if entity_key in step.produces())
+        return tuple(node for node in self.nodes() if entity_key in node.produces())
 
     def entity_has_field(self, ref_entity: str, path: str) -> bool:
         """Whether a declared entity carries this field path.
@@ -409,7 +409,7 @@ class Board(DomainModel):
 
     def _edge_findings(self) -> list[BoardFinding]:
         found: list[BoardFinding] = []
-        step_keys = {s.key for s in self.steps()}
+        node_keys = {s.key for s in self.nodes()}
         for edge in self.edges:
             for role, key in (("from_key", edge.from_key), ("to_key", edge.to_key)):
                 if not self.has(key):
@@ -420,12 +420,12 @@ class Board(DomainModel):
                             reason=f"This connects to {key!r}, which is not on the board.",
                         )
                     )
-                elif key not in step_keys:
+                elif key not in node_keys:
                     found.append(
                         BoardFinding(
                             anchor=f"edge:{edge.key}",
                             field=role,
-                            reason=f"{key!r} is something the process reads, not a step.",
+                            reason=f"{key!r} is something the process reads, not a node.",
                         )
                     )
             declared: set[str] = set()
@@ -457,12 +457,12 @@ class Board(DomainModel):
                         severity="important",
                     )
                 )
-        for step in self.steps():
-            for entity_key in step.declared_inputs():
+        for node in self.nodes():
+            for entity_key in node.declared_inputs():
                 if not self.has(entity_key):
                     found.append(
                         BoardFinding(
-                            anchor=f"primitive:{step.key}",
+                            anchor=f"primitive:{node.key}",
                             field="inputs",
                             reason=f"This reads {entity_key!r}, which is not on the board.",
                         )
@@ -472,13 +472,13 @@ class Board(DomainModel):
 
     def _reference_findings(self) -> list[BoardFinding]:
         found: list[BoardFinding] = []
-        for step in self.steps():
-            for field_name, refs in _field_refs(step).items():
+        for node in self.nodes():
+            for field_name, refs in _field_refs(node).items():
                 for ref in refs:
                     if not self.entity_has_field(ref.entity, ref.path):
                         found.append(
                             BoardFinding(
-                                anchor=f"primitive:{step.key}",
+                                anchor=f"primitive:{node.key}",
                                 field=field_name,
                                 reason=f"This reads {ref}, which that card does not have.",
                             )
@@ -506,21 +506,21 @@ class Board(DomainModel):
                         reason="Nothing happens after this arrives.",
                     )
                 )
-        for step in self.terminals():
-            is_terminal_action = isinstance(step, ActionPrimitive) and step.config.is_terminal
-            if not is_terminal_action and not isinstance(step, EventPrimitive):
+        for node in self.terminals():
+            is_terminal_action = isinstance(node, ActionPrimitive) and node.config.is_terminal
+            if not is_terminal_action and not isinstance(node, EventPrimitive):
                 found.append(
                     BoardFinding(
-                        anchor=f"primitive:{step.key}",
+                        anchor=f"primitive:{node.key}",
                         field="outgoing",
                         reason="The process stops here, but this is not marked as an ending.",
                         severity="important",
                     )
                 )
-        for step in self.unreachable():
+        for node in self.unreachable():
             found.append(
                 BoardFinding(
-                    anchor=f"primitive:{step.key}",
+                    anchor=f"primitive:{node.key}",
                     field="incoming",
                     reason="Nothing leads here.",
                     severity="important",
@@ -559,20 +559,20 @@ class Board(DomainModel):
             raise IncompleteError(msg)
         current = start or (entries[0] if entries else None)
         if current is None:
-            return DryRunResult(result="dead_end", unreached=tuple(s.key for s in self.steps()))
+            return DryRunResult(result="dead_end", unreached=tuple(s.key for s in self.nodes()))
 
         trace: list[TraceStep] = []
         visited: set[str] = set()
         result: Literal["reached_terminal", "dead_end", "undefined_branch", "loop"] = "loop"
 
         for seq in range(1, MAX_DRY_RUN_STEPS + 1):
-            step = self.p(current)
+            node = self.p(current)
             visited.add(current)
             outcome = outcomes.get(current)
             leaving = self.outgoing(current)
 
             if not leaving:
-                terminal = isinstance(step, ActionPrimitive) and step.config.is_terminal
+                terminal = isinstance(node, ActionPrimitive) and node.config.is_terminal
                 trace.append(
                     TraceStep(
                         seq=seq,
@@ -607,7 +607,7 @@ class Board(DomainModel):
         return DryRunResult(
             result=result,
             trace=tuple(trace),
-            unreached=tuple(s.key for s in self.steps() if s.key not in visited),
+            unreached=tuple(s.key for s in self.nodes() if s.key not in visited),
         )
 
 
@@ -630,9 +630,9 @@ def _edge_for(leaving: tuple[Edge, ...], outcome: str | None) -> Edge | None:
     return None
 
 
-def _field_refs(step: Step) -> dict[str, tuple[FieldRef, ...]]:
+def _field_refs(node: FlowNode) -> dict[str, tuple[FieldRef, ...]]:
     """Field references a step makes, grouped by the config field holding them."""
-    config = step.config
+    config = node.config
     refs: dict[str, tuple[FieldRef, ...]] = {}
     if isinstance(config, EventConfig) and config.correlation_key is not None:
         refs["correlation_key"] = (config.correlation_key,)
@@ -658,8 +658,8 @@ __all__ = [
     "EntityPrimitive",
     "EventPrimitive",
     "Finding",
+    "FlowNode",
     "OutcomeWiring",
     "Primitive",
-    "Step",
     "TraceStep",
 ]

@@ -109,7 +109,7 @@ def test_a_repeat_self_edge_is_allowed():
 
 def test_steps_exclude_entities(tiny: Board):
     board = tiny.model_copy(update={"primitives": (*tiny.primitives, EntityPrimitive(key="thing"))})
-    assert "thing" not in {s.key for s in board.steps()}
+    assert "thing" not in {s.key for s in board.nodes()}
     assert [e.key for e in board.entities()] == ["thing"]
 
 
@@ -146,7 +146,7 @@ def test_p_raises_not_found_for_an_unknown_key(tiny: Board):
 
 def test_events_actions_and_checks_partition_the_steps(tiny: Board):
     counted = len(tiny.events()) + len(tiny.actions()) + len(tiny.checks())
-    assert counted == len(tiny.steps())
+    assert counted == len(tiny.nodes())
 
 
 # --- traversal -------------------------------------------------------------
@@ -515,7 +515,7 @@ def seed(repo_root: Path) -> Board:
 
 
 def test_the_seed_board_loads_and_validates(seed: Board):
-    assert len(seed.steps()) == 6
+    assert len(seed.nodes()) == 6
     assert len(seed.entities()) == 2
 
 
