@@ -149,11 +149,11 @@ Budget and cut list in [`SCOPE.md`](./SCOPE.md).
 - [ ] **3** `compiler/` — *checkpoint: a spec freezes*
 - [ ] **4** `cli.py`
 - [ ] **5** `api/` skeleton + Railway — three services, deployed thin and early
-- [ ] **6** `runtime/` — the skeleton generated agents import
-- [ ] **7** `codegen/` — *checkpoint: an agent is generated*
-- [ ] **8** eval cases from the snapshot
-- [ ] **9** `healing/` — *checkpoint: the curve moves*
-- [ ] **10** `reviewer/` — two rounds, real threads
+- [ ] **6** `reviewer/` — two rounds, real threads
+- [ ] **7** `runtime/` — the skeleton generated agents import
+- [ ] **8** `codegen/` — *checkpoint: an agent is generated*
+- [ ] **9** eval cases from the snapshot
+- [ ] **10** `healing/` — *checkpoint: the curve moves*
 - [ ] **11** `events.py`, realtime, background jobs
 - [ ] **12** `ui/` — canvas, comments, submit, spec viewer
 - [ ] **13** Temporal and Composio on the real path

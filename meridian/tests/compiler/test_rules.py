@@ -29,8 +29,17 @@ from meridian.domain.primitives import (
     EntityConfig,
     EventConfig,
     FieldRef,
+    Fill,
     Outcome,
     RoleRef,
+)
+
+SUMMARY = EntityPrimitive(
+    key="shipment_summary",
+    config=EntityConfig(
+        name="Shipment summary",
+        fields={"checked": {}, "failed": {}, "status": {}},
+    ),
 )
 
 PASS = Outcome(name="pass")
@@ -277,16 +286,24 @@ def test_a_card_nothing_leads_to_is_a_finding(sound: Board):
 # --- merging ---------------------------------------------------------------
 
 
-def test_one_problem_is_reported_once_at_its_worst_severity(sound: Board):
-    # The card says its recognition rule is merely important; the board says it
-    # is blocking, because nothing produces that entity. The process owner
-    # should see one blank, at the severity that gates the freeze.
-    entity = EntityPrimitive(key="invoice", config=EntityConfig(name="Invoice", fields={"no": {}}))
-    board = sound.model_copy(update={"primitives": (entity, *sound.primitives[1:])})
-
-    matching = [f for f in rules.findings(board) if f.field == "identified_by"]
+def test_one_problem_is_reported_once(sound: Board):
+    # A check with a single outcome that also leads nowhere trips two rules on
+    # the same (anchor, field). The process owner should see one entry.
+    check = CheckPrimitive(
+        key="looks_ok",
+        config=sound.p("looks_ok").config.model_copy(update={"outcomes": (Outcome(name="odd"),)}),
+    )
+    board = sound.model_copy(
+        update={
+            "primitives": (sound.primitives[0], sound.primitives[1], check, *sound.primitives[3:])
+        }
+    )
+    matching = [
+        f
+        for f in rules.findings(board)
+        if f.anchor == "primitive:looks_ok" and f.field == "outcomes"
+    ]
     assert len(matching) == 1
-    assert matching[0].severity == "blocking"
 
 
 def test_findings_come_back_worst_first(sound: Board):
@@ -330,6 +347,111 @@ def test_every_structural_finding_names_something_that_is_not_a_config_field(sou
                 "to_key",
                 "on_outcomes",
             }
+
+
+def _with_summary(sound: Board, *fills: Fill) -> Board:
+    """The sound board, plus a produced summary the check writes into."""
+    check = CheckPrimitive(
+        key="looks_ok", config=sound.p("looks_ok").config.model_copy(update={"fills": fills})
+    )
+    report = ActionPrimitive(
+        key="complain",
+        config=sound.p("complain").config.model_copy(
+            update={"inputs": ("invoice", "shipment_summary")}
+        ),
+    )
+    return sound.model_copy(
+        update={
+            "primitives": (
+                sound.primitives[0],
+                sound.primitives[1],
+                check,
+                sound.primitives[3],
+                report,
+                SUMMARY,
+            )
+        }
+    )
+
+
+# --- what a check produces -------------------------------------------------
+
+
+def test_a_summary_needs_no_recognition_rule_and_no_cardinality(sound: Board):
+    # It never arrives, so there is nothing to recognise, and nothing counts it.
+    board = _with_summary(
+        sound,
+        Fill(measure="checked", field=FieldRef(entity="shipment_summary", path="checked")),
+        Fill(measure="failed", field=FieldRef(entity="shipment_summary", path="failed")),
+        Fill(measure="passed", field=FieldRef(entity="shipment_summary", path="status")),
+    )
+    for finding in rules.findings(board):
+        assert finding.anchor != "primitive:shipment_summary" or finding.field == "fields"
+
+
+def test_filling_a_field_the_entity_does_not_have_is_blocking(sound: Board):
+    board = _with_summary(
+        sound,
+        Fill(measure="checked", field=FieldRef(entity="shipment_summary", path="chekced")),
+    )
+    found = {f.field: f for f in rules.fills_resolve(board)}
+    assert found["fills"].severity == "blocking"
+    assert "chekced" in found["fills"].reason
+
+
+def test_writing_into_something_that_arrives_is_blocking(sound: Board):
+    # The invoice comes from outside. Writing into it is always a mistake.
+    board = _with_summary(
+        sound, Fill(measure="checked", field=FieldRef(entity="invoice", path="no"))
+    )
+    assert "primitive:looks_ok:fills" in fired(rules.fills_resolve, board)
+
+
+def test_a_produced_field_nothing_fills_is_important(sound: Board):
+    # The payoff: declare the columns and the ones with no check behind them
+    # become findings on the card. This is the ASN gap, made visible.
+    board = _with_summary(
+        sound,
+        Fill(measure="checked", field=FieldRef(entity="shipment_summary", path="checked")),
+    )
+    unfilled = rules.produced_fields_are_filled(board)
+    assert {f.severity for f in unfilled} == {"important"}
+    assert "'failed'" in " ".join(f.reason for f in unfilled)
+    assert "'status'" in " ".join(f.reason for f in unfilled)
+
+
+def test_one_rule_can_report_at_two_grains(sound: Board):
+    # "Every line item carries four codes" produces both two failing line items
+    # and one failing invoice. Same rule, two columns, one check.
+    check = CheckPrimitive(
+        key="looks_ok",
+        config=sound.p("looks_ok").config.model_copy(
+            update={
+                "scope": "per_line_item",
+                "fills": (
+                    Fill(
+                        measure="failed",
+                        field=FieldRef(entity="shipment_summary", path="failed"),
+                        per="per_line_item",
+                    ),
+                    Fill(
+                        measure="failed",
+                        field=FieldRef(entity="shipment_summary", path="checked"),
+                        per="per_document",
+                    ),
+                ),
+            }
+        ),
+    )
+    assert [f for f in check.config.findings() if f.field == "fills"] == []
+
+
+def test_an_edge_into_a_produced_entity_is_still_rejected(sound: Board):
+    board = _with_summary(sound)
+    board = board.model_copy(
+        update={"edges": (*board.edges, Edge(key="e9", from_key="done", to_key="shipment_summary"))}
+    )
+    assert "edge:e9:to_key" in fired(rules.edge_endpoints_are_steps, board)
 
 
 def test_tool_resolution_is_not_part_of_this_gate(sound: Board):

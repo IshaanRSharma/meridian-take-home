@@ -29,11 +29,22 @@ Duration = Annotated[str, Field(pattern=ISO_8601_DURATION)]
 
 MIN_OUTCOMES = 2
 
+# Coarse to fine. A check that looks at whole invoices cannot report a line-item
+# count, but one that looks at line items can roll up to either coarser grain.
+_GRAIN: dict[str, int] = {"per_shipment": 0, "per_document": 1, "per_line_item": 2}
+_PLAIN_SCOPE: dict[str, str] = {
+    "per_shipment": "the whole shipment",
+    "per_document": "whole documents",
+    "per_line_item": "line items",
+}
+
 Severity = Literal["blocking", "important", "minor"]
 Channel = Literal["email", "sms", "phone", "queue"]
 Effect = Literal["notify", "record", "lookup", "decide", "noop"]
 Operator = Literal["eq", "ne", "gt", "gte", "lt", "lte", "matches", "in"]
 OnFailure = Literal["fail", "wait", "skip"]
+Scope = Literal["per_shipment", "per_document", "per_line_item"]
+Measure = Literal["checked", "passed", "failed"]
 
 
 class DomainModel(BaseModel):
@@ -277,6 +288,22 @@ class Criterion(DomainModel):
         return found
 
 
+class Fill(DomainModel):
+    """One number a Check writes into an entity the process produces.
+
+    A Check already reports counts rather than a boolean. This says where each
+    count lands, and at what grain — which is what lets one rule report at two
+    granularities. "Every line item carries four codes" produces both *two line
+    items failed* and *one invoice failed*, and both are real columns.
+
+    ``per`` defaults to the check's own scope, so the common case says nothing.
+    """
+
+    measure: Measure
+    field: FieldRef
+    per: Scope | None = None
+
+
 # --- entity ----------------------------------------------------------------
 
 
@@ -313,14 +340,14 @@ class EntityConfig(DomainModel):
             found.append(_finding("name", "This has no name."))
         if not self.fields:
             found.append(_finding("fields", "Nothing says what to read off this."))
-        if not self.identified_by:
-            found.append(
-                _finding("identified_by", "Nothing says how to recognise this.", "important")
-            )
-        # sample_extracted is deliberately not a finding. There is no way for a
-        # process owner to supply one — it is populated from the corpus by the
-        # fixture pull — so a finding here could never be cleared, and a finding
-        # nobody can act on is noise.
+        # `identified_by` is deliberately not reported here. Only an entity that
+        # ARRIVES needs recognising, and a card cannot know how it gets here —
+        # an entity a lookup returns, or one the checks fill in, has nothing to
+        # recognise. The board-level rule owns it.
+        #
+        # `sample_extracted` likewise: a process owner has no way to supply one,
+        # so a finding could never be cleared, and a finding nobody can act on
+        # is noise.
         return found + _under("cardinality", self.cardinality.findings())
 
 
@@ -506,11 +533,12 @@ class CheckConfig(DomainModel):
 
     name: str | None = None
     criteria: tuple[Criterion, ...] = ()
-    scope: Literal["per_shipment", "per_document", "per_line_item"] = "per_shipment"
+    scope: Scope = "per_shipment"
     quantifier: Literal["all", "any", "none", "count"] = "all"
     inputs: tuple[BoardKey, ...] = ()
     outcomes: tuple[Outcome, ...] = ()
     evidence: tuple[FieldRef, ...] = ()
+    fills: tuple[Fill, ...] = ()
     on_missing_input: OnFailure | None = None
     instructions: str | None = None
 
@@ -545,7 +573,20 @@ class CheckConfig(DomainModel):
             )
         for index, criterion in enumerate(self.criteria):
             found += _under(f"criteria[{index}]", criterion.findings())
+        found += self._fill_findings()
         return found
+
+    def _fill_findings(self) -> list[Finding]:
+        """Fills that ask for a count this check cannot produce."""
+        return [
+            _finding(
+                "fills",
+                f"This looks at {_PLAIN_SCOPE[self.scope]}, "
+                f"so it cannot count {_PLAIN_SCOPE[fill.per]}.",
+            )
+            for fill in self.fills
+            if fill.per is not None and _GRAIN[fill.per] > _GRAIN[self.scope]
+        ]
 
     def _reads_a_line_item(self) -> bool:
         return any(ref.is_iterated() for c in self.criteria for ref in c.references())

@@ -465,11 +465,13 @@ def test_empty_entity_reports_its_blocking_fields():
     assert {"name", "fields"} <= fields(EntityConfig().findings())
 
 
-def test_entity_without_a_recognition_rule_is_important_not_blocking():
-    # An entity produced by a lookup needs no recognition rule. The board-level
-    # rule raises this to blocking for entities that arrive.
+def test_a_card_says_nothing_about_how_it_is_recognised():
+    # Only an entity that ARRIVES needs recognising, and a card cannot know how
+    # it gets here — one a lookup returns, or one the checks fill in, has
+    # nothing to recognise. The board-level rule owns this, so a finding here
+    # would be one nobody could act on.
     found = EntityConfig(name="Board record", fields={"status": {}}).findings()
-    assert by_field(found)["identified_by"].severity == "important"
+    assert "identified_by" not in fields(found)
 
 
 def test_a_missing_sample_is_not_a_finding():

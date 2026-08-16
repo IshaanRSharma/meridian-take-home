@@ -93,11 +93,11 @@ marginal, and the CLI covers it in the video.
 | 3 | `compiler/` — rules, shapes, context, freeze | 3.0 | **a spec freezes** |
 | 4 | `cli.py` | 0.75 | everything drivable headless |
 | 5 | **`api/` skeleton + Railway, three services** | 2.0 | `api`, `worker`, `ui` green on a health check |
-| 6 | `runtime/` — the skeleton | 2.0 | a hand-written toy agent runs against it |
-| 7 | `codegen/` | 3.5 | **an agent is generated** |
-| 8 | eval cases from the snapshot | 1.5 | ground truth per shipment |
-| 9 | `healing/` — sweep, bundle, gate, repair skill | 3.5 | **the curve moves** |
-| 10 | `reviewer/` — scenarios, dry-run, semantic, distill | 3.5 | two rounds, real threads |
+| 6 | `reviewer/` — scenarios, dry-run, semantic, distill | 3.5 | two rounds, real threads |
+| 7 | `runtime/` — the skeleton | 2.0 | a hand-written toy agent runs against it |
+| 8 | `codegen/` | 3.5 | **an agent is generated** |
+| 9 | eval cases from the snapshot | 1.5 | ground truth per shipment |
+| 10 | `healing/` — sweep, bundle, gate, repair skill | 3.5 | **the curve moves** |
 | 11 | `events.py` + realtime + background jobs | 1.5 | `cycle_id` streams to the browser |
 | 12 | `ui/` — canvas, comments, submit, spec viewer, cycle panel | 6.5 | the demo |
 | 12a | **notation key** — palette carries each card's question; a `?` panel explains edge relations, severities and comment statuses | 0.5 | a stranger can read the board |
@@ -147,7 +147,17 @@ for a non-technical user to pick up without training", and a legend is the
 cheapest possible answer. Its content comes from the types rather than
 hand-written prose, so it cannot drift the first time an effect is added.
 
-*The spine (1–9) is provable from a terminal*, so a UI slip costs polish rather
+*The reviewer comes before codegen*, because that is the product flow —
+review, freeze, then generate. Building them the other way round means codegen
+works against a hand-authored stand-in for a reviewed board. Two consequences:
+unit 0 now blocks at unit 6 rather than unit 9, so the Composio OAuth and the
+OpenAI key are needed earlier; and a human step lands mid-build, since somebody
+answers the threads as the process owner before codegen has a complete board.
+That is the demo anyway. If the reviewer misbehaves or a key is late,
+hand-authoring `prealert_board_v2.json` unblocks everything downstream — a
+fallback, not the plan.
+
+*The spine (1–10) is provable from a terminal*, so a UI slip costs polish rather
 than evidence. `reviewer/` sits at 10 because hand-written threads in the seed
 unblock units 3–9 — a slip there blocks nothing. Within unit 12 the build order
 is canvas → comments → submit → cycle panel → spec viewer, each shippable alone.

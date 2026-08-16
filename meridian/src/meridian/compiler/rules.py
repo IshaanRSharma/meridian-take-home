@@ -216,6 +216,66 @@ def entities_are_recognisable(board: Board) -> list[BoardFinding]:
     ]
 
 
+def fills_resolve(board: Board) -> list[BoardFinding]:
+    """Checks writing a number into a field that does not exist.
+
+    A fill target is the one kind of field reference no other rule sees, because
+    every other reference *reads* and this one *writes*. Without this a check
+    filling `shipment_summary.coa_totl` lints clean and reaches codegen, where
+    the column silently never appears.
+    """
+    found: list[BoardFinding] = []
+    for check in board.checks():
+        for fill in check.config.fills:
+            anchor = f"primitive:{check.key}"
+            if _arrives(board, fill.field.entity):
+                found.append(
+                    BoardFinding(
+                        anchor=anchor,
+                        field="fills",
+                        reason=f"This writes into {fill.field.entity!r}, which arrives from "
+                        "outside. Only something the process produces can be written to.",
+                    )
+                )
+            elif not board.entity_has_field(fill.field.entity, fill.field.path):
+                found.append(
+                    BoardFinding(
+                        anchor=anchor,
+                        field="fills",
+                        reason=f"This fills in {fill.field}, which that card does not have.",
+                    )
+                )
+    return found
+
+
+def produced_fields_are_filled(board: Board) -> list[BoardFinding]:
+    """Fields on a produced entity that nothing fills in.
+
+    Once a board declares what it produces, every column with no check behind it
+    becomes visible — which is how "every historical row reports an ASN count
+    and your board produces none" stops being an observation somebody has to
+    make and becomes a finding on the card.
+    """
+    filled: dict[str, set[str]] = {}
+    for check in board.checks():
+        for fill in check.config.fills:
+            filled.setdefault(fill.field.entity, set()).add(fill.field.path)
+
+    return [
+        BoardFinding(
+            anchor=f"primitive:{entity_key}",
+            field="fields",
+            reason=f"Nothing fills in {field_name!r}.",
+            severity="important",
+            kind="structure",
+        )
+        for entity_key, paths in filled.items()
+        if board.has(entity_key)
+        for field_name in board.p(entity_key).config.fields  # type: ignore[union-attr]
+        if field_name not in paths
+    ]
+
+
 # --- the shape of the flow -------------------------------------------------
 
 
@@ -277,6 +337,8 @@ RULES: tuple[Rule, ...] = (
     field_references_resolve,
     cardinality_resolves,
     entities_are_recognisable,
+    fills_resolve,
+    produced_fields_are_filled,
     events_lead_somewhere,
     dead_ends_are_endings,
     steps_are_reachable,

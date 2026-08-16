@@ -149,7 +149,7 @@
             }
           }
         ],
-        "scope": "per_shipment",
+        "scope": "per_line_item",
         "quantifier": "all",
         "inputs": ["commercial_invoice", "certificate_of_analysis"],
         "outcomes": [
