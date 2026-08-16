@@ -26,16 +26,28 @@ from meridian.domain.primitives import BoardKey, DomainModel, Severity
 
 ThreadStatus = Literal["open", "answered", "rejected", "resolved"]
 
-# open ──answer──▶ answered ──board reflects it──▶ resolved
-#  └──reject──▶ rejected                │
-#                                       └── the scenario still fails ──▶ open
+# open ──answer──▶ answered ──▶ resolved
+#  ├──reject──▶ rejected           │
+#  └──────────────────────────▶ ───┘
+#                                  │
+#     the next round finds the gap is still there ──▶ open
+#
+# Resolving is never blocked. A process owner may close anything, because some
+# threads have nothing to re-run — a question about whether failure should end
+# the process is a judgement, and refusing to close it would trap them. What
+# keeps them from having the last word is the next review round, which re-runs
+# lint and every scenario and reopens anything still unaddressed.
+#
+# `open → resolved` is allowed directly because a lint thread is resolved by
+# filling the field, not by writing a reply. Requiring a comment first would be
+# ceremony.
 #
 # `rejected` is terminal but is not a delete: it compiles into the spec as
 # negative knowledge, so a later round does not re-ask and codegen knows the
 # case was considered and dismissed.
 _ALLOWED_TRANSITIONS: dict[ThreadStatus, frozenset[ThreadStatus]] = {
-    "open": frozenset({"answered", "rejected"}),
-    "answered": frozenset({"resolved", "open"}),
+    "open": frozenset({"answered", "rejected", "resolved"}),
+    "answered": frozenset({"resolved", "rejected", "open"}),
     "rejected": frozenset(),
     "resolved": frozenset({"open"}),
 }

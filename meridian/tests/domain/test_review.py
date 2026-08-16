@@ -64,10 +64,19 @@ def test_an_open_thread_can_be_answered_or_rejected():
     assert thread().may_become("rejected")
 
 
-def test_an_open_thread_cannot_jump_straight_to_resolved():
-    # A process owner does not get to declare their own answer applied. Only
-    # re-running the scenario that raised the question establishes that.
-    assert not thread().may_become("resolved")
+def test_an_open_thread_can_be_resolved_without_a_reply():
+    # A lint thread is resolved by filling the field it names, not by writing a
+    # comment. Requiring one first would be ceremony.
+    assert thread().may_become("resolved")
+
+
+def test_resolving_is_never_blocked_but_never_final_either():
+    # Some threads have nothing to re-run: whether a failure should end the
+    # process is a judgement, and refusing to close it would trap the process
+    # owner. What stops them having the last word is the next review round,
+    # which reopens anything still unaddressed.
+    assert thread().may_become("resolved")
+    assert thread(status="resolved").may_become("open")
 
 
 def test_an_answered_thread_can_resolve_or_fall_back_open():

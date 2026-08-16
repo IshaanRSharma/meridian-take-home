@@ -105,6 +105,12 @@ for pre-alert:
 
 **Verification**
 
+- **Immediate resolve feedback.** Today a process owner can resolve any thread
+  freely and the next review round reopens it if the gap is still there. Telling
+  them at the moment they click — *"this check still has no path for
+  `mismatched_coa`"* — is friendlier, and cheap now that `dry_run` exists. It was
+  cut because blocking the click is worse than reopening later, and because a
+  judgement thread has nothing to re-run at all.
 - **Ablation suite.** Delete a known fact from the finished board, check the
   reviewer asks for it. Turns review quality from a claim into recall as a number.
 - **Conformance.** Catches a repair that makes evals pass by deleting a validation.
