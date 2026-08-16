@@ -118,6 +118,32 @@ reference table would be smaller — but the consumer is a code generator readin
 *one card's entry* to write *one file*, so it must never join anything.
 Duplication in the payload buying simplicity at the consumer.
 
+### An edge keeps its own statements
+
+*"Wait 48 hours, then escalate"* is a claim about a **transition**, so it reaches
+no card — putting it inside a step's file would tell that step about something it
+does not do. `FrozenSpec.edge_context` is where it lives instead. Without it the
+whole class of answer about timing between steps would be settled in review and
+then silently dropped at the freeze.
+
+### Capabilities derive from closed enums, never from free text
+
+```
+event.channel=email        → email.fetch
+event.captures non-empty   → storage.put · doc.extract
+notify + email             → email.send
+record                     → system.write
+lookup                     → system.read
+decide                     → human.decide
+check · noop               → none
+```
+
+`system` is per-customer free text — *"Aurologistics WMS"* — so it stays on the
+config for the bindings file to key on and never becomes part of a capability
+name. And **a capability list is what decides whether a card becomes a Temporal
+activity**: the determinism rule as data rather than a convention codegen has to
+remember.
+
 ### Tool resolution is deliberately not a rule
 
 A process owner cannot fix an unbound channel. Surfacing it on the canvas would
@@ -184,12 +210,6 @@ times.*
 ---
 
 ## Open questions
-
-**Edge-anchored statements are currently dropped.** *"Wait 48 hours, then
-escalate"* anchored to `edge:e5` reaches no card by design, and `FrozenSpec`
-carries bare edges with no context — so it is lost at freeze. `freeze.py` needs
-`edge_context`, or that class of statement cannot survive review. This is a gap,
-not a decision.
 
 **A check whose result changes nothing is not surfaced.** A Check with an
 unconditional outgoing edge records counts and always continues, which is legal

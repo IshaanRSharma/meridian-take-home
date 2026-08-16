@@ -92,6 +92,10 @@ class FrozenSpec(DomainModel):
     entities: dict[str, EntityConfig] = Field(default_factory=dict)
     primitives: dict[str, SpecPrimitive] = Field(default_factory=dict)
     edges: tuple[Edge, ...] = ()
+    # A statement about a transition — "wait 48 hours, then escalate" — reaches
+    # no card, because a claim about an edge does not belong inside a step's
+    # file. Without a home here it would be lost at the freeze.
+    edge_context: dict[str, ScopedContext] = Field(default_factory=dict)
     capabilities: tuple[str, ...] = ()
 
     def payload(self) -> str:
