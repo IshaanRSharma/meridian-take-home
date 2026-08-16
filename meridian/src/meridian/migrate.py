@@ -10,7 +10,7 @@ from pathlib import Path
 
 from meridian.core.db import close_pool, transaction
 
-MIGRATIONS = Path(__file__).resolve().parents[3] / "db" / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[2] / "db" / "migrations"
 
 _LEDGER = """
 create table if not exists schema_migrations (

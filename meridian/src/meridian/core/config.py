@@ -6,22 +6,24 @@ file rather than a scavenger hunt.
 """
 
 from functools import lru_cache
-from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Resolved from this file rather than the working directory, because the tests
-# run from `meridian/`, the CLI runs from the repo root, and Railway runs from
-# somewhere else again. A relative env_file silently reads nothing.
-REPO_ROOT = Path(__file__).resolve().parents[4]
-
 
 class Settings(BaseSettings):
-    """Everything the process needs from its environment."""
+    """Everything the backend needs from its environment.
+
+    Read from ``meridian/.env``, a sibling of ``pyproject.toml``. Every Make
+    target runs from this directory and Railway's root directory for both
+    backend services points here, so the relative path is the one that holds
+    everywhere. The frontend has its own ``ui/.env`` and shares nothing with
+    this file — notably not the Supabase URL or anon key, which the backend
+    never needs because it talks to Postgres directly.
+    """
 
     model_config = SettingsConfigDict(
-        env_file=REPO_ROOT / ".env",
+        env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )

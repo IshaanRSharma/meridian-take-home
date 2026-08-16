@@ -503,7 +503,7 @@ def test_dry_run_walks_a_two_entry_board_from_the_start_it_is_given(two_entries:
 
 @pytest.fixture
 def seed(repo_root: Path) -> Board:
-    raw = json.loads((repo_root / "db" / "seeds" / "prealert_board.json").read_text())
+    raw = json.loads((repo_root / "meridian" / "db" / "seeds" / "prealert_board.json").read_text())
     return Board(
         name=raw["board"]["name"],
         status=raw["board"]["status"],

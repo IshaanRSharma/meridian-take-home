@@ -8,7 +8,6 @@ The seed board is the fixture on purpose. If the JSON, the schema and the domain
 types ever disagree, this is where it shows.
 """
 
-from pathlib import Path
 from uuid import UUID
 
 import asyncpg
@@ -18,7 +17,7 @@ from meridian.core.config import settings
 from meridian.domain.errors import NotFoundError
 from meridian.domain.graph import Board, EntityPrimitive
 from meridian.repositories import boards
-from meridian.seed import board_from_file
+from meridian.seed import SEED, board_from_file
 
 pytestmark = [
     pytest.mark.db,
@@ -27,8 +26,8 @@ pytestmark = [
 
 
 @pytest.fixture
-def seed_board(repo_root: Path) -> Board:
-    return board_from_file(repo_root / "db" / "seeds" / "prealert_board.json")
+def seed_board() -> Board:
+    return board_from_file(SEED)
 
 
 async def test_a_board_survives_the_round_trip(connection: asyncpg.Connection, seed_board: Board):

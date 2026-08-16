@@ -14,7 +14,7 @@ from meridian.core.db import close_pool, transaction
 from meridian.domain.graph import Board
 from meridian.repositories import boards
 
-SEED = Path(__file__).resolve().parents[3] / "db" / "seeds" / "prealert_board.json"
+SEED = Path(__file__).resolve().parents[2] / "db" / "seeds" / "prealert_board.json"
 
 
 def board_from_file(path: Path) -> Board:

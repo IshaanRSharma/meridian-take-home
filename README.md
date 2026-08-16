@@ -41,16 +41,26 @@ make db          # Postgres 17 on :54329, if you prefer local to Supabase
 make temporal    # Temporal dev server, UI on :8233
 ```
 
-Copy `.env.example` to `.env` before running anything that talks to a provider.
+Each half owns its environment and they share nothing:
+
+```
+meridian/.env    DATABASE_URL · OPENAI_* · COMPOSIO_* · TEMPORAL_*
+ui/.env          VITE_API_URL · VITE_SUPABASE_URL · VITE_SUPABASE_ANON_KEY
+```
+
+The backend never needs the Supabase URL or anon key — it talks to Postgres
+directly, so the only thing that ever uses them is the browser's realtime
+subscription. Copy each `.env.example` alongside its `.env.example` before
+running anything that talks to a provider.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `meridian/` | the Python backend — one package, two entrypoints (`api`, `worker`) |
-| `ui/` | the React frontend, HTTP-only against `meridian/` |
+| `meridian/` | the Python backend — one package, two entrypoints (`api`, `worker`), its own `db/` and its own `.env` |
+| `ui/` | the React frontend, HTTP-only against `meridian/`, its own `.env` |
 | `agents/` | **generated** code, committed; the repair loop edits here |
-| `db/` | plain SQL migrations and seeds |
+
 | `fixtures/` | recorded emails, documents and expected outputs |
 | `bindings/` | per-customer YAML; no secrets |
 | `docs/` | the brief, the SOP and the deck — **local only**, gitignored |

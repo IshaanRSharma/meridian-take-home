@@ -71,6 +71,10 @@ meridian-mvp/
 │
 ├── meridian/                    ── BACKEND ──  Python 3.12 → Railway
 │   ├── pyproject.toml
+│   ├── .env                     BACKEND ONLY. shares nothing with ui/.env
+│   ├── db/
+│   │   ├── migrations/0001_initial.sql
+│   │   └── seeds/prealert_board.json
 │   ├── Dockerfile
 │   ├── src/meridian/
 │   │   ├── domain/              pure types. imports nothing internal.
@@ -168,10 +172,7 @@ meridian-mvp/
 │
 ├── bindings/aurologistics.yaml  per customer. committed. no secrets.
 │
-├── db/
-│   ├── migrations/0001_initial.sql
-│   └── seeds/                   tools.sql · prealert_board.py
-│
+
 └── fixtures/                    emails/ · documents/ · expected/
 ```
 
