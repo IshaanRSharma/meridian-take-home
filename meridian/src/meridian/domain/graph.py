@@ -388,155 +388,27 @@ class Board(DomainModel):
         root = path.split(".", 1)[0].removesuffix("[]")
         return root in entity.config.fields
 
-    # --- findings ----------------------------------------------------------
+    # --- references ---------------------------------------------------------
 
-    def findings(self) -> list[BoardFinding]:
-        """Every card's own findings, anchored, plus the ones only the board can see."""
-        found = [
-            BoardFinding(
-                anchor=f"primitive:{p.key}",
-                field=f.field,
-                reason=f.reason,
-                severity=f.severity,
-            )
-            for p in self.primitives
-            for f in p.config.findings()
-        ]
-        found += self._edge_findings()
-        found += self._entity_findings()
-        found += self._shape_of_flow_findings()
-        return found
+    def field_references(self, card: FlowNode) -> dict[str, tuple[FieldRef, ...]]:
+        """Field references this card makes, grouped by the config field holding them.
 
-    def _edge_findings(self) -> list[BoardFinding]:
-        found: list[BoardFinding] = []
-        node_keys = {s.key for s in self.nodes()}
-        for edge in self.edges:
-            for role, key in (("from_key", edge.from_key), ("to_key", edge.to_key)):
-                if not self.has(key):
-                    found.append(
-                        BoardFinding(
-                            anchor=f"edge:{edge.key}",
-                            field=role,
-                            reason=f"This connects to {key!r}, which is not on the board.",
-                        )
-                    )
-                elif key not in node_keys:
-                    found.append(
-                        BoardFinding(
-                            anchor=f"edge:{edge.key}",
-                            field=role,
-                            reason=f"{key!r} is something the process reads, not a node.",
-                        )
-                    )
-            declared: set[str] = set()
-            if self.has(edge.from_key):
-                declared = {o.name for o in self.p(edge.from_key).declared_outcomes()}
-            for outcome in edge.on_outcomes:
-                if outcome not in declared:
-                    found.append(
-                        BoardFinding(
-                            anchor=f"edge:{edge.key}",
-                            field="on_outcomes",
-                            reason=(
-                                f"This carries {outcome!r}, which the card "
-                                "before it never declares."
-                            ),
-                        )
-                    )
-        return found
-
-    def _entity_findings(self) -> list[BoardFinding]:
-        found: list[BoardFinding] = []
-        for entity in self.entities():
-            if not self.readers_of(entity.key):
-                found.append(
-                    BoardFinding(
-                        anchor=f"primitive:{entity.key}",
-                        field="name",
-                        reason="Nothing on the board reads this.",
-                        severity="important",
-                    )
-                )
-        for node in self.nodes():
-            for entity_key in node.declared_inputs():
-                if not self.has(entity_key):
-                    found.append(
-                        BoardFinding(
-                            anchor=f"primitive:{node.key}",
-                            field="inputs",
-                            reason=f"This reads {entity_key!r}, which is not on the board.",
-                        )
-                    )
-        found += self._reference_findings()
-        return found
-
-    def _reference_findings(self) -> list[BoardFinding]:
-        found: list[BoardFinding] = []
-        for node in self.nodes():
-            for field_name, refs in _field_refs(node).items():
-                for ref in refs:
-                    if not self.entity_has_field(ref.entity, ref.path):
-                        found.append(
-                            BoardFinding(
-                                anchor=f"primitive:{node.key}",
-                                field=field_name,
-                                reason=f"This reads {ref}, which that card does not have.",
-                            )
-                        )
-        for entity in self.entities():
-            per = entity.config.cardinality.per
-            if per is not None and not self.entity_has_field(per.entity, per.path):
-                found.append(
-                    BoardFinding(
-                        anchor=f"primitive:{entity.key}",
-                        field="cardinality.per",
-                        reason=f"These are counted against {per}, which that card does not have.",
-                    )
-                )
-        return found
-
-    def _shape_of_flow_findings(self) -> list[BoardFinding]:
-        found: list[BoardFinding] = []
-        for event in self.events():
-            if not self.outgoing(event.key):
-                found.append(
-                    BoardFinding(
-                        anchor=f"primitive:{event.key}",
-                        field="outgoing",
-                        reason="Nothing happens after this arrives.",
-                    )
-                )
-        for node in self.terminals():
-            is_terminal_action = isinstance(node, ActionPrimitive) and node.config.is_terminal
-            if not is_terminal_action and not isinstance(node, EventPrimitive):
-                found.append(
-                    BoardFinding(
-                        anchor=f"primitive:{node.key}",
-                        field="outgoing",
-                        reason="The process stops here, but this is not marked as an ending.",
-                        severity="important",
-                    )
-                )
-        for node in self.unreachable():
-            found.append(
-                BoardFinding(
-                    anchor=f"primitive:{node.key}",
-                    field="incoming",
-                    reason="Nothing leads here.",
-                    severity="important",
-                )
-            )
-        for check in self.checks():
-            for wiring in self.outcomes(check.key):
-                if not wiring.wired:
-                    found.append(
-                        BoardFinding(
-                            anchor=f"primitive:{check.key}",
-                            field="outcomes",
-                            reason=f"Nothing says what happens on {wiring.name!r}.",
-                        )
-                    )
-        return found
+        Reported per field so a finding can point at `criteria` or `evidence`
+        rather than at the card as a whole.
+        """
+        config = card.config
+        refs: dict[str, tuple[FieldRef, ...]] = {}
+        if isinstance(config, EventConfig) and config.correlation_key is not None:
+            refs["correlation_key"] = (config.correlation_key,)
+        if isinstance(config, ActionConfig):
+            refs["payload_fields"] = config.payload_fields
+        if isinstance(config, CheckConfig):
+            refs["evidence"] = config.evidence
+            criteria: list[FieldRef] = []
+            for criterion in config.criteria:
+                criteria.extend(criterion.references())
+            refs["criteria"] = tuple(criteria)
+        return {name: value for name, value in refs.items() if value}
 
     # --- dry run -----------------------------------------------------------
 
@@ -628,23 +500,6 @@ def _edge_for(leaving: tuple[Edge, ...], outcome: str | None) -> Edge | None:
     # left here is conditional on something unknown. Taking the only one would be
     # a guess reported as a traversal.
     return None
-
-
-def _field_refs(node: FlowNode) -> dict[str, tuple[FieldRef, ...]]:
-    """Field references a step makes, grouped by the config field holding them."""
-    config = node.config
-    refs: dict[str, tuple[FieldRef, ...]] = {}
-    if isinstance(config, EventConfig) and config.correlation_key is not None:
-        refs["correlation_key"] = (config.correlation_key,)
-    if isinstance(config, ActionConfig):
-        refs["payload_fields"] = config.payload_fields
-    if isinstance(config, CheckConfig):
-        refs["evidence"] = config.evidence
-        criteria: list[FieldRef] = []
-        for criterion in config.criteria:
-            criteria.extend(criterion.references())
-        refs["criteria"] = tuple(criteria)
-    return {name: value for name, value in refs.items() if value}
 
 
 __all__ = [

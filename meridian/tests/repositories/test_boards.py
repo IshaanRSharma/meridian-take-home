@@ -13,6 +13,7 @@ from uuid import UUID
 import asyncpg
 import pytest
 
+from meridian.compiler import rules
 from meridian.core.config import settings
 from meridian.domain.errors import NotFoundError
 from meridian.domain.graph import Board, EntityPrimitive
@@ -56,8 +57,8 @@ async def test_the_findings_are_the_same_after_a_round_trip(
     board_id = await boards.save(connection, seed_board)
     loaded = await boards.get(connection, board_id)
 
-    before = {(f.anchor, f.field) for f in seed_board.findings()}
-    after = {(f.anchor, f.field) for f in loaded.findings()}
+    before = {(f.anchor, f.field) for f in rules.findings(seed_board)}
+    after = {(f.anchor, f.field) for f in rules.findings(loaded)}
     assert before == after
 
 

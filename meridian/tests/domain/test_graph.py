@@ -10,9 +10,6 @@ holds the seeded board to the gap list written in its own header, so "the
 reviewer will catch these" is checked rather than claimed.
 """
 
-import json
-from pathlib import Path
-
 import pytest
 from pydantic import ValidationError
 
@@ -27,21 +24,14 @@ from meridian.domain.graph import (
 )
 from meridian.domain.primitives import (
     ActionConfig,
-    Cardinality,
     CheckConfig,
-    Criterion,
     EntityConfig,
     EventConfig,
-    FieldRef,
     Outcome,
 )
 
 PASS = Outcome(name="pass")
 FAIL = Outcome(name="fail")
-
-
-def anchors(board: Board) -> set[str]:
-    return {f"{f.anchor}:{f.field}" for f in board.findings()}
 
 
 @pytest.fixture
@@ -121,15 +111,6 @@ def test_an_entity_is_never_a_terminal_despite_having_no_edges(tiny: Board):
 def test_entities_are_excluded_from_reachability(tiny: Board):
     board = tiny.model_copy(update={"primitives": (*tiny.primitives, EntityPrimitive(key="thing"))})
     assert "thing" not in board.reachable_from_events()
-
-
-def test_an_edge_pointing_at_an_entity_is_a_finding():
-    board = Board(
-        name="b",
-        primitives=[EventPrimitive(key="arrived"), EntityPrimitive(key="thing")],
-        edges=[Edge(key="e1", from_key="arrived", to_key="thing")],
-    )
-    assert "edge:e1:to_key" in anchors(board)
 
 
 # --- lookup ----------------------------------------------------------------
@@ -212,20 +193,6 @@ def test_three_outcomes_and_two_edges_leaves_one_unwired(tiny: Board):
     )
     unwired = [w.name for w in board.outcomes("looks_ok") if not w.wired]
     assert unwired == ["odd"]
-    assert "primitive:looks_ok:outcomes" in anchors(board)
-
-
-def test_an_edge_carrying_an_undeclared_outcome_is_a_finding(tiny: Board):
-    board = tiny.model_copy(
-        update={
-            "edges": (
-                tiny.edges[0],
-                Edge(key="e2", from_key="looks_ok", to_key="done", on_outcomes=["invented"]),
-                tiny.edges[2],
-            )
-        }
-    )
-    assert "edge:e2:on_outcomes" in anchors(board)
 
 
 # --- entities --------------------------------------------------------------
@@ -258,75 +225,6 @@ def test_a_lookup_is_a_producer_of_the_entity_it_names():
         ],
     )
     assert {s.key for s in board.producers_of("record")} == {"verify"}
-
-
-def test_an_entity_nobody_reads_is_a_finding():
-    board = Board(
-        name="b",
-        primitives=[
-            EntityPrimitive(
-                key="unused",
-                config=EntityConfig(name="Unused", identified_by="x", fields={"a": {}}),
-            )
-        ],
-    )
-    assert "primitive:unused:name" in anchors(board)
-
-
-def test_a_step_reading_an_entity_that_is_not_on_the_board_is_a_finding():
-    board = Board(
-        name="b",
-        primitives=[CheckPrimitive(key="ck", config=CheckConfig(name="Ck", inputs=["ghost"]))],
-    )
-    assert "primitive:ck:inputs" in anchors(board)
-
-
-def test_a_field_reference_the_entity_does_not_carry_is_a_finding():
-    board = Board(
-        name="b",
-        primitives=[
-            EntityPrimitive(
-                key="invoice",
-                config=EntityConfig(name="Invoice", identified_by="h", fields={"invoice_no": {}}),
-            ),
-            CheckPrimitive(
-                key="ck",
-                config=CheckConfig(
-                    name="Ck",
-                    inputs=["invoice"],
-                    criteria=[
-                        Criterion(op="present", left=FieldRef(entity="invoice", path="missing_no"))
-                    ],
-                ),
-            ),
-        ],
-    )
-    assert "primitive:ck:criteria" in anchors(board)
-
-
-def test_cardinality_per_must_resolve_to_a_declared_field():
-    board = Board(
-        name="b",
-        primitives=[
-            EntityPrimitive(
-                key="invoice",
-                config=EntityConfig(name="Invoice", identified_by="h", fields={"invoice_no": {}}),
-            ),
-            EntityPrimitive(
-                key="coa",
-                config=EntityConfig(
-                    name="COA",
-                    identified_by="h",
-                    fields={"batch_no": {}},
-                    cardinality=Cardinality(
-                        kind="one_per", per=FieldRef(entity="invoice", path="line_items[].batch_no")
-                    ),
-                ),
-            ),
-            CheckPrimitive(key="ck", config=CheckConfig(name="Ck", inputs=["invoice", "coa"])),
-        ],
-    )
-    assert "primitive:coa:cardinality.per" in anchors(board)
 
 
 # --- what a card declares --------------------------------------------------
@@ -384,23 +282,6 @@ def test_an_entity_declares_nothing_at_all():
 
 
 # --- flow shape ------------------------------------------------------------
-
-
-def test_an_event_with_nothing_after_it_is_a_finding():
-    board = Board(name="b", primitives=[EventPrimitive(key="arrived")])
-    assert "primitive:arrived:outgoing" in anchors(board)
-
-
-def test_a_dead_end_that_is_not_marked_as_an_ending_is_a_finding(tiny: Board):
-    board = tiny.model_copy(
-        update={
-            "primitives": (
-                *tiny.primitives[:3],
-                ActionPrimitive(key="complain", config=ActionConfig(name="Complain")),
-            )
-        }
-    )
-    assert "primitive:complain:outgoing" in anchors(board)
 
 
 # --- dry run ---------------------------------------------------------------
@@ -501,19 +382,6 @@ def test_dry_run_walks_a_two_entry_board_from_the_start_it_is_given(two_entries:
 # --- the seed board --------------------------------------------------------
 
 
-@pytest.fixture
-def seed(repo_root: Path) -> Board:
-    raw = json.loads((repo_root / "meridian" / "db" / "seeds" / "prealert_board.json").read_text())
-    return Board(
-        name=raw["board"]["name"],
-        status=raw["board"]["status"],
-        review_round=raw["board"]["review_round"],
-        primitives=raw["primitives"],
-        edges=raw["edges"],
-        layout=raw["layout"],
-    )
-
-
 def test_the_seed_board_loads_and_validates(seed: Board):
     assert len(seed.nodes()) == 6
     assert len(seed.entities()) == 2
@@ -522,27 +390,6 @@ def test_the_seed_board_loads_and_validates(seed: Board):
 def test_entities_carry_no_layout_position(seed: Board):
     # The whole implementation of "first-class but not drawn".
     assert not {e.key for e in seed.entities()} & set(seed.layout)
-
-
-def test_the_seed_board_reports_exactly_its_documented_gaps(seed: Board):
-    blocking = {f"{f.anchor}:{f.field}" for f in seed.findings() if f.severity == "blocking"}
-    assert blocking == {
-        "primitive:report_coa_discrepancy:recipients",  # the SOP names nobody
-        "primitive:report_invoice_discrepancy:system",  # "log an error" — where?
-        "primitive:coas_valid:outcomes",  # mismatched_coa goes nowhere
-    }
-
-
-def test_the_seed_boards_softer_gaps_are_important_not_blocking(seed: Board):
-    # A board with these can still freeze. They are worth asking about, and
-    # ranking them below the blocking three is what keeps the list readable.
-    important = {f"{f.anchor}:{f.field}" for f in seed.findings() if f.severity == "important"}
-    assert {
-        "primitive:invoice_complete:on_missing_input",
-        "primitive:coas_valid:on_missing_input",
-        "primitive:report_coa_discrepancy:idempotency_key",
-        "primitive:report_invoice_discrepancy:idempotency_key",
-    } <= important
 
 
 def test_the_seed_board_leaves_mismatched_coa_unwired(seed: Board):
