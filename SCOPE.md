@@ -100,6 +100,7 @@ marginal, and the CLI covers it in the video.
 | 10 | `reviewer/` — scenarios, dry-run, semantic, distill | 3.5 | two rounds, real threads |
 | 11 | `events.py` + realtime + background jobs | 1.5 | `cycle_id` streams to the browser |
 | 12 | `ui/` — canvas, comments, submit, spec viewer, cycle panel | 6.5 | the demo |
+| 12a | **notation key** — palette carries each card's question; a `?` panel explains edge relations, severities and comment statuses | 0.5 | a stranger can read the board |
 | 12b | **text → cards** — `mvp board add --text`, route, UI panel | 1.5 | a paragraph becomes cards |
 | 13 | Temporal + Composio on the real path | 2.5 | one live shipment |
 | 14 | README, PDF, Loom, final deploy | 4.0 | shipped |
@@ -139,6 +140,12 @@ anything in the pipeline returns `{cycle_id}` immediately and does its work in
 the background. The UI never waits on a pipeline call — it subscribes to
 `events` filtered on `cycle_id` and watches progress arrive. Same path whether
 the trigger was a button or a terminal.
+
+*The key is not decoration.* This is a notation, and a notation has a key —
+sheet music has one, a circuit diagram has one. The brief grades "simple enough
+for a non-technical user to pick up without training", and a legend is the
+cheapest possible answer. Its content comes from the types rather than
+hand-written prose, so it cannot drift the first time an effect is added.
 
 *The spine (1–9) is provable from a terminal*, so a UI slip costs polish rather
 than evidence. `reviewer/` sits at 10 because hand-written threads in the seed
