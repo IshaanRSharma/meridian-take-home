@@ -26,27 +26,30 @@ from meridian.domain.primitives import BoardKey, DomainModel, Severity
 
 ThreadStatus = Literal["open", "answered", "rejected", "resolved"]
 
-# open ──answer──▶ answered ──▶ resolved
-#  ├──reject──▶ rejected           │
-#  └──────────────────────────▶ ───┘
-#                                  │
-#     the next round finds the gap is still there ──▶ open
+# Two loops, not one set of labels.
 #
-# Resolving is never blocked. A process owner may close anything, because some
-# threads have nothing to re-run — a question about whether failure should end
-# the process is a judgement, and refusing to close it would trap them. What
-# keeps them from having the last word is the next review round, which re-runs
-# lint and every scenario and reopens anything still unaddressed.
+#   COMMENT LOOP — settle the business knowledge
+#     open ──the owner answers──▶ answered
+#          ──not applicable─────▶ rejected
 #
-# `open → resolved` is allowed directly because a lint thread is resolved by
-# filling the field, not by writing a reply. Requiring a comment first would be
-# ceremony.
+#   REVISION LOOP — make the drawing show it
+#     answered ──the board now represents it──▶ resolved
+#              ──the scenario still fails─────▶ open
+#
+# `answered` means the rule is known. `resolved` means the canvas reflects it,
+# and those come apart constantly: knowing "the shipment comes back once the
+# paperwork is fixed" and having drawn the repeat edge are different states.
+# Allowing open → resolved would collapse the revision loop out of existence,
+# which is how a review loop becomes decorative.
+#
+# A lint blank goes through both, quickly: filling the field IS the answer, and
+# the canvas reflects it immediately.
 #
 # `rejected` is terminal but is not a delete: it compiles into the spec as
 # negative knowledge, so a later round does not re-ask and codegen knows the
 # case was considered and dismissed.
 _ALLOWED_TRANSITIONS: dict[ThreadStatus, frozenset[ThreadStatus]] = {
-    "open": frozenset({"answered", "rejected", "resolved"}),
+    "open": frozenset({"answered", "rejected"}),
     "answered": frozenset({"resolved", "rejected", "open"}),
     "rejected": frozenset(),
     "resolved": frozenset({"open"}),
@@ -124,6 +127,10 @@ class Thread(DomainModel):
     origin: Literal["lint", "scenario", "semantic", "reduction", "repair"] = "scenario"
     round: int = 1
     question: str
+    # Why it is being asked, kept apart from the question itself. "What happens
+    # after the COA is reported?" reads very differently with "the SOP ends at
+    # reporting and never says what closes the shipment" beside it.
+    reason: str | None = None
     anchors: tuple[Anchor, ...] = ()
     messages: tuple[ThreadMessage, ...] = ()
     scenario_key: BoardKey | None = None

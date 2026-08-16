@@ -115,6 +115,17 @@ for pre-alert:
   only write is an email, which cannot be undone — hence `idempotency_key`
   rather than rollback.
 
+**Review**
+
+- **The AI proposing a canvas patch.** The revision loop today is: the process
+  owner answers, edits the canvas themselves, and the reviewer re-tests the
+  originating scenario. The design has an extra step — the AI reads the answer
+  and proposes the edit (*"add a correction Event and a recheck edge"*) for the
+  owner to accept or amend. Roughly two hours: a structured call emitting board
+  mutations, plus a diff view. Cut because the brief only requires that the
+  owner *respond to comments and update the canvas*, and because a proposal a
+  human has to check is worth less than a question they answer directly.
+
 **Verification**
 
 - **Immediate resolve feedback.** Today a process owner can resolve any thread

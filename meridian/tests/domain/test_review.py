@@ -64,19 +64,21 @@ def test_an_open_thread_can_be_answered_or_rejected():
     assert thread().may_become("rejected")
 
 
-def test_an_open_thread_can_be_resolved_without_a_reply():
-    # A lint thread is resolved by filling the field it names, not by writing a
-    # comment. Requiring one first would be ceremony.
-    assert thread().may_become("resolved")
+def test_an_open_thread_cannot_skip_straight_to_resolved():
+    # Two loops, not one. `answered` settles the business knowledge; `resolved`
+    # means the drawing now shows it, and those come apart constantly — knowing
+    # "it comes back once corrected" and having drawn the repeat edge are
+    # different states. Allowing this would collapse the revision loop.
+    assert not thread().may_become("resolved")
 
 
-def test_resolving_is_never_blocked_but_never_final_either():
-    # Some threads have nothing to re-run: whether a failure should end the
-    # process is a judgement, and refusing to close it would trap the process
-    # owner. What stops them having the last word is the next review round,
-    # which reopens anything still unaddressed.
-    assert thread().may_become("resolved")
+def test_a_resolved_thread_reopens_if_its_scenario_fails_again():
     assert thread(status="resolved").may_become("open")
+
+
+def test_a_thread_carries_why_it_is_being_asked():
+    asked = thread(reason="The SOP ends at reporting and never says what closes the shipment.")
+    assert asked.reason is not None
 
 
 def test_an_answered_thread_can_resolve_or_fall_back_open():
