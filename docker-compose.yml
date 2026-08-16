@@ -6,9 +6,9 @@
 name: meridian
 
 services:
-  # Same major version as Supabase, so migrations that pass here pass there.
+  # Same major version as Supabase (17), so migrations that pass here pass there.
   postgres:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: meridian
       POSTGRES_PASSWORD: meridian

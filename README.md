@@ -35,7 +35,9 @@ make check       # lint, mypy --strict, pytest
 Local services are optional and not needed by the test suite:
 
 ```bash
-make db          # Postgres 15 on :54329, for integration tests
+make migrate     # apply db/migrations to DATABASE_URL
+make seed        # load the pre-alert board
+make db          # Postgres 17 on :54329, if you prefer local to Supabase
 make temporal    # Temporal dev server, UI on :8233
 ```
 
@@ -133,7 +135,7 @@ Budget and cut list in [`SCOPE.md`](./SCOPE.md).
 - [x] repo skeleton, tooling, local services
 - [ ] **0** Composio OAuth, inbox snapshot to `fixtures/emails/`
 - [x] **1** `domain/` — primitives, graph, review, frozen
-- [ ] **2** migrations, `repositories/`, seed board
+- [x] **2** migrations, `repositories/`, seed board
 - [ ] **3** `compiler/` — *checkpoint: a spec freezes*
 - [ ] **4** `cli.py`
 - [ ] **5** `api/` skeleton + Railway — three services, deployed thin and early

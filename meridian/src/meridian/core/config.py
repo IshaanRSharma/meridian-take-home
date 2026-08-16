@@ -6,16 +6,22 @@ file rather than a scavenger hunt.
 """
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Resolved from this file rather than the working directory, because the tests
+# run from `meridian/`, the CLI runs from the repo root, and Railway runs from
+# somewhere else again. A relative env_file silently reads nothing.
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 class Settings(BaseSettings):
     """Everything the process needs from its environment."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=REPO_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
