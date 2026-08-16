@@ -36,3 +36,6 @@ docs/take-home-brief.md
 
 # Generated agents ARE committed — see Claude.md §7 "agents/ is committed".
 # Nothing under agents/ belongs here.
+
+# Agent worktrees — transient, never committed.
+.claude/worktrees/

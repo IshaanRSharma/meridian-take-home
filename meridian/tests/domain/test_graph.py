@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from meridian.domain.errors import NotFoundError
+from meridian.domain.errors import IncompleteError, NotFoundError
 from meridian.domain.graph import (
     ActionPrimitive,
     Board,
@@ -329,6 +329,60 @@ def test_cardinality_per_must_resolve_to_a_declared_field():
     assert "primitive:coa:cardinality.per" in anchors(board)
 
 
+# --- what a card declares --------------------------------------------------
+
+
+def test_an_event_captures_what_it_both_reads_and_produces():
+    event = EventPrimitive(
+        key="arrived",
+        config=EventConfig(name="Arrived", captures=["invoice"], outcomes=[PASS, FAIL]),
+    )
+    assert event.declared_outcomes() == (PASS, FAIL)
+    assert event.declared_inputs() == ()
+    assert event.reads() == ("invoice",)
+    assert event.produces() == ("invoice",)
+
+
+def test_an_action_reads_its_inputs_and_produces_what_its_lookup_names():
+    action = ActionPrimitive(
+        key="verify",
+        config=ActionConfig(
+            name="Verify",
+            effect="lookup",
+            inputs=["application"],
+            produces="record",
+            outcomes=[PASS],
+        ),
+    )
+    assert action.declared_outcomes() == (PASS,)
+    assert action.declared_inputs() == ("application",)
+    assert action.reads() == ("application",)
+    assert action.produces() == ("record",)
+
+
+def test_an_action_that_looks_nothing_up_produces_nothing():
+    assert ActionPrimitive(key="done", config=ActionConfig(name="Done")).produces() == ()
+
+
+def test_a_check_reads_its_inputs_and_produces_nothing():
+    check = CheckPrimitive(
+        key="looks_ok",
+        config=CheckConfig(name="Looks ok?", inputs=["invoice"], outcomes=[PASS, FAIL]),
+    )
+    assert check.declared_outcomes() == (PASS, FAIL)
+    assert check.declared_inputs() == ("invoice",)
+    assert check.reads() == ("invoice",)
+    assert check.produces() == ()
+
+
+def test_an_entity_declares_nothing_at_all():
+    entity = EntityPrimitive(key="invoice", config=EntityConfig(name="Invoice"))
+    assert entity.declared_outcomes() == ()
+    assert entity.declared_inputs() == ()
+    assert entity.reads() == ()
+    assert entity.produces() == ()
+
+
 # --- flow shape ------------------------------------------------------------
 
 
@@ -397,6 +451,51 @@ def test_dry_run_bounds_itself_on_a_cycle(tiny: Board):
     board = board.model_copy(update={"primitives": (*board.primitives[:3], complain)})
     run = board.dry_run({"looks_ok": "fail"})
     assert run.result == "loop"
+
+
+def test_dry_run_will_not_guess_the_only_conditional_edge(tiny: Board):
+    # One edge left, and it carries 'pass'. A scenario silent about how the
+    # check came out has not said the check passed.
+    board = tiny.model_copy(update={"edges": tiny.edges[:2]})
+    run = board.dry_run({})
+    assert run.result == "undefined_branch"
+    assert [s.key for s in run.trace] == ["arrived", "looks_ok"]
+    assert "done" in run.unreached
+
+
+def test_dry_run_takes_an_unconditional_edge_without_an_outcome(tiny: Board):
+    run = tiny.dry_run({"looks_ok": "pass"})
+    # 'arrived' names no outcome and is traversed anyway, because e1 is
+    # unconditional and so depends on nothing the scenario withheld.
+    assert [s.key for s in run.trace] == ["arrived", "looks_ok", "done"]
+    assert run.trace[0].outcome is None
+
+
+@pytest.fixture
+def two_entries(tiny: Board) -> Board:
+    """The same board, reachable from a second Event as well."""
+    return tiny.model_copy(
+        update={
+            "primitives": (
+                *tiny.primitives,
+                EventPrimitive(key="chased", config=EventConfig(name="Chased")),
+            ),
+            "edges": (*tiny.edges, Edge(key="e4", from_key="chased", to_key="looks_ok")),
+        }
+    )
+
+
+def test_dry_run_refuses_to_pick_between_two_entry_points(two_entries: Board):
+    with pytest.raises(IncompleteError) as caught:
+        two_entries.dry_run({"looks_ok": "pass"})
+    assert "arrived" in str(caught.value)
+    assert "chased" in str(caught.value)
+
+
+def test_dry_run_walks_a_two_entry_board_from_the_start_it_is_given(two_entries: Board):
+    run = two_entries.dry_run({"looks_ok": "pass"}, start="chased")
+    assert run.result == "reached_terminal"
+    assert [s.key for s in run.trace] == ["chased", "looks_ok", "done"]
 
 
 # --- the seed board --------------------------------------------------------

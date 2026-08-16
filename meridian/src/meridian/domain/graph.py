@@ -22,7 +22,7 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
-from meridian.domain.errors import NotFoundError
+from meridian.domain.errors import IncompleteError, NotFoundError
 from meridian.domain.primitives import (
     ActionConfig,
     BoardKey,
@@ -32,12 +32,18 @@ from meridian.domain.primitives import (
     EventConfig,
     FieldRef,
     Finding,
+    Outcome,
     Severity,
 )
 
 # A dry run walks a finite graph, but `repeat` edges make it cyclic. The bound is
 # generous enough that no honest board hits it and small enough to fail fast.
 MAX_DRY_RUN_STEPS = 200
+
+
+# Every card answers the same four questions, and each type answers them from
+# its own config. Spelling that out per type is what makes a wrong attribute a
+# type error rather than a permanently empty answer nothing would notice.
 
 
 class EventPrimitive(DomainModel):
@@ -48,6 +54,24 @@ class EventPrimitive(DomainModel):
     group_key: BoardKey | None = None
     config: EventConfig = EventConfig()
 
+    def declared_outcomes(self) -> tuple[Outcome, ...]:
+        """Every outcome this card names."""
+        return self.config.outcomes
+
+    def declared_inputs(self) -> tuple[str, ...]:
+        """Entity keys this card takes as input, of which an Event has none."""
+        return ()
+
+    def reads(self) -> tuple[str, ...]:
+        """Entity keys this card reads."""
+        return self.config.captures
+
+    def produces(self) -> tuple[str, ...]:
+        """Entity keys this card brings into existence."""
+        # An entity arrives with the event, so capturing it is both reading it
+        # and putting it on the board.
+        return self.config.captures
+
 
 class ActionPrimitive(DomainModel):
     """A card representing work that gets done."""
@@ -56,6 +80,22 @@ class ActionPrimitive(DomainModel):
     key: BoardKey
     group_key: BoardKey | None = None
     config: ActionConfig = ActionConfig()
+
+    def declared_outcomes(self) -> tuple[Outcome, ...]:
+        """Every outcome this card names."""
+        return self.config.outcomes
+
+    def declared_inputs(self) -> tuple[str, ...]:
+        """Entity keys this card takes as input."""
+        return self.config.inputs
+
+    def reads(self) -> tuple[str, ...]:
+        """Entity keys this card reads."""
+        return self.config.inputs
+
+    def produces(self) -> tuple[str, ...]:
+        """Entity keys this card brings into existence, which a lookup names."""
+        return () if self.config.produces is None else (self.config.produces,)
 
 
 class CheckPrimitive(DomainModel):
@@ -66,6 +106,22 @@ class CheckPrimitive(DomainModel):
     group_key: BoardKey | None = None
     config: CheckConfig = CheckConfig()
 
+    def declared_outcomes(self) -> tuple[Outcome, ...]:
+        """Every outcome this card names."""
+        return self.config.outcomes
+
+    def declared_inputs(self) -> tuple[str, ...]:
+        """Entity keys this card takes as input."""
+        return self.config.inputs
+
+    def reads(self) -> tuple[str, ...]:
+        """Entity keys this card reads."""
+        return self.config.inputs
+
+    def produces(self) -> tuple[str, ...]:
+        """Entity keys this card brings into existence, of which a Check has none."""
+        return ()
+
 
 class EntityPrimitive(DomainModel):
     """A card representing something the process reads or produces."""
@@ -74,6 +130,22 @@ class EntityPrimitive(DomainModel):
     key: BoardKey
     group_key: BoardKey | None = None
     config: EntityConfig = EntityConfig()
+
+    def declared_outcomes(self) -> tuple[Outcome, ...]:
+        """Every outcome this card names, of which an Entity has none."""
+        return ()
+
+    def declared_inputs(self) -> tuple[str, ...]:
+        """Entity keys this card takes as input, of which an Entity has none."""
+        return ()
+
+    def reads(self) -> tuple[str, ...]:
+        """Entity keys this card reads, of which an Entity reads none."""
+        return ()
+
+    def produces(self) -> tuple[str, ...]:
+        """Entity keys this card brings into existence, of which an Entity has none."""
+        return ()
 
 
 Step = EventPrimitive | ActionPrimitive | CheckPrimitive
@@ -284,10 +356,8 @@ class Board(DomainModel):
         An unwired outcome is the most common real gap on a board, so it is
         reported as a fact rather than left to be derived from edges.
         """
-        config = self.p(key).config
-        declared = getattr(config, "outcomes", ())
         wiring = []
-        for outcome in declared:
+        for outcome in self.p(key).declared_outcomes():
             targets = tuple(e.to_key for e in self.outgoing(key) if outcome.name in e.on_outcomes)
             wiring.append(OutcomeWiring(name=outcome.name, wired=bool(targets), to=targets))
         return tuple(wiring)
@@ -296,23 +366,11 @@ class Board(DomainModel):
 
     def readers_of(self, entity_key: str) -> tuple[Step, ...]:
         """Steps that read this entity, whether by capturing it or taking it as input."""
-        readers = []
-        for step in self.steps():
-            captured = getattr(step.config, "captures", ())
-            inputs = getattr(step.config, "inputs", ())
-            if entity_key in captured or entity_key in inputs:
-                readers.append(step)
-        return tuple(readers)
+        return tuple(step for step in self.steps() if entity_key in step.reads())
 
     def producers_of(self, entity_key: str) -> tuple[Step, ...]:
         """Steps that bring this entity into existence."""
-        producers = []
-        for step in self.steps():
-            captured = getattr(step.config, "captures", ())
-            produces = getattr(step.config, "produces", None)
-            if entity_key in captured or produces == entity_key:
-                producers.append(step)
-        return tuple(producers)
+        return tuple(step for step in self.steps() if entity_key in step.produces())
 
     def entity_has_field(self, ref_entity: str, path: str) -> bool:
         """Whether a declared entity carries this field path.
@@ -372,7 +430,7 @@ class Board(DomainModel):
                     )
             declared: set[str] = set()
             if self.has(edge.from_key):
-                declared = {o.name for o in getattr(self.p(edge.from_key).config, "outcomes", ())}
+                declared = {o.name for o in self.p(edge.from_key).declared_outcomes()}
             for outcome in edge.on_outcomes:
                 if outcome not in declared:
                     found.append(
@@ -400,7 +458,7 @@ class Board(DomainModel):
                     )
                 )
         for step in self.steps():
-            for entity_key in getattr(step.config, "inputs", ()):
+            for entity_key in step.declared_inputs():
                 if not self.has(entity_key):
                     found.append(
                         BoardFinding(
@@ -491,6 +549,14 @@ class Board(DomainModel):
         wrong terminal.
         """
         entries = [e.key for e in self.events()]
+        if start is None and len(entries) > 1:
+            # Picking one entry point silently answers a question the caller
+            # never asked, and the other events are simply dropped.
+            msg = (
+                f"this board has {len(entries)} events ({', '.join(entries)}); "
+                "pass start to say which one this scenario begins at"
+            )
+            raise IncompleteError(msg)
         current = start or (entries[0] if entries else None)
         if current is None:
             return DryRunResult(result="dead_end", unreached=tuple(s.key for s in self.steps()))
@@ -525,7 +591,11 @@ class Board(DomainModel):
                         seq=seq,
                         key=current,
                         outcome=outcome,
-                        note=f"no edge carries {outcome!r}",
+                        note=(
+                            "no outcome given and no unconditional edge"
+                            if outcome is None
+                            else f"no edge carries {outcome!r}"
+                        ),
                     )
                 )
                 result = "undefined_branch"
@@ -554,7 +624,10 @@ def _edge_for(leaving: tuple[Edge, ...], outcome: str | None) -> Edge | None:
     for edge in leaving:
         if not edge.on_outcomes:
             return edge
-    return leaving[0] if len(leaving) == 1 else None
+    # No outcome named means we do not know how the card came out, so every edge
+    # left here is conditional on something unknown. Taking the only one would be
+    # a guess reported as a traversal.
+    return None
 
 
 def _field_refs(step: Step) -> dict[str, tuple[FieldRef, ...]]:
