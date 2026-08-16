@@ -8,7 +8,9 @@ requires-python = ">=3.12,<3.13"
 # front. The committed stack is Claude.md §2; carrying a dependency before its
 # unit lands makes the diff lie about what the code actually uses.
 dependencies = [
+    "asyncpg>=0.31.0",
     "pydantic>=2.9",
+    "pydantic-settings>=2.15.0",
 ]
 
 [dependency-groups]
@@ -86,6 +88,12 @@ warn_unreachable = true
 warn_no_return = true
 disallow_any_explicit = false          # jsonb payloads are genuinely dynamic
 plugins = ["pydantic.mypy"]
+
+# asyncpg ships no py.typed marker. Its surface here is small and covered by
+# the round-trip tests, so an override beats hand-maintained stubs.
+[[tool.mypy.overrides]]
+module = "asyncpg.*"
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "tests.*"

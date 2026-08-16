@@ -32,6 +32,12 @@ typecheck: ## mypy --strict
 test: ## Run the test suite
 	$(UV) pytest
 
+migrate: ## Apply db/migrations to DATABASE_URL
+	$(UV) python -m meridian.migrate
+
+seed: ## Load the pre-alert board into $DATABASE_URL
+	$(UV) python -m meridian.seed
+
 cov: ## Run tests with a coverage report
 	$(UV) pytest --cov --cov-report=term-missing
 
