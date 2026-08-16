@@ -192,12 +192,20 @@ class BoardFinding(DomainModel):
     ``anchor`` uses the same vocabulary as thread anchors — ``primitive:<key>``,
     ``edge:<key>``, ``board`` — so a lint finding and a review comment can point
     at the same element.
+
+    ``kind`` says where the fix lives, which is the difference between the two
+    surfaces a process owner works on. ``field`` means there is a blank in the
+    inspector that closes it — pick a role, tick some fields. ``structure``
+    means the fix is on the canvas — draw the missing line, mark the card as an
+    ending. Without it the interface has to guess by checking whether ``field``
+    happens to name a real config attribute, and half of these do not.
     """
 
     anchor: str
     field: str
     reason: str
     severity: Severity = "blocking"
+    kind: Literal["field", "structure"] = "field"
 
 
 class TraceStep(DomainModel):

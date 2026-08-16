@@ -297,6 +297,41 @@ def test_findings_come_back_worst_first(sound: Board):
     assert severities == sorted(severities, key=lambda s: -rules.SEVERITY_RANK[s])
 
 
+def test_a_finding_says_where_its_fix_lives(sound: Board):
+    # The two surfaces a process owner works on. `field` findings become blanks
+    # in the inspector; `structure` findings are canvas gestures — draw the
+    # missing line, mark the card as an ending.
+    orphan = ActionPrimitive(
+        key="orphan", config=ActionConfig(name="Orphan", effect="noop", is_terminal=True)
+    )
+    entity = EntityPrimitive(key="invoice", config=EntityConfig(name="Invoice", fields={"no": {}}))
+    board = sound.model_copy(update={"primitives": (entity, *sound.primitives[1:], orphan)})
+
+    by_anchor = {f"{f.anchor}:{f.field}": f.kind for f in rules.findings(board)}
+    assert by_anchor["primitive:orphan:incoming"] == "structure"
+    assert by_anchor["primitive:invoice:identified_by"] == "field"
+
+
+def test_every_structural_finding_names_something_that_is_not_a_config_field(sound: Board):
+    # If a `structure` finding pointed at a real attribute, the inspector would
+    # render a blank for something no blank can fix.
+    board = sound.model_copy(
+        update={"edges": (*sound.edges, Edge(key="e9", from_key="done", to_key="ghost"))}
+    )
+    for finding in rules.findings(board):
+        if finding.kind == "structure":
+            assert finding.field in {
+                "outgoing",
+                "incoming",
+                "inputs",
+                "outcomes",
+                "name",
+                "from_key",
+                "to_key",
+                "on_outcomes",
+            }
+
+
 def test_tool_resolution_is_not_part_of_this_gate(sound: Board):
     # A process owner cannot fix an unbound channel, so putting it on the canvas
     # would be noise they can do nothing about. Different gate, different owner.

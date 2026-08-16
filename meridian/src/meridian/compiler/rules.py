@@ -63,6 +63,7 @@ def edge_endpoints_exist(board: Board) -> list[BoardFinding]:
             anchor=f"edge:{edge.key}",
             field=role,
             reason=f"This connects to {key!r}, which is not on the board.",
+            kind="structure",
         )
         for edge in board.edges
         for role, key in (("from_key", edge.from_key), ("to_key", edge.to_key))
@@ -78,6 +79,7 @@ def edge_endpoints_are_steps(board: Board) -> list[BoardFinding]:
             anchor=f"edge:{edge.key}",
             field=role,
             reason=f"{key!r} is something the process reads, not a step.",
+            kind="structure",
         )
         for edge in board.edges
         for role, key in (("from_key", edge.from_key), ("to_key", edge.to_key))
@@ -97,6 +99,7 @@ def edge_outcomes_are_declared(board: Board) -> list[BoardFinding]:
                 anchor=f"edge:{edge.key}",
                 field="on_outcomes",
                 reason=f"This carries {outcome!r}, which the card before it never declares.",
+                kind="structure",
             )
             for outcome in edge.on_outcomes
             if outcome not in declared
@@ -116,6 +119,7 @@ def outcomes_are_wired(board: Board) -> list[BoardFinding]:
             anchor=f"primitive:{card.key}",
             field="outcomes",
             reason=f"Nothing says what happens on {wiring.name!r}.",
+            kind="structure",
         )
         for card in board.nodes()
         for wiring in board.outcomes(card.key)
@@ -134,6 +138,7 @@ def entities_are_read(board: Board) -> list[BoardFinding]:
             field="name",
             reason="Nothing on the board reads this.",
             severity="important",
+            kind="structure",
         )
         for entity in board.entities()
         if not board.readers_of(entity.key)
@@ -147,6 +152,7 @@ def inputs_exist(board: Board) -> list[BoardFinding]:
             anchor=f"primitive:{card.key}",
             field="inputs",
             reason=f"This reads {key!r}, which is not on the board.",
+            kind="structure",
         )
         for card in board.nodes()
         for key in card.declared_inputs()
@@ -224,6 +230,7 @@ def events_lead_somewhere(board: Board) -> list[BoardFinding]:
             anchor=f"primitive:{event.key}",
             field="outgoing",
             reason="Nothing happens after this arrives.",
+            kind="structure",
         )
         for event in board.events()
         if not board.outgoing(event.key)
@@ -238,6 +245,7 @@ def dead_ends_are_endings(board: Board) -> list[BoardFinding]:
             field="outgoing",
             reason="The process stops here, but this is not marked as an ending.",
             severity="important",
+            kind="structure",
         )
         for card in board.terminals()
         if not _is_an_ending(card)
@@ -252,6 +260,7 @@ def steps_are_reachable(board: Board) -> list[BoardFinding]:
             field="incoming",
             reason="Nothing leads here.",
             severity="important",
+            kind="structure",
         )
         for card in board.unreachable()
     ]
