@@ -37,7 +37,7 @@ shipment and reports discrepancies.
 | Backend language | Python 3.12 | Temporal + Composio + Anthropic SDKs; generated agents are Python so the repair agent edits one language |
 | API | FastAPI | async; OpenAPI schema generates the frontend types |
 | Validation | Pydantic v2 | discriminated unions for primitive configs; the schema *is* the contract |
-| DB | Supabase (Postgres 15) | managed Postgres + Realtime + Storage |
+| DB | Supabase (Postgres 17) | managed Postgres + Realtime + Storage |
 | DB access | asyncpg, confined to `persistence/` | no ORM; SQL lives in one place |
 | Migrations | plain `.sql` + Supabase CLI | no Alembic against a managed DB |
 | Durable execution | Temporal (Python SDK) | resumption, timers, signals, replay |
@@ -803,7 +803,7 @@ many COAs to expect; nothing configures a count.
 | Dependencies are added by the unit that needs them | a manifest listing the whole §2 stack on day one makes every later diff silent about what the code actually started using. The stack is still §2; only its arrival is staged. |
 | `unmet()` returns objects, not strings | lint would otherwise re-derive severity and anchor from prose. This is the difference between §22 Layer 1 being a gate and being a printout. |
 | Conditional requirements live in `unmet()`, never in validators | a PO drops a half-filled card and walks away. Pydantic validators would make that board unstoreable; the completeness contract belongs to the freeze gate, not to persistence. |
-| Local Postgres for tests, Supabase for real | integration tests never touch a shared database, and matching Supabase's major version means a migration that passes locally passes there. |
+| Local Postgres for tests, Supabase for real | integration tests never touch a shared database, and matching Supabase's major version means a migration that passes locally passes there. Enforced rather than assumed: `TEST_DATABASE_URL` is separate and `requires_test_database()` refuses to hand back the production one, because a rollback cannot undo a migration. |
 | **Entity is the fourth card, and `documents` is not a table** | the brief's own example set is "a trigger, **an input**, a business rule, or a system". A Check's `inputs` referenced documents that appeared nowhere on the canvas, so a PO could not see what a Check read. As a card it is a row in `primitives`; as a side panel it was a second interaction to learn. |
 | `entity`, not `document` | tested against five processes: in four of five, most entities come from a **lookup**, not from an emailed file. Pre-alert is the outlier. `document` would be a lie in the spec and in generated code. The palette label stays plain language — the type name and the UI string are different artifacts and need not agree. |
 | A lookup produces an Entity | collapses two kinds of addressable data into one. `Action.produces` names an Entity card and `Check.inputs` is uniformly a list of Entity keys, so `ProducedInput` disappears. Four cards, one fewer concept in the type system. |

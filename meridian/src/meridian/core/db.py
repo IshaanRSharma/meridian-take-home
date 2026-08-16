@@ -21,12 +21,17 @@ _STATEMENT_CACHE_SIZE = 0
 _pool: asyncpg.Pool | None = None
 
 
-async def pool() -> asyncpg.Pool:
-    """The shared pool, created on first use."""
+async def pool(dsn: str | None = None) -> asyncpg.Pool:
+    """The shared pool, created on first use.
+
+    ``dsn`` is for the test harness, which names its database explicitly rather
+    than inheriting the one the application would reach for. Passing it is how
+    the suite stays off Supabase without mutating the environment.
+    """
     global _pool  # noqa: PLW0603 - one pool per process, created lazily
     if _pool is None:
         _pool = await asyncpg.create_pool(
-            settings().requires_database(),
+            dsn or settings().requires_database(),
             min_size=1,
             max_size=10,
             statement_cache_size=_STATEMENT_CACHE_SIZE,

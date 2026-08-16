@@ -32,6 +32,10 @@ class Settings(BaseSettings):
         default="",
         description="asyncpg connection string. Supabase in production, docker-compose locally.",
     )
+    test_database_url: str = Field(
+        default="postgresql://meridian:meridian@localhost:54329/meridian?sslmode=disable",
+        description="Integration tests only. The container `make db` starts, which has no SSL.",
+    )
     openai_api_key: str = Field(default="")
     openai_model: str = Field(default="")
 
@@ -48,6 +52,25 @@ class Settings(BaseSettings):
             msg = "DATABASE_URL is not set; copy .env.example to .env and fill it in"
             raise RuntimeError(msg)
         return self.database_url
+
+    def requires_test_database(self) -> str:
+        """Where integration tests run — never the production database.
+
+        The suite rolls every transaction back, so nothing it writes survives.
+        That is not the protection that matters: a rollback cannot undo a
+        migration, and ``make db`` applies migrations to whatever it is aimed
+        at. So the guarantee is that the two are never the same database.
+        """
+        if not self.test_database_url:
+            msg = "TEST_DATABASE_URL is not set; run `make db` for a local Postgres"
+            raise RuntimeError(msg)
+        if self.test_database_url == self.database_url:
+            msg = (
+                "TEST_DATABASE_URL is the same database as DATABASE_URL. "
+                "Integration tests run against the local container from `make db`."
+            )
+            raise RuntimeError(msg)
+        return self.test_database_url
 
 
 @lru_cache

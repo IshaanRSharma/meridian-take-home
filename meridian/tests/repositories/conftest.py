@@ -1,8 +1,12 @@
-"""A database connection that never commits.
+"""A connection to the local test database, whose work is never committed.
 
-Every repository test runs inside a transaction that is rolled back afterwards,
-so the suite can run against the real Supabase project without leaving rows
-behind or letting one test see another's writes.
+Two separate protections, because they cover different failures.
+
+Every test runs inside a transaction that is rolled back, so one test never
+sees another's writes. And the database is the container ``make db`` starts —
+never Supabase — because a rollback cannot undo a migration, and applying
+migrations is exactly what preparing a test database involves.
+``Settings.requires_test_database`` refuses to hand over the production URL.
 
 The pool is closed after each test as well. It is a module-level global bound to
 the event loop that created it, and pytest-asyncio gives each test a fresh loop
@@ -27,11 +31,13 @@ async def _release_pool() -> AsyncIterator[None]:
 
 @pytest.fixture
 async def connection() -> AsyncIterator[asyncpg.Connection]:
-    """A connection whose work is always rolled back."""
-    if not settings().database_url:
-        pytest.skip("DATABASE_URL is not set")
+    """A connection to the test database, always rolled back."""
+    try:
+        acquired = await pool(settings().requires_test_database())
+    except (OSError, asyncpg.PostgresError) as exc:
+        pytest.skip(f"no test database — run `make db` ({exc})")
 
-    async with (await pool()).acquire() as conn:
+    async with acquired.acquire() as conn:
         transaction = conn.transaction()
         await transaction.start()
         try:

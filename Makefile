@@ -7,6 +7,10 @@
 SHELL := /bin/bash
 UV    := cd meridian && uv run
 
+# The database integration tests run against. Matches Settings.test_database_url
+# so `make db` and the suite agree without either reading the other's config.
+TEST_DB := postgresql://meridian:meridian@localhost:54329/meridian?sslmode=disable
+
 .DEFAULT_GOAL := help
 .PHONY: help install fmt lint typecheck test cov check db temporal down clean
 
@@ -44,8 +48,13 @@ cov: ## Run tests with a coverage report
 check: lint typecheck test ## Everything CI would run
 
 # ── local services ───────────────────────────────────────────────────────
-db: ## Start local Postgres 15 for integration tests (port 54329)
+db: ## Start local Postgres 17 for integration tests and migrate it (port 54329)
 	docker compose up -d postgres
+	@until docker compose exec -T postgres pg_isready -U meridian -d meridian >/dev/null 2>&1; \
+		do sleep 1; done
+	docker compose exec -T postgres psql -qU meridian -d meridian -v ON_ERROR_STOP=1 \
+		< meridian/db/bootstrap.sql
+	cd meridian && DATABASE_URL=$(TEST_DB) uv run python -m meridian.migrate
 
 temporal: ## Start the Temporal dev server (gRPC 7233, UI http://localhost:8233)
 	docker compose up -d temporal

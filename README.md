@@ -37,7 +37,7 @@ Local services are optional and not needed by the test suite:
 ```bash
 make migrate     # apply db/migrations to DATABASE_URL
 make seed        # load the pre-alert board
-make db          # Postgres 17 on :54329, if you prefer local to Supabase
+make db          # Postgres 17 on :54329, migrated — what the test suite uses
 make temporal    # Temporal dev server, UI on :8233
 ```
 
