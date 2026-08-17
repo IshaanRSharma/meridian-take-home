@@ -56,18 +56,49 @@ def test_an_unbound_role_names_what_this_customer_does_define():
 
 def test_composio_without_a_connection_says_which_command_fixes_it():
     with pytest.raises(BindingError, match="connect check"):
-        ComposioProvider(client=None, entity_id="aurologistics").execute("GMAIL_SEND_EMAIL", {})
+        ComposioProvider(client=None, user_id="u").execute("GMAIL_SEND_EMAIL", {})
+
+
+class _Envelope:
+    """Composio's real shape: an envelope with the payload under `data`."""
+
+    def __init__(self, **envelope):
+        self._envelope = envelope
+        self.tools = self
+
+    def execute(self, action, user_id, arguments):
+        self.seen = (action, user_id, arguments)
+        return self._envelope
+
+
+def test_a_successful_call_is_unwrapped_to_its_data():
+    client = _Envelope(successful=True, data={"messages": [{"subject": "Pre-Alert"}]})
+    result = ComposioProvider(client, user_id="u").execute("GMAIL_FETCH_EMAILS", {"max_results": 3})
+    assert result == {"messages": [{"subject": "Pre-Alert"}]}
+    assert client.seen == ("GMAIL_FETCH_EMAILS", "u", {"max_results": 3})
+
+
+def test_a_failed_call_raises_even_though_composio_does_not():
+    # It reports failure by returning successful=False rather than raising. A
+    # caller watching only for exceptions would read the error as an empty
+    # result, and an empty result is how a check passes for the wrong reason.
+    client = _Envelope(successful=False, error="rate limited", data={})
+    with pytest.raises(RetryableError, match="rate limited"):
+        ComposioProvider(client, user_id="u").execute("GMAIL_FETCH_EMAILS", {})
 
 
 def test_a_provider_failure_is_retryable_not_a_business_outcome():
     # Getting this backwards is the worse mistake: a supervisor would be told a
     # shipment has a discrepancy because a network blipped.
     class Broken:
-        def execute(self, action, args):
-            raise ConnectionError("rate limited")
+        def __init__(self):
+            self.tools = self
+
+        def execute(self, action, user_id, arguments):
+            raise ConnectionError("the network is down")
 
     with pytest.raises(RetryableError):
-        ComposioProvider(client=Broken(), entity_id="e").execute("GMAIL_SEND_EMAIL", {})
+        ComposioProvider(client=Broken(), user_id="u").execute("GMAIL_SEND_EMAIL", {})
 
 
 def test_generated_code_never_learns_the_provider_action():
