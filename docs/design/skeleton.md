@@ -314,8 +314,11 @@ trace answers whether it was actually called. Cheap — the data is already in
    §15's own test — *"if that is awkward, the contract is wrong"* — run twice.
 2. **The coverage table is a checklist.** Every cell covered or skipped **with a
    reason**, so a gap is a decision rather than a discovery during the sweep.
-3. **The leak test.** `grep -ri 'shipment\|invoice\|coa\|batch\|container'
-   runtime/` returns nothing.
+3. **The leak test, on identifiers rather than on files.** No module, class,
+   function, parameter or attribute name in `runtime/` may contain a customer
+   noun. A grep over whole files is the wrong check — five docstrings use the
+   running example to explain *why* a decision was made, and that is
+   documentation rather than a leak. Parse the AST and inspect identifiers.
 4. **The dependency rule.** `runtime/` imports `domain` only — never `compiler`,
    `reviewer`, `codegen` or `healing`. A worker process should not carry the
    platform.

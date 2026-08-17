@@ -9,8 +9,10 @@ requires-python = ">=3.12,<3.13"
 # unit lands makes the diff lie about what the code actually uses.
 dependencies = [
     "asyncpg>=0.31.0",
+    "openai>=3.1.0",
     "pydantic>=2.9",
     "pydantic-settings>=2.15.0",
+    "temporalio>=1.9",
 ]
 
 [dependency-groups]
