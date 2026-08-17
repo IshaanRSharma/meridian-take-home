@@ -35,9 +35,9 @@ def test_hints_are_readable_and_absent_by_default(ctx: AgentContext):
 
 
 def test_the_runtime_imports_nothing_from_the_platform():
-    # runtime/ is imported BY generated agents; importing the compiler or the
-    # reviewer here would drag the whole platform into a worker process, and
-    # into the workflow sandbox.
+    # Imported BY generated agents, so the compiler or the reviewer appearing
+    # here would drag the whole platform into a worker process and into the
+    # workflow sandbox. This one is a real constraint, not a preference.
     forbidden = ("compiler", "reviewer", "codegen", "healing", "repositories", "api")
     for module in pkgutil.walk_packages(meridian.runtime.__path__, "meridian.runtime."):
         source = importlib.import_module(module.name)
@@ -62,7 +62,8 @@ def test_the_runtime_holds_no_module_level_mutable_state():
 
 
 def test_the_public_surface_is_one_import(ctx: AgentContext):
-    # The import allowlist for generated code has one entry because of this.
+    # A generated file has one import to remember rather than a map of the
+    # package. Guidance rather than a gate — the scaffold is a starting point.
     surface = ("AgentContext", "CheckResult", "Failure", "RunTrace", "RetryableError")
     for name in surface:
         assert hasattr(meridian.runtime, name), f"{name} is not on the public surface"

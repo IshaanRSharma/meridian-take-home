@@ -1,9 +1,14 @@
 """What a generated agent is handed — and, as much, what it is denied.
 
-The contract is defined by its absences. There is no clock to call, no provider
-to name, and no address to read. A generated Check cannot be nondeterministic
-about time because there is nothing to ask; it cannot hardcode Gmail because it
-never learns that ``email.send`` is Gmail.
+One of the three modules here that is a real contract rather than a default, and
+it is defined by its absences. There is no clock to call, no provider to name,
+and no address to read. A generated Check cannot be nondeterministic about time
+because there is nothing to ask; it cannot hardcode Gmail because it never
+learns that ``email.send`` is Gmail.
+
+That last part is what makes regenerating an agent directory safe: the OAuth
+grant lives at Composio keyed by an entity id, bindings record only the id, and
+generated code names neither. There is nothing in the directory to lose.
 
 Tools and bindings are Protocols so this module depends on no implementation.
 ``tools/`` provides the real ones and the recording one; the harness provides

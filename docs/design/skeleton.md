@@ -1,32 +1,90 @@
 # The skeleton — choices, assumptions, behaviour
 
-The code a generated agent imports, and the only code it may import. Companion
-to [`whiteboard.md`](./whiteboard.md) (the cards) and
-[`compiler.md`](./compiler.md) (board to spec). This file covers spec to
-running agent.
+A scaffold a coding agent starts from, not a framework it is fenced into.
+Companion to [`whiteboard.md`](./whiteboard.md) (the cards) and
+[`compiler.md`](./compiler.md) (board to spec). This file covers spec to running
+agent.
 
 The brief asks for *"a small, reusable scaffold: an entry point, a place for step
 execution, error handling, a place for business logic, a place for tool calls…
 this shouldn't be specific to one customer's process."*
 
-Status: **not built yet.** `meridian/runtime/` does not exist and `temporalio`
-is not yet a dependency. This is the design it will be built against.
+**Scaffold is the operative word.** The `spec-to-agent` skill starts here, uses
+what fits and replaces what does not. Five things it must not break; everything
+else is a useful default.
+
+Status: `meridian/runtime/` is partially built — the contracts, the error
+policy, the trace, and path resolution. `temporalio` is not yet a dependency.
 
 ---
 
-## 1. What it is general over
+## 1. The whole constraint list
 
-Not over *processes* — over the **vocabulary**. The skeleton is general if, for
-every legal `FrozenSpec`, it can execute the agent that spec describes. Since
-`domain/primitives.py` and `domain/graph.py` are closed sets of enums, "every
-legal spec" is enumerable, and a claim that would otherwise be a vibe becomes a
-table you can check.
+Constrain the interfaces, not the implementation. Four of these five protect
+something outside the agent; only the last is about the code itself.
 
-That reframe is the whole method. "It works on the pre-alert board" is not
-evidence of generality, because the pre-alert board is one point in a large
-space.
+```
+1  never write  bindings/ · fixtures/ · tests/cases/ · spec.lock.json · the registry
+     provisioning and hand-authored ground truth. Expensive, and not reproducible
+     by regenerating anything.
 
-### The space, and what the seed board actually touches
+2  no addresses, provider names or credentials in code
+     ctx.tools.call("email.send", …) and ctx.bindings.role("receiving_supervisor").
+     Rule 1 at the line level.
+
+3  CheckResult keeps its shape
+     the eval row is arithmetic over total / passed / failed.
+
+4  the trace keeps its shape
+     the failure bundle is assembled from it, and the bundle is the product.
+
+5  no clock, no random, no I/O in workflow code
+     Temporal replays workflow code from history. This one breaks recovery,
+     not style.
+```
+
+Everything in `runtime/` beyond those is a default. Three modules are contracts
+because something outside the agent reads them; the rest are convenience:
+
+| | | why |
+|---|---|---|
+| `outcome.py` | **contract** | the eval harness reads `CheckResult` |
+| `trace.py` | **contract** | the healing loop assembles the bundle from it |
+| `context.py` | **contract** | the capability indirection *is* rule 2 |
+| `errors.py` · `policy.py` | default | sensible; a generated agent may ignore them |
+| `check/*` | default | genuinely useful, and replaceable |
+
+### Three earlier rules, deleted
+
+- **A location-based edit rule.** An earlier draft forbade the repair loop from
+  touching `runtime/`. That protected a directory rather than a decision, and it
+  got the stakes backwards: rewriting a business rule under `agents/` was allowed
+  while fixing a PDF reader was not. The real line is `Claude.md` §12's — *could
+  two competent people disagree, and would the customer care?* What survives is
+  narrower and about a genuine hazard: **the loop may edit what runs, never what
+  generates.** `compiler/`, `reviewer/` and `codegen/` produced the artifact under
+  test, and a loop that edits its own generator can make the next build pass by
+  redefining what passing means.
+- **A blanket import allowlist.** Now guidance in the skill file. Rule 1's
+  explicit deny-list is shorter and protects something real.
+- **"Generate twice, byte-identical."** That test assumed Jinja templates. With
+  a coding agent writing the files it means nothing.
+
+### Blast radius is handled by the gate, not by a ban
+
+A patch under `runtime/` affects every agent, and the gate — target passes, no
+regression — computes regressions over one build's previously-passing cases. So
+the gate scales with the radius instead of forbidding the edit: a runtime patch
+re-sweeps every build that imports it. At one agent this costs nothing; at five
+it is automatically stricter.
+
+---
+
+## 2. What it is general over
+
+Not over *processes* — over the **vocabulary**. Since `domain/primitives.py` and
+`domain/graph.py` are closed sets of enums, "can it run any legal spec?" is a
+table rather than an opinion.
 
 ```
 Effect         notify · record · noop      │ lookup · decide
@@ -38,7 +96,7 @@ Quantifier     all                         │ any · none · count
 Scope / grain  per_line_item               │ per_case · per_document
 Measure        —                           │ checked · passed · failed
 Timing         on_arrival · await          │ scheduled · sla
-Cardinality    one_per                     │ one · many
+Cardinality    one · one_per               │ many
 on_failure     —                           │ fail · wait · skip
 Edge relation  normal · exception          │ repeat
 Recipient      role                        │ event
@@ -48,101 +106,42 @@ Recipient      role                        │ event
 ```
 
 **Build only against the left column and the result is silently
-pharma-logistics-shaped.** Two things in the right column are load-bearing and
-appear below.
-
-One gap worth fixing on the board itself: both seed checks currently declare
-`fills: []`, so the mechanism that produces seven of the nine eval columns is
-not exercised by the board as drawn.
+pharma-logistics-shaped.** One gap is on the board rather than in the code: both
+seed checks declare `fills: []`, so the mechanism producing seven of the nine
+eval columns is not exercised by the board as drawn.
 
 ---
 
-## 2. Design choices
+## 3. Design choices
 
-### Three processes were simulated on paper before any file was chosen
-
-Pre-alert alone cannot justify a structure. Two contrasting processes were
-written out and their agents generated by hand on paper:
+### Three processes were simulated before a file was chosen
 
 | | pre-alert | credentialing | vendor compliance |
 |---|---|---|---|
 | starts | an email arrives | an application arrives | **scheduled**, monthly |
-| entities from | **extraction** (PDF) | **lookup** (state board) | lookup |
+| entities from | **extraction** | **lookup** | lookup |
 | checks | `present`, `each_has_matching` | `compare` against `now` | `compare`, `none` |
 | actions | notify · record · noop | **lookup · decide** | notify · queue |
 | waits | a deadline | **an SLA and a person** | a **repeat** until clean |
 
-Three findings came out of it, and every one of them would have been missed by
-building against pre-alert alone.
+Three findings, none of them visible from pre-alert alone.
 
-### An entity is populated three ways, not one
+**An entity is populated three ways, not one.** Extracted from a captured
+document, returned by a `lookup`, or accumulated by Checks as they run.
+`ActionConfig.produces` already says so; the seed board never exercises it. A
+scaffold assuming *entity = extracted* cannot run credentialing at all.
 
-```
-extract   a captured document → fields          pre-alert
-lookup    an Action with effect=lookup          credentialing
-fill      accumulated by Checks as they run     the output row
-```
+**There are two kinds of waiting.** For data — a deadline passes or inputs
+complete. For a person — a signal arrives, or an SLA expires and an `on_timeout`
+branch is taken. Pre-alert has no runtime human.
 
-`ActionConfig.produces` already says so; the pre-alert board simply never
-exercises it. A skeleton that assumes *entity = extracted* cannot run
-credentialing at all. So the store has **pluggable sources**, and extraction is
-one of them rather than the path everything flows through.
-
-### There are two kinds of waiting
-
-```
-wait for DATA     a deadline passes or the inputs complete       pre-alert
-wait for a PERSON a signal arrives, or an SLA expires            credentialing
-```
-
-`effect: decide` means the workflow blocks on a human signal and needs an
-`on_timeout` branch. Pre-alert has no runtime human, so a skeleton derived from
-it would have no plumbing for this beyond document arrival.
-
-### The trigger is not a universal file
-
-`on_arrival` compiles to `signal_with_start`; `scheduled` compiles to a Temporal
-Schedule; and an application arriving over an API has no trigger file at all.
-`trigger.py` is generated *when the spec calls for one*, not always.
-
-### The structure is checked against the PRD diagram, box by box
-
-Reviewing an earlier draft against the PRD's *Shared Agent Skeleton* diagram
-found two boxes with no home — worth recording, because both are load-bearing:
-
-- **Error + retry policy.** The taxonomy existed; the *mapping* from error class
-  to retry configuration did not. "Typed error mapping" is the point of the box.
-- **Observability.** Missing entirely. Given that the failure bundle is the
-  product (§21), the thing that assembles step trace, tool results, inputs and
-  outputs is not a side effect of step execution — it is its own concern.
-
-### `step.py` was planned and is not being built
-
-It would have been `run_step(name, fn)` — invoke, normalise the result, trace.
-But `RunTrace.step()` already is that, as a context manager, and normalising a
-`CheckResult` belongs to the check engine. Building it would create two ways to
-do one thing and a seam for them to disagree. Recorded because deleting a
-planned module is a decision, not an omission.
-
-### Every Temporal import lives in `runtime/temporal/`
-
-An earlier draft called it `workflow/`, which was wrong twice: it holds no
-workflows — the workflow is generated into `agents/<slug>/workflow.py` — and the
-name hid what actually matters, which is that this is the only subpackage that
-imports `temporalio`. Confining it means the type layer and the whole check
-engine stay testable with nothing installed, and swapping the durable-execution
-engine touches one directory.
-
-### The harness lives outside `runtime/`
-
-Generated agents may import `meridian.runtime.*` and their own directory. If the
-harness sat under `runtime/`, a generated file could import its own test rig and
-the allowlist would still pass. Keeping it in `meridian/harness/` makes that
-impossible rather than discouraged.
+**The trigger is not a universal file.** `on_arrival` compiles to
+`signal_with_start`; `scheduled` to a Schedule; an application arriving over an
+API has no trigger at all.
 
 ### Business logic: the logic is not general, the accounting is
 
-Every Check in every process does seven things. Six are identical everywhere:
+Every Check does seven things, and six are identical everywhere:
 
 ```
 resolve paths into rows at a grain      general
@@ -154,247 +153,195 @@ collect evidence rows                   general
 fill counts into the output entity      general
 ```
 
-So the generated Check is a predicate and a call, not a hand-rolled loop.
-Written per-check by a model, the accounting would come out subtly different
-every time and the repair loop would fix the same bug twice.
+Offered as helpers rather than imposed. A Check written against them is shorter
+and gets the counting right; a Check that ignores them is legal.
+
+### `step.py` was planned and is not being built
+
+`RunTrace.step()` already is it, as a context manager, and normalising a
+`CheckResult` belongs to the check engine. Two ways to do one thing is a seam
+for them to disagree. Recorded because deleting a planned module is a decision.
+
+### Every Temporal import lives in `runtime/temporal/`
+
+An earlier draft called it `workflow/`, which was wrong twice: it holds no
+workflows — the workflow is generated into `agents/<slug>/workflow.py` — and the
+name hid what matters, which is that this is the only subpackage importing
+`temporalio`. Confining it keeps the type layer and the check engine testable
+with nothing installed.
 
 ---
 
-## 3. The layout
-
-```
-meridian/src/meridian/runtime/     ← generated agents import ONLY this
-  __init__.py     the public surface — the allowlist has one entry because of it
-  context.py      AgentContext: tools · bindings · clock · hints · log
-  outcome.py      CheckResult · Outcome · Failure · StepResult
-  errors.py       Retryable · Terminal · NeedsHuman · BindingError
-  policy.py       error class → retry configuration
-  trace.py        RunTrace: steps · tool calls · inputs/outputs · spec version
-  state.py        WorkflowState: arrivals · entities · the output row
-  check/
-    paths.py      resolve(entity, "line_items[].batch_no") → [(value, grain)]
-    criteria.py   present · compare · each_has_matching kernels
-    counting.py   tally · roll_up across grains
-    fills.py      apply_fills(row, fills, result)
-    engine.py     the seven steps above, in order
-  temporal/       EVERY temporalio import lives here and nowhere else
-    waits.py      await_data(pred, deadline) · await_decision(signal, sla)
-    routing.py    (step, outcome) → next step, from the edge table
-    activities.py extract · lookup · invoke_capability
-  tools/
-    adapter.py    capability key → provider. never an address, never an action
-    bindings.py   role → recipient, loaded at worker start
-    composio.py   the live provider
-    fixtures.py   same interface; records calls instead of sending
-
-meridian/src/meridian/harness/     ← tests import this. agents cannot.
-  env.py          time-skipping environment
-  cases.py        eval cases + fixture-backed activities
-  compare.py      expected vs actual, per column
-```
-
-Every box in the PRD diagram now has exactly one home:
-
-| diagram box | files |
-|---|---|
-| entry + Temporal workflow | `temporal/waits.py` · `temporal/routing.py` · `state.py` |
-| step executor | `trace.py` — `RunTrace.step()` is the named unit of work |
-| business logic | `check/*` here, plus generated `agents/<slug>/checks/` |
-| Temporal activities | `temporal/activities.py` |
-| tool adapter | `tools/*` |
-| error + retry policy | `errors.py` · `policy.py` |
-| observability | `trace.py` |
-
-### Where generated code lives
-
-```
-agents/<slug>/     at the repo root, beside meridian/ and ui/
-```
-
-Three reasons. It is **output**, not source — different lifecycle, different
-author. It makes path confinement trivially checkable, since codegen and repair
-write only under `agents/<slug>/`. And the repair skill's allowlist is exactly
-that path, so a top-level directory turns the rule into one glob that
-`mvp verify` can enforce rather than prose a skill has to be trusted on.
-
-One wiring detail: the virtualenv lives in `meridian/`, so a generated agent
-importing `meridian.runtime` needs the repo root on the path.
-
-```make
-agent-run:
-	PYTHONPATH=$(PWD) uv run --project meridian python -m agents.$(SLUG).worker
-```
-
-Worth proving with the toy agent on day one, before anything depends on it.
-
----
-
-## 4. What Temporal imposes on the layout
-
-Three constraints from the Python SDK that are not obvious and that change files
-rather than just style.
+## 4. What Temporal imposes
 
 ### The sandbox reloads our code on every workflow run
 
-Standard library and `temporalio` are passed through. **Everything else — our
-runtime, pydantic, the domain types — is completely reloaded per workflow run**,
-which is both a cost and a correctness property (fresh module state, no
-cross-run contamination).
-
-The escape is explicit:
+Standard library and `temporalio` are passed through; **everything else — the
+runtime, pydantic, the domain types — is completely reloaded per run.** The
+escape is explicit:
 
 ```python
 with workflow.unsafe.imports_passed_through():
-    from meridian.runtime import CheckResult, run_step
+    from meridian.runtime import CheckResult, RunTrace
 ```
 
-That is only safe for modules that are genuinely side-effect-free, which turns
-into a **hard design requirement on `runtime/`**:
-
-> No module-level mutable state. No I/O at import. No clock or environment read
-> at import. Every public function pure or explicitly passed its dependencies.
-
-Worth testing directly rather than assuming: import `runtime`, mutate nothing,
-import again, assert no observable difference. If the runtime cannot be passed
-through, every workflow run pays a reload of the whole check engine.
+Only safe for modules free of side effects, which is a real requirement on the
+scaffold: no module-level mutable state, no I/O at import, no clock or
+environment read at import. Two tests assert it. Without it, every workflow run
+reloads the entire check engine.
 
 ### Workflow files must not import activity implementations
 
-Activities do I/O; workflow files are sandboxed. A generated `workflow.py` that
-imports `activities.py` drags the I/O module into the sandbox. Activity
-references are imported under passthrough, and the implementations live in files
-the workflow never touches.
-
-This is the determinism rule showing up a second time, as an *import* rule
-rather than a runtime one — and it is checkable by the same allowlist that
-already guards generated code.
+Activities do I/O; workflow files are sandboxed. This is the determinism rule
+appearing a second time, as an import rule.
 
 ### One dataclass in, not several arguments
 
-Temporal's own guidance: pass a single input object to a workflow, because a
-long-running workflow outlives the signature you first gave it. Generated
-workflows take one `Input` dataclass.
-
-### Naming aligns with the SDK's conventions
-
-`workflows.py` / `activities.py` / `worker.py` is the community layout, and the
-generated agent matches it. The per-primitive `checks/` and `actions/` files are
-not workflows — they are pure functions and payload builders that `workflow.py`
-imports — so one-file-per-primitive coexists with the convention rather than
-fighting it.
+Temporal's own guidance: a long-running workflow outlives the signature it was
+first given.
 
 ---
 
 ## 5. Observability — who owns what
 
-The short answer to *"do we need the database for tracing?"* is **no for
-Temporal's sake, yes for evaluation** — and the split is clean.
+**No database for Temporal's sake. Yes for evaluation.**
 
-| | Temporal gives it | we need it |
+| | Temporal | us |
 |---|---|---|
-| every activity, its input, output, retries, timers | ✅ event history, free | — |
-| a UI to browse one run | ✅ Web UI | — |
-| **why a check failed** — *2 unmatched: `['UAC25022 ', 'uac25019']`* | ❌ | ✅ `CheckResult.failures` |
-| pass rate across cases for one build | ❌ | ✅ `runs` |
-| the reliability curve across builds | ❌ | ✅ `runs` + `agent_builds` |
-| the failure bundle | ❌ | ✅ `failures` + `run_steps` |
+| every activity, its input, output, retries, timers | ✅ free | — |
+| a UI to browse one run | ✅ | — |
+| **why a check failed** — `['UAC25022 ', 'uac25019']` | ❌ | ✅ `CheckResult.failures` |
+| pass rate across cases · the curve across builds | ❌ | ✅ `runs`, `agent_builds` |
+| the failure bundle | ❌ | ✅ `failures`, `run_steps` |
 
-**Temporal owns per-run history; we own cross-run evaluation.** It has no notion
-of *expected* output, so everything comparative is ours by definition.
+Temporal has no notion of *expected* output, so everything comparative is ours
+by definition.
 
-### Do not parse event history
+**Do not parse event history for the bundle.** The harness runs cases through
+the time-skipping environment so history exists, but it dies with the test
+server, it is protobuf-shaped, and decisively it records *"the activity returned
+this"* and never *"these two batch numbers differ only by whitespace and case"*.
+Temporal's history is the link-out for production runs via
+`runs.temporal_workflow_id`.
 
-The harness now runs cases *through* Temporal via the time-skipping environment,
-so history does exist — but the test server is torn down with the test, and the
-history is protobuf-shaped and verbose. More decisively, it records *"the
-activity returned this"* and never *"these two batch numbers differ only by
-whitespace and case"*, which is the entire diagnostic value of the bundle.
+**Tracing is an interceptor.** `worker.Interceptor` is the SDK's cross-cutting
+mechanism, so generated code emits no trace calls for anything crossing the
+activity boundary. Checks never leave the workflow, so `RunTrace.step()` records
+those.
 
-So we record our own trace, and Temporal's history is the **link-out for
-production runs** via `runs.temporal_workflow_id` — exactly the scoping
-`Claude.md` §5.6 already gives `run_steps`.
+**Logging** is `workflow.logger`, never bare `logging` — it is replay-aware.
 
-### Tracing is an interceptor, not a call in generated code
-
-`worker.Interceptor` (`intercept_activity`, `workflow_interceptor_class`) is the
-SDK's cross-cutting mechanism, and it means **generated code emits no trace
-calls at all** for anything crossing the activity boundary. A hybrid:
-
-```
-activities   captured automatically by the interceptor
-checks       recorded by run_step into WorkflowState — they never leave
-             the workflow, so no interceptor sees them
-```
-
-That removes a whole class of thing the codegen skill would otherwise have to
-remember to do, and a whole class of bug where it forgets.
-
-### Logging
-
-`workflow.logger`, never bare `logging`, in workflow code — it is replay-aware
-and will not re-emit a line every time history replays.
-
-### What is deliberately not built
-
-Prometheus metrics via `TelemetryConfig`, OpenTelemetry via
-`contrib.opentelemetry.TracingInterceptor`, and custom Search Attributes are all
-one-liners the SDK offers. `SCOPE.md` cuts search attributes explicitly, and the
-other two demonstrate nothing this take-home is graded on. Named here so their
-absence is a decision.
+**Deliberately not built:** Prometheus via `TelemetryConfig`, OpenTelemetry via
+`contrib.opentelemetry`, custom Search Attributes. All one-liners the SDK
+offers; SCOPE cuts search attributes explicitly and the others demonstrate
+nothing this is graded on.
 
 ---
 
-## 6. Assumptions
+## 6. Artifact lifecycles, and why regeneration is safe
+
+Four artifacts, four owners. This is what makes "delete the directory and
+regenerate" a safe operation.
+
+```
+spec.lock.json            immutable · checksummed        regeneration READS
+bindings/<customer>.yaml  per-customer · hand-edited     regeneration NEVER TOUCHES
+tools registry            global · seeded                regeneration NEVER TOUCHES
+agents/<slug>/src/**      generated                      regeneration REWRITES
+```
+
+**The OAuth grant is in none of them** — it lives at Composio, keyed by entity
+id, and bindings record only that id. So a regenerated agent directory cannot
+cost you a mailbox connection, because the connection was never in it.
+
+A manifest tells the skill what it may rewrite:
+
+```json
+{
+  "slug": "inbound_pre_alert",
+  "spec_checksum": "1e77…",
+  "regenerate": ["src/**"],
+  "preserve":   ["hints.json", "tests/cases/**"],
+  "external":   ["bindings/aurologistics.yaml", "the tools registry"],
+  "capabilities": ["email.fetch", "email.send", "system.write"]
+}
+```
+
+`preserve` is the load-bearing list: eval cases and extraction hints are
+expensive human work, and a regeneration that wiped them would destroy more than
+it created.
+
+**`mvp connect check` after every regeneration** — not because regeneration can
+break a connection, but because proving it did not is the reassurance you want
+after a coding agent has rewritten a directory.
+
+**The trace is a tooling contract.** It records every call by capability key, so
+build N's trace is something build N+1 must still satisfy:
+
+```
+build 1   email.fetch ×1 · doc.extract ×6 · email.send ×1
+build 2   email.fetch ×1 · doc.extract ×6                  ← the notify path vanished
+```
+
+Static conformance asks whether every declared capability has a call site; the
+trace answers whether it was actually called. Cheap — the data is already in
+`trace.tool_calls` and the comparison is a set diff.
+
+---
+
+## 7. Assumptions
 
 - **The vocabulary is expressive enough for the processes we care about.**
-  `Claude.md` §29 documents where it is not — computation (nothing expresses
-  "compute margin"), scheduling and optimisation, and blocking human decisions
-  with an SLA. The skeleton is general *over this vocabulary*, whose boundaries
-  are written down. That is a defensible claim; "works for any business process"
-  is not.
+  `Claude.md` §29 documents where it is not — computation, scheduling and
+  optimisation, blocking human decisions with an SLA. General *over this
+  vocabulary, whose boundaries are written down* is defensible; "works for any
+  business process" is not.
 - **Counting semantics are uniform.** A coarser grain passes exactly when every
-  finer unit beneath it passes. This is what produces `goods_failed: 2` and
-  `invoices_failed: 1` from one rule, and it is asserted rather than proven.
-- **Extraction is nondeterministic and that is contained.** It is an activity,
-  so Temporal records its result once and replays from history. The eval suite
-  mocks it from fixtures, because a suite whose inputs vary cannot be an oracle.
-- **A recording tool adapter is the default.** Nothing is ever sent. The chain
-  from `effect: notify` through capability, binding and activity runs in full
-  and terminates at a recorder, which is also more assertable than a delivered
-  message.
+  finer unit beneath it passes. Asserted, not proven.
+- **Extraction is nondeterministic and that is contained.** It is an activity, so
+  Temporal records its result once and replays from history; the eval suite mocks
+  it from fixtures, because a suite whose inputs vary cannot be an oracle.
+- **Nothing is ever sent.** The chain from `effect: notify` through capability,
+  binding and activity runs in full and terminates at a recorder — which is also
+  more assertable than a delivered message.
 
 ---
 
-## 7. How it gets verified
+## 8. How it gets verified
 
-1. **Two toy agents, hand-written, before any generation exists.** Pre-alert and
-   credentialing, chosen because they exercise opposite halves of the table in
-   §1. `Claude.md` §15's own test — *"if that is awkward, the contract is
-   wrong"* — run twice, on purpose.
-2. **The coverage table is a checklist.** Every cell is marked covered or
-   skipped **with a reason**. A gap then becomes a decision rather than a
-   discovery during the sweep.
+1. **Two toy agents, hand-written, before any generation.** Pre-alert and
+   credentialing, exercising opposite halves of the table in §2. `Claude.md`
+   §15's own test — *"if that is awkward, the contract is wrong"* — run twice.
+2. **The coverage table is a checklist.** Every cell covered or skipped **with a
+   reason**, so a gap is a decision rather than a discovery during the sweep.
 3. **The leak test.** `grep -ri 'shipment\|invoice\|coa\|batch\|container'
-   runtime/` returns nothing. A hit is the running example leaking into
-   framework code.
+   runtime/` returns nothing.
 4. **The dependency rule.** `runtime/` imports `domain` only — never `compiler`,
-   `reviewer`, `codegen` or `healing`. Greppable, so it stays true.
-5. **Passthrough safety.** Import `runtime`, run a workflow, import again, and
-   assert nothing observable changed. If it is not side-effect-free it cannot be
-   passed through, and every workflow run reloads the entire check engine.
+   `reviewer`, `codegen` or `healing`. A worker process should not carry the
+   platform.
+5. **Passthrough safety.** No module-level mutable state, asserted across every
+   submodule.
 
 ---
 
-## 8. Open questions
+## 9. Open questions
 
-- **Which cells are honestly skipped.** `count` quantifier and `scheduled`
-  timing are the likely candidates for a 48-hour build. They should be named in
-  the table, not discovered missing.
-- **`temporalio` is not yet a dependency.** The whole pure core — types, error
-  policy, trace, the check engine — needs nothing new. Only `workflow/waits.py`
-  and `activities.py` do, so that decision can wait.
-- **Whether the toy agents ship.** They exist to falsify the contract, and the
-  credentialing one doubles as evidence the skeleton is not pre-alert-shaped. If
-  they ship, `.claude/skills/spec-to-agent/reference/` is the natural home,
-  where the codegen skill can pattern-match against working code rather than
-  prose.
+- **Localisation names the detecting primitive, not the causing one.** A scanned
+  PDF yielding no text makes `coas_valid` fail, and the bundle points at
+  `checks/coas_valid.py` — a file that behaved correctly. `localize` has to walk
+  upstream through `inputs`: if a Check fails and one of its inputs produced zero
+  instances, blame the producer. Found by tracing a real 37-page attachment,
+  before writing any of it.
+- **The corpus is scanned, and a recorded decision says otherwise.**
+  `Claude.md` §23 says native PDFs go straight to the model and OCR is the
+  fallback. True of the one-page sample; false of the 37-page bundle, where every
+  page is an image with no text layer. **Vision is the main path**, and that is a
+  platform decision rather than something the repair loop should discover at eval
+  time.
+- **`identified_by` is page-level and was read as file-level.** *"The page header
+  reads 'Commercial Invoice'"* — page. So one file yields several entity
+  instances of different kinds, and `extract` must return a list per file with
+  classification per page-range.
+- **Which cells of §2 are honestly skipped.** `count` quantifier and `scheduled`
+  timing are the likely candidates; they should be named, not discovered missing.
+- **`temporalio` is not yet a dependency.** The pure core needs nothing new.
