@@ -1,6 +1,6 @@
 {
   "spec_version": 1,
-  "spec_checksum": "2f6ad2decc523ba7cb6a3d97bd39f9ef1ddfed455c22cd0035743aa0b02919fc",
+  "spec_checksum": "927c19a144c7db3d96aeb5b58b8cdbdd053c760b5aecba725d02d26ed8e51461",
   "entry_point": "src/harness.py",
   "created_by": "codegen",
   "model": "gpt-4o-mini",
