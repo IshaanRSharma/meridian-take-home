@@ -31,7 +31,7 @@ from meridian.runtime.tools.providers import RecordingProvider
 with workflow.unsafe.imports_passed_through():
     import pydantic_core  # noqa: F401 - pydantic loads it lazily on first model use
 
-    from meridian.runtime import CheckResult, RunTrace
+    from meridian.runtime import CheckResult, Failure, RunTrace
     from meridian.runtime.routing import Routes
     from meridian.runtime.temporal.waits import await_inputs
 
@@ -95,11 +95,18 @@ class ToyPreAlert:
         )
 
         with trace.step("coas_valid") as step:
+            missing = case.expected_batches - len(self.arrivals)
             result = CheckResult(
                 outcome="pass" if settled else "missing_coa",
                 total=case.expected_batches,
                 passed=len(self.arrivals),
-                failed=case.expected_batches - len(self.arrivals),
+                failed=missing,
+                # A NESTED MODEL. Every real check reports these; the toy
+                # omitted them, which is exactly why this went unnoticed.
+                failures=tuple(
+                    Failure(grain="per_line_item", locator=f"x[{i}]", reason="absent")
+                    for i in range(missing)
+                ),
             )
             step.produced(result)
 

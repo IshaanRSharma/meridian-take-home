@@ -188,26 +188,72 @@ agents/<slug>/
   tests/cases/     hand-authored ground truth. NEVER overwrite.
 ```
 
-## 6. Two things a workflow file must do
+## 6. Ingestion: attachments to entity instances
 
-Both found by running a real workflow, and neither is guessable.
+Seven attachments arrive and one of them is the invoice. `runtime/ingest.py`
+does this generically — it reads `identified_by` and `fields` off the spec and
+knows nothing else.
 
-**Pass `pydantic_core` through explicitly.** Pydantic loads it lazily on first
-model construction, which happens *inside* the sandbox, so the sandbox warns and
-reloads it every run:
+```
+for each attachment:
+    read     bytes -> text.  TRY THE TEXT LAYER FIRST, fall back to vision
+                             when a page yields nothing. The corpus is mixed:
+                             some PDFs are native, one 37-page bundle is pure
+                             image. Text is fast and cheap and handles most;
+                             vision handles the rest.
+    classify text + the closed set of candidates -> Verdict(entity, confidence)
+    extract  text + one candidate's schema -> a LIST of instances
+    store    keyed by entity
+```
+
+**Classification is page-level, not file-level.** `identified_by` says *"the page
+header reads…"*. One attachment in the corpus is a certificate of compliance
+**and** of analysis; another is a 37-page bundle of an invoice and its
+certificates. So a source yields a *list*, and a single-document file is a list
+of length one — which means "is this one PDF or twelve" never has to be answered.
+
+**Filenames are never evidence.** `CGMU5630052.pdf` is named after a container.
+`U07-5284.pdf` is an invoice. Read the page.
+
+**Anything matching no rule is skipped, and the skip is recorded.** The SOP says
+*locate* the invoice among the attachments, so a signature gif and a house bill
+of lading are simply not part of this process. But *"found no invoices"* and
+*"skipped the invoice"* are the same empty result with entirely different fixes,
+so `store.decline(source, reason)` every time.
+
+**Low confidence declines rather than guessing.** A certificate of compliance
+reads almost exactly like a certificate of analysis. Extracting against the wrong
+schema yields fields that look right and are not, which is worse than declining.
+
+## 7. Three things a workflow file must do
+
+All three found by running a real workflow. None is guessable, and the third
+costs an afternoon if you meet it cold.
+
+**Put EVERY `meridian` import inside the passthrough block.**
 
 ```python
 with workflow.unsafe.imports_passed_through():
-    import pydantic_core  # loaded lazily by pydantic; pass it through or pay a reload
-
-    from meridian.runtime import CheckResult, RunTrace
+    import pydantic_core                       # pydantic loads it lazily
+    from meridian.runtime import CheckResult, Failure, RunTrace
+    from meridian.runtime.check import present, resolve, tally
+    from meridian.runtime.temporal.activities import Capabilities   # THIS ONE TOO
 ```
+
+One import left outside loads `meridian.runtime` sandboxed first, and then
+`Failure` from `check.criteria` and `Failure` from `runtime` are **two different
+classes**. Pydantic rejects one as not being an instance of the other.
+
+**An exception in workflow code is a HANG, not an error.** Temporal treats it as
+a workflow task failure and retries forever, so there is no traceback and no
+exit — it just sits there. If a workflow never returns, assume it is raising and
+wrap the call in `asyncio.wait_for` to surface it.
 
 **Return a dataclass, not `dict[str, object]`.** Temporal's payload converter
 refuses `object` and fails at the boundary with a type error naming a key rather
-than a cause. Concrete types, or nothing crosses.
+than a cause.
 
-## 7. The five rules
+## 8. The five rules
 
 ```
 1  never write  bindings/ · fixtures/ · tests/cases/ · spec.lock.json
@@ -218,7 +264,7 @@ than a cause. Concrete types, or nothing crosses.
    Comparing against `now` reads ctx.clock, which is a frozen value.
 ```
 
-## 8. Verify
+## 9. Verify
 
 ```bash
 make check                                   # ruff · mypy --strict · tests
@@ -230,7 +276,7 @@ Build 1 is **not** expected to pass every case. It must compile, run every case,
 and produce a parseable result for each. A case that **errors** is a problem; a
 case that **fails** is the first point on the curve.
 
-## 9. Your summary
+## 10. Your summary
 
 End with:
 

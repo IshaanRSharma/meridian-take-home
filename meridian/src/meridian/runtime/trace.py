@@ -34,6 +34,21 @@ class ToolCall(BaseModel):
     error: str | None = None
 
 
+class Declined(BaseModel):
+    """Something that arrived and was not used, and why.
+
+    Skipping is correct — the SOP says *locate* the invoice among the
+    attachments — but it must never be silent. "Found no invoices" and "skipped
+    the invoice" are the same empty result with entirely different fixes, and
+    only one of them is a bad recognition rule.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source: str
+    reason: str
+
+
 class Step(BaseModel):
     """One named unit of work, as it happened."""
 
@@ -109,11 +124,33 @@ class RunTrace:
         self.spec_version = spec_version
         self.spec_checksum = spec_checksum
         self._steps: list[Step] = []
+        self._declined: list[Declined] = []
 
     @property
     def steps(self) -> tuple[Step, ...]:
         """Every step so far, in the order it ran."""
         return tuple(self._steps)
+
+    @property
+    def declined(self) -> tuple[Declined, ...]:
+        """Everything that arrived and was not used."""
+        return tuple(self._declined)
+
+    def decline(self, source: str, reason: str) -> None:
+        """Record something skipped, so an empty result has a cause beside it."""
+        self._declined.append(Declined(source=source, reason=reason))
+
+    def unrecognised_share(self) -> float:
+        """What fraction of everything that arrived was skipped.
+
+        A finding rather than a statistic. One signature image among seven
+        attachments is ordinary; six of seven means the recognition rules are
+        wrong, and that is the reviewer signal worth raising before anybody
+        debugs a check that had nothing to read.
+        """
+        used = sum(1 for step in self._steps if step.name.startswith("extract"))
+        total = used + len(self._declined)
+        return len(self._declined) / total if total else 0.0
 
     @contextmanager
     def step(self, name: str, attempt: int = 1) -> Iterator[StepRecorder]:

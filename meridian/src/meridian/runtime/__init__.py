@@ -31,6 +31,7 @@ from meridian.runtime.context import (
     UnboundBindings,
     UnboundTools,
 )
+from meridian.runtime.entities import EntityStore, Skipped
 from meridian.runtime.errors import (
     AgentError,
     BindingError,
@@ -38,6 +39,7 @@ from meridian.runtime.errors import (
     RetryableError,
     TerminalError,
 )
+from meridian.runtime.ingest import Candidate, Source, candidates_from, ingest
 from meridian.runtime.outcome import CheckResult, Failure
 from meridian.runtime.policy import Disposition, RetryPolicy, disposition_of, retry_policy
 from meridian.runtime.trace import RunTrace, Step, StepRecorder, ToolCall
@@ -47,13 +49,17 @@ __all__ = [
     "AgentError",
     "BindingError",
     "Bindings",
+    "Candidate",
     "CheckResult",
     "Disposition",
+    "EntityStore",
     "Failure",
     "NeedsHumanError",
     "RetryPolicy",
     "RetryableError",
     "RunTrace",
+    "Skipped",
+    "Source",
     "Step",
     "StepRecorder",
     "TerminalError",
@@ -61,6 +67,8 @@ __all__ = [
     "ToolCall",
     "UnboundBindings",
     "UnboundTools",
+    "candidates_from",
     "disposition_of",
+    "ingest",
     "retry_policy",
 ]
