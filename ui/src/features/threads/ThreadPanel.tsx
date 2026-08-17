@@ -22,10 +22,10 @@ import { api, type Thread } from '@/lib/api';
 import { Badge, Button, Empty, SeverityBadge, cx } from '@/components/ui';
 
 const STATUS_TONE: Record<Thread['status'], string> = {
-  open: 'border-(--color-accent-dim) bg-(--color-accent-wash) text-[#5ee3d6]',
-  answered: 'border-[#10857b] bg-[#2ad4c414] text-(--color-ok)',
+  open: 'border-(--color-accent-dim) bg-(--color-accent-wash) text-[#0f766e]',
+  answered: 'border-[#5eead4] bg-[#0f766e14] text-(--color-ok)',
   rejected: 'border-(--color-line-strong) text-(--color-ink-faint)',
-  resolved: 'border-[#10857b] bg-[#2ad4c414] text-(--color-ok)',
+  resolved: 'border-[#5eead4] bg-[#0f766e14] text-(--color-ok)',
 };
 
 export default function ThreadPanel({
@@ -52,7 +52,7 @@ export default function ThreadPanel({
   const rest = threads.filter((thread) => thread.status !== 'open');
 
   return (
-    <div className="divide-y divide-(--color-line)">
+    <div className="divide-y divide-(--color-line-soft)">
       {[...open, ...rest].map((thread) => (
         <ThreadCard
           key={thread.id}
@@ -133,7 +133,7 @@ function ThreadCard({
             <button
               key={`${anchor.kind}:${anchor.key}`}
               onClick={() => onGoTo(anchor.key!)}
-              className="rounded border border-(--color-line) px-1.5 py-0.5 font-mono text-[10px] text-(--color-ink-faint) transition-colors hover:border-(--color-accent-dim) hover:text-[#5ee3d6]"
+              className="rounded border border-(--color-line) px-1.5 py-0.5 font-mono text-[10px] text-(--color-ink-faint) transition-colors hover:border-(--color-accent-dim) hover:text-[#0f766e]"
             >
               {anchor.key}
             </button>
@@ -165,7 +165,7 @@ function ThreadCard({
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
               placeholder="Answer in your own words…"
-              className="w-full resize-y rounded-md border border-(--color-line) bg-(--color-ground) px-2.5 py-2 text-[12.5px] leading-relaxed text-(--color-ink) placeholder:text-[#4a4a52] focus:border-(--color-accent-dim) focus:ring-1 focus:ring-(--color-accent-dim) focus:outline-none"
+              className="w-full resize-y rounded-md border border-(--color-line) bg-(--color-ground) px-2.5 py-2 text-[12.5px] leading-relaxed text-(--color-ink) placeholder:text-[#a1a1aa] focus:border-(--color-accent-dim) focus:ring-1 focus:ring-(--color-accent-dim) focus:outline-none"
             />
             <div className="mt-2 flex items-center gap-2">
               <Button

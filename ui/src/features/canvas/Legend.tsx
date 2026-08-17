@@ -43,17 +43,17 @@ export default function Legend({
       {open && (
         <div className="rise max-h-[calc(100vh-140px)] overflow-y-auto rounded-b-lg border border-t-0 border-(--color-line) bg-(--color-surface)/95 backdrop-blur">
           <Section title="Cards">
-            <Row swatch={<Spine tone="bg-[#2ad4c4]" />} name="Event">
+            <Row swatch={<Spine tone="bg-[#0f766e]" />} name="Event">
               Something arrives or a clock goes off. Marked <Chip>START</Chip> when nothing
               leads to it.
             </Row>
-            <Row swatch={<Spine tone="bg-[#ffffff]" />} name="Action">
+            <Row swatch={<Spine tone="bg-[#000000]" />} name="Action">
               A step that gets done — tell someone, write it down, look it up.
             </Row>
-            <Row swatch={<Spine tone="bg-[#a1a1aa]" />} name="Check">
+            <Row swatch={<Spine tone="bg-[#52525b]" />} name="Check">
               A rule. Its outcomes are listed underneath, one line out per outcome.
             </Row>
-            <Row swatch={<Spine tone="bg-[#3d3d44]" dashed />} name="Thing">
+            <Row swatch={<Spine tone="bg-[#000000]" dashed />} name="Thing">
               A document or record the steps read. It sits in its own column and is never
               connected to — steps <em>reference</em> it.
             </Row>
@@ -63,14 +63,14 @@ export default function Legend({
             <Row swatch={<Line />} name="Normal">
               The process moves on. The label is which outcome it carries.
             </Row>
-            <Row swatch={<Line tone="#ffffff" dashed />} name="Exception">
+            <Row swatch={<Line tone="#000000" dashed />} name="Exception">
               Something went wrong and this is where it goes.
             </Row>
             <Row swatch={<Line curved />} name="Repeat">
               Loops back. Routes around the graph, which is what shows this is not a
               one-way flowchart.
             </Row>
-            <Row swatch={<Line tone="#34343a" dotted />} name="Reads">
+            <Row swatch={<Line tone="#000000" dotted />} name="Reads">
               Drawn, never stored — a step naming a thing it reads. You cannot draw one;
               it comes from the card.
             </Row>
@@ -149,7 +149,7 @@ function Spine({ tone, dashed }: { tone: string; dashed?: boolean }) {
     <span
       className={cx(
         'relative block h-5 w-4 overflow-hidden rounded-[3px] border bg-(--color-surface)',
-        dashed ? 'border-dashed border-[#2e2e34]' : 'border-(--color-line)',
+        dashed ? 'border-dashed border-[#a1a1aa]' : 'border-(--color-line)',
       )}
     >
       <span className={cx('absolute inset-y-0 left-0 w-[2px]', tone)} />
@@ -158,7 +158,7 @@ function Spine({ tone, dashed }: { tone: string; dashed?: boolean }) {
 }
 
 function Line({
-  tone = '#52525b',
+  tone = '#71717a',
   dashed,
   dotted,
   curved,

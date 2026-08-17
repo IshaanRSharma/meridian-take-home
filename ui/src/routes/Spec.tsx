@@ -84,7 +84,7 @@ export default function Spec({ boardId }: { boardId: string }) {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2.5">
-            <FileLock2 size={17} className="text-[#5ee3d6]" />
+            <FileLock2 size={17} className="text-[#0f766e]" />
             <h1 className="text-[19px] font-semibold tracking-[-0.015em]">{sealed.name}</h1>
             <Badge tone="accent" mono>
               v{sealed.version}
@@ -131,7 +131,7 @@ export default function Spec({ boardId }: { boardId: string }) {
               title="Steps"
               hint={`${sealed.primitives.length} cards, in the order they compile`}
             />
-            <div className="divide-y divide-(--color-line)">
+            <div className="divide-y divide-(--color-line-soft)">
               {sealed.primitives.map((card) => (
                 <SpecCard key={card.key} card={card} />
               ))}
@@ -141,7 +141,7 @@ export default function Spec({ boardId }: { boardId: string }) {
           {sealed.entities.length > 0 && (
             <Panel>
               <PanelHeader title="Things" hint={`${sealed.entities.length} the steps read`} />
-              <div className="divide-y divide-(--color-line)">
+              <div className="divide-y divide-(--color-line-soft)">
                 {sealed.entities.map((card) => (
                   <SpecCard key={card.key} card={card} />
                 ))}
@@ -153,7 +153,7 @@ export default function Spec({ boardId }: { boardId: string }) {
         <div className="space-y-5">
           <Panel>
             <PanelHeader title="Transitions" hint={`${sealed.edges.length}`} />
-            <ul className="divide-y divide-(--color-line)">
+            <ul className="divide-y divide-(--color-line-soft)">
               {sealed.edges.map((edge) => (
                 <li key={edge.key} className="px-4 py-2 font-mono text-[11px]">
                   <div className="flex items-center gap-1.5 text-(--color-ink-dim)">

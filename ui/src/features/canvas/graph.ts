@@ -165,11 +165,11 @@ export function build(
     type: 'smoothstep',
     animated: false,
     label: edge.on_outcomes.join(' / ') || undefined,
-    labelBgStyle: { fill: '#0b0b0c' },
-    labelStyle: { fill: '#a1a1aa', fontSize: 10, fontFamily: 'ui-monospace, monospace' },
+    labelBgStyle: { fill: '#ffffff' },
+    labelStyle: { fill: '#52525b', fontSize: 10, fontFamily: 'ui-monospace, monospace' },
     labelBgPadding: [4, 2] as [number, number],
     style: {
-      stroke: edge.relation === 'exception' ? '#ffffff' : '#52525b',
+      stroke: edge.relation === 'exception' ? '#000000' : '#71717a',
       strokeWidth: 1.4,
       strokeDasharray: edge.relation === 'exception' ? '5 3' : undefined,
     },
@@ -190,7 +190,7 @@ export function build(
           type: 'straight',
           selectable: false,
           focusable: false,
-          style: { stroke: '#34343a', strokeWidth: 1, strokeDasharray: '2 4' },
+          style: { stroke: '#000000', strokeWidth: 1, strokeDasharray: '2 4' },
           data: { relation: 'reads' },
         });
       }

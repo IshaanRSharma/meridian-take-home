@@ -95,7 +95,7 @@ export default function CardModal({
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className="rise flex max-h-[86vh] w-full max-w-[620px] flex-col overflow-hidden rounded-lg border border-(--color-line) bg-(--color-surface) shadow-2xl shadow-black/50"
+        className="rise flex max-h-[86vh] w-full max-w-[620px] flex-col overflow-hidden rounded-lg border border-(--color-line) bg-(--color-surface) shadow-[0_16px_48px_rgb(0_0_0/0.12)]"
       >
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-(--color-line) px-5 py-3.5">
           <div className="min-w-0">
@@ -141,7 +141,7 @@ export default function CardModal({
                 placeholder="We email the receiving supervisor with the batch and invoice numbers. If they've not come back in two days it goes up to the ops manager."
                 className={cx(
                   'mt-2.5 w-full resize-y rounded-md border border-(--color-line) bg-(--color-ground) px-3 py-2.5',
-                  'text-[13px] leading-relaxed text-(--color-ink) placeholder:text-[#4a4a52]',
+                  'text-[13px] leading-relaxed text-(--color-ink) placeholder:text-[#a1a1aa]',
                   'focus:border-(--color-accent-dim) focus:ring-1 focus:ring-(--color-accent-dim) focus:outline-none',
                 )}
               />

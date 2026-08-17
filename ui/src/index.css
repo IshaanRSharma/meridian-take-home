@@ -2,44 +2,53 @@
 @import 'tailwindcss';
 @import '@xyflow/react/dist/style.css';
 
-/* Black, white, turquoise. Nothing else.
+/* White, black, turquoise. Nothing else.
 
    A three-colour system has to carry meaning some other way, so **severity is
-   luminance, not hue**. On a black ground the brightest thing is the loudest
-   thing, which makes pure white the correct colour for `blocking` and a dim
-   grey the correct one for `minor` — the eye ranks them without being taught a
-   legend. Turquoise is reserved for two jobs and never spent elsewhere: the
-   primary action, and the thing you have selected.
+   luminance, not hue**. On a white page the *darkest* thing is the loudest, so
+   pure black is the right colour for `blocking` and a pale grey the right one
+   for `minor` — the eye ranks them without being taught a legend, where
+   red-amber-grey has to be learned. Turquoise is reserved for two jobs and
+   never spent elsewhere: the primary action, and the thing you have selected.
 
-   That leaves hue free to mean *good*. Nothing in this product is red, so a
-   turquoise badge always reads as resolved, passed or ready. */
+   That leaves hue free to mean *good*. Nothing here is red, so a turquoise
+   badge always reads as resolved, passed or ready. */
 @theme {
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
 
-  --color-ground: #000000;
-  --color-surface: #0b0b0c;
-  --color-raised: #151517;
-  --color-line: #232326;
-  --color-line-strong: #34343a;
+  --color-ground: #ffffff;
+  --color-surface: #ffffff;
+  --color-raised: #f4f4f5;
 
-  --color-ink: #ffffff;
-  --color-ink-dim: #a1a1aa;
-  --color-ink-faint: #6b6b75;
+  /* Outlines are black. Structure — a card, a panel, the header, an input —
+     is drawn with a hairline of pure black, which is what gives the page its
+     technical-drawing feel rather than the soft grey every dashboard uses. */
+  --color-line: #000000;
+  --color-line-strong: #000000;
+  /* Dividers *inside* an outlined container are the exception. Black on every
+     row of a list turns a panel into a spreadsheet grid and buries the outline
+     that was doing the work. */
+  --color-line-soft: #e4e4e7;
 
-  /* The one accent. */
-  --color-accent: #2ad4c4;
-  --color-accent-bright: #5ee3d6;
-  --color-accent-dim: #10857b;
-  --color-accent-wash: #2ad4c414;
+  --color-ink: #000000;
+  --color-ink-dim: #52525b;
+  --color-ink-faint: #71717a;
 
-  /* Severity by brightness. `blocking` is white because white is the loudest
-     thing available on black, and it is the only place full white is used for
-     a status. */
-  --color-blocking: #ffffff;
-  --color-important: #a1a1aa;
-  --color-minor: #6b6b75;
-  --color-ok: #2ad4c4;
+  /* The one accent. Darkened from the display turquoise so it clears contrast
+     on white — the bright variant is unreadable as text here. */
+  --color-accent: #0f766e;
+  --color-accent-bright: #115e59;
+  --color-accent-dim: #5eead4;
+  --color-accent-wash: #0f766e0f;
+
+  /* Severity is brightness, inverted with the ground: on white the *darkest*
+     thing is the loudest, so `blocking` is pure black and `important` recedes
+     to grey. There is no `minor` token — that tier renders as `ink-faint`,
+     which is the same value under the name that says what it does. */
+  --color-blocking: #000000;
+  --color-important: #52525b;
+  --color-ok: #0f766e;
 
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
@@ -69,20 +78,20 @@ h3 {
 
 ::selection {
   background: var(--color-accent-dim);
-  color: #fff;
+  color: var(--color-ink);
 }
 
 /* Scrollbars: present, but not furniture. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-line-strong) transparent;
+  scrollbar-color: #d4d4d8 transparent;
 }
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--color-line-strong);
+  background: #d4d4d8;
   border-radius: 4px;
 }
 *::-webkit-scrollbar-track {
@@ -95,11 +104,11 @@ h3 {
    that exists nowhere else in the product. */
 .react-flow {
   --xy-background-color: var(--color-ground);
-  --xy-edge-stroke-default: #52525b;
+  --xy-edge-stroke-default: #71717a;
   --xy-edge-stroke-selected-default: var(--color-accent);
   --xy-connectionline-stroke-default: var(--color-accent);
   --xy-theme-selected: var(--color-accent);
-  --xy-theme-hover: var(--color-line-strong);
+  --xy-theme-hover: var(--color-ink-dim);
   --xy-theme-edge-hover: var(--color-ink);
   --xy-selection-background-color: var(--color-accent-wash);
   --xy-selection-border-default: 1px dashed var(--color-accent-dim);
@@ -107,7 +116,7 @@ h3 {
   --xy-node-background-color-default: var(--color-surface);
   --xy-node-color-default: var(--color-ink);
   --xy-node-boxshadow-selected-default: 0 0 0 1px var(--color-accent);
-  --xy-handle-background-color-default: var(--color-line-strong);
+  --xy-handle-background-color-default: var(--color-ink);
   --xy-handle-border-color-default: var(--color-ground);
   --xy-controls-button-background-color-default: var(--color-surface);
   --xy-controls-button-background-color-hover-default: var(--color-raised);
@@ -115,7 +124,7 @@ h3 {
   --xy-controls-button-color-hover-default: var(--color-ink);
   --xy-controls-button-border-color-default: var(--color-line);
   --xy-minimap-background-color-default: var(--color-surface);
-  --xy-minimap-mask-background-color-default: rgb(0 0 0 / 0.6);
+  --xy-minimap-mask-background-color-default: rgb(255 255 255 / 0.65);
   --xy-minimap-node-background-color-default: var(--color-line-strong);
   --xy-resize-background-color-default: var(--color-accent);
   --xy-attribution-background-color-default: transparent;
@@ -138,7 +147,7 @@ h3 {
 .react-flow__controls-button {
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-line);
-  fill: var(--color-ink-dim);
+  fill: var(--color-ink);
 }
 .react-flow__controls-button:hover {
   background: var(--color-raised);

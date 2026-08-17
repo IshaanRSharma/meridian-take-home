@@ -27,11 +27,11 @@ type ButtonProps = {
 };
 
 const VARIANT: Record<string, string> = {
-  primary: 'bg-(--color-accent) text-white hover:bg-[#3ee0d0] disabled:bg-(--color-accent-dim)',
+  primary: 'bg-(--color-accent) text-white hover:bg-(--color-accent-bright) disabled:bg-(--color-ink-faint)',
   outline:
-    'border border-(--color-line-strong) text-(--color-ink) hover:bg-(--color-raised) hover:border-[#45454d]',
+    'border border-(--color-line) text-(--color-ink) hover:bg-(--color-raised)',
   ghost: 'text-(--color-ink-dim) hover:text-(--color-ink) hover:bg-(--color-raised)',
-  danger: 'border border-[#3d3d44] text-(--color-blocking) hover:bg-[#ffffff14]',
+  danger: 'border border-[#000000] text-(--color-blocking) hover:bg-[#00000014]',
 };
 
 export function Button({
@@ -112,8 +112,8 @@ export function PanelHeader({
 // ── labels ───────────────────────────────────────────────────────────────────
 
 const SEVERITY_TONE: Record<Severity, string> = {
-  blocking: 'border-[#3d3d44] bg-[#ffffff14] text-(--color-blocking)',
-  important: 'border-[#34343a] bg-[#a1a1aa14] text-(--color-important)',
+  blocking: 'border-[#000000] bg-[#00000014] text-(--color-blocking)',
+  important: 'border-[#000000] bg-[#52525b14] text-(--color-important)',
   minor: 'border-(--color-line-strong) bg-transparent text-(--color-ink-faint)',
 };
 
@@ -142,9 +142,9 @@ export function Badge({
 }) {
   const tones = {
     neutral: 'border-(--color-line-strong) text-(--color-ink-dim)',
-    accent: 'border-(--color-accent-dim) bg-(--color-accent-wash) text-[#5ee3d6]',
-    ok: 'border-[#10857b] bg-[#2ad4c414] text-(--color-ok)',
-    warn: 'border-[#34343a] bg-[#a1a1aa14] text-(--color-important)',
+    accent: 'border-(--color-accent-dim) bg-(--color-accent-wash) text-[#0f766e]',
+    ok: 'border-[#5eead4] bg-[#0f766e14] text-(--color-ok)',
+    warn: 'border-[#000000] bg-[#52525b14] text-(--color-important)',
   };
   return (
     <span
@@ -194,7 +194,7 @@ export function Spinner({ label }: { label?: string }) {
 /** A failure, shown as what it is rather than as a toast that disappears. */
 export function Problem({ title, body }: { title: string; body?: ReactNode }) {
   return (
-    <div className="rounded-md border border-[#3d3d44] bg-[#ffffff0d] px-3 py-2.5">
+    <div className="rounded-md border border-[#000000] bg-[#0000000d] px-3 py-2.5">
       <p className="text-[12.5px] font-medium text-(--color-blocking)">{title}</p>
       {body && <div className="mt-1 text-[12px] leading-relaxed text-(--color-ink-dim)">{body}</div>}
     </div>

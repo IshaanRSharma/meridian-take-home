@@ -46,10 +46,7 @@ export default function Login() {
       <div className="hidden flex-col justify-between border-r border-(--color-line) bg-(--color-surface) p-12 lg:flex">
         <Wordmark />
         <div className="max-w-md">
-          <h1 className="text-[28px] leading-[1.15] font-semibold tracking-[-0.02em]">
-            Turn how the work is actually done into an agent that does it.
-          </h1>
-          <p className="mt-4 text-[13.5px] leading-relaxed text-(--color-ink-dim)">
+          <p className="text-[13.5px] leading-relaxed text-(--color-ink-dim)">
             Draw the process. The reviewer asks what the drawing does not say. Answer, freeze
             the spec, and generate an agent that repairs itself against real cases.
           </p>
@@ -114,14 +111,7 @@ export default function Login() {
 }
 
 function Wordmark() {
-  return (
-    <div className="flex items-center gap-2.5">
-      <div className="grid size-7 place-items-center rounded-md border border-(--color-line-strong) bg-(--color-raised)">
-        <div className="size-2 rounded-[2px] bg-(--color-accent)" />
-      </div>
-      <span className="text-[15px] font-semibold tracking-[-0.01em]">Meridian</span>
-    </div>
-  );
+  return <span className="text-[15px] font-semibold tracking-[-0.01em]">take home</span>;
 }
 
 function UnguardedNotice({ missing, onContinue }: { missing: string[]; onContinue: () => void }) {
@@ -141,7 +131,7 @@ function UnguardedNotice({ missing, onContinue }: { missing: string[]; onContinu
         </div>
         <ul className="mt-2 space-y-1">
           {missing.map((name) => (
-            <li key={name} className="font-mono text-[11.5px] text-(--color-important)">
+            <li key={name} className="font-mono text-[11.5px] text-(--color-ink)">
               {name}
             </li>
           ))}

@@ -194,7 +194,7 @@ function ReviewGate({
 }) {
   if (blocking.length > 0) {
     return (
-      <div className="rounded-md border border-[#3d3d44] bg-[#ffffff0d] px-3 py-2.5">
+      <div className="rounded-md border border-[#000000] bg-[#0000000d] px-3 py-2.5">
         <div className="flex items-center gap-2">
           <TriangleAlert size={14} className="text-(--color-blocking)" />
           <p className="text-[12.5px] font-medium text-(--color-blocking)">
@@ -214,8 +214,8 @@ function ReviewGate({
       <div className="space-y-2">
         <div className="rounded-md border border-(--color-accent-dim) bg-(--color-accent-wash) px-3 py-2.5">
           <div className="flex items-center gap-2">
-            <MessagesSquare size={14} className="text-[#5ee3d6]" />
-            <p className="text-[12.5px] font-medium text-[#5ee3d6]">
+            <MessagesSquare size={14} className="text-[#0f766e]" />
+            <p className="text-[12.5px] font-medium text-[#0f766e]">
               {openQuestions} question{openQuestions === 1 ? '' : 's'} waiting on you
             </p>
           </div>
@@ -242,7 +242,7 @@ function ReviewGate({
           </span>
           <button
             onClick={onSpec}
-            className="text-[11.5px] text-[#5ee3d6] transition-colors hover:text-(--color-ink)"
+            className="text-[11.5px] text-[#0f766e] transition-colors hover:text-(--color-ink)"
           >
             Freeze the spec →
           </button>

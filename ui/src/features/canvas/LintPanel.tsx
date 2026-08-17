@@ -38,7 +38,7 @@ export default function LintPanel({
   );
 
   return (
-    <ul className="divide-y divide-(--color-line)">
+    <ul className="divide-y divide-(--color-line-soft)">
       {sorted.map((finding) => {
         const key = finding.anchor.includes(':')
           ? finding.anchor.split(':')[1]!

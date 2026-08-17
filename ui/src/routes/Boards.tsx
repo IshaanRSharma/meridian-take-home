@@ -105,7 +105,7 @@ export default function Boards() {
           </Panel>
         )}
         {data && data.length > 0 && (
-          <Panel className="divide-y divide-(--color-line) overflow-hidden">
+          <Panel className="divide-y divide-(--color-line-soft) overflow-hidden">
             {data.map((board) => (
               <Row key={board.id} board={board} />
             ))}

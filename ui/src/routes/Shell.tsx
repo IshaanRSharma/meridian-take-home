@@ -46,11 +46,8 @@ export default function Shell({ children, boardId }: { children: ReactNode; boar
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b border-(--color-line) bg-(--color-surface) px-4">
-        <Link to="/boards" className="flex shrink-0 items-center gap-2.5">
-          <div className="grid size-6 place-items-center rounded-[5px] border border-(--color-line-strong) bg-(--color-raised)">
-            <div className="size-[7px] rounded-[2px] bg-(--color-accent)" />
-          </div>
-          <span className="text-[13.5px] font-semibold tracking-[-0.01em]">Meridian</span>
+        <Link to="/boards" className="shrink-0">
+          <span className="text-[13.5px] font-semibold tracking-[-0.01em]">take home</span>
         </Link>
 
         {board && (

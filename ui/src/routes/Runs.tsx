@@ -58,7 +58,7 @@ export default function Runs() {
               body="Run a review round or freeze a spec and it will appear here."
             />
           )}
-          <ul className="divide-y divide-(--color-line)">
+          <ul className="divide-y divide-(--color-line-soft)">
             {cycles.map((one) => (
               <li key={one.id}>
                 <button
@@ -89,7 +89,7 @@ export default function Runs() {
               hint={shown ? shown.id.slice(0, 8) : 'nothing selected'}
             />
             {shown ? (
-              <ol className="divide-y divide-(--color-line)">
+              <ol className="divide-y divide-(--color-line-soft)">
                 {shown.events.map((event) => (
                   <TimelineRow key={event.id} event={event} />
                 ))}
@@ -244,7 +244,7 @@ function EvalTable({ evals }: { evals: Evals }) {
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-(--color-line)">
+        <tbody className="divide-y divide-(--color-line-soft)">
           {evals.shipments.map((row) => (
             <tr key={String(row.expected.shipment_no)}>
               <td className="px-4 py-2 font-mono text-[11.5px] text-(--color-ink)">
