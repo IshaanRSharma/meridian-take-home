@@ -11,6 +11,7 @@ which also means each test cleans up after itself by using its own board.
 """
 
 import asyncio
+from collections.abc import Iterator
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -45,6 +46,33 @@ async def _mute(**kwargs: Any) -> Any:
     """A model that asks nothing and settles nothing."""
     wanted = kwargs.get("text_format")
     return Turn(Distillation(statements=[]) if wanted is Distillation else Questions(questions=[]))
+
+
+@pytest.fixture(autouse=True)
+def against_the_test_database(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Point the CLI at the container, not at production.
+
+    Every other test reaches the database through `requires_test_database()`,
+    which refuses to hand back the production DSN — a rollback cannot undo a
+    migration. The CLI cannot use that guard: it is the real program, so it
+    reads `DATABASE_URL` the way the real program does. Without this, these
+    tests write boards into whatever `.env` points at, which for most of this
+    file's life was the production database.
+
+    Overriding the environment belongs here rather than in the CLI, where a
+    test-only branch would be one more way for production to take the wrong
+    path.
+
+    The cache is cleared on the way out as well as in. `settings` is an
+    `lru_cache`, so a modified value outlives the monkeypatch that made it, and
+    the *next* test would see `DATABASE_URL` equal to `TEST_DATABASE_URL` —
+    which the guard then correctly refuses, one file away from the cause.
+    """
+    dsn = settings().requires_test_database()
+    monkeypatch.setenv("DATABASE_URL", dsn)
+    settings.cache_clear()
+    yield
+    settings.cache_clear()
 
 
 @pytest.fixture(autouse=True)
