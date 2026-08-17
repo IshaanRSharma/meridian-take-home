@@ -1,14 +1,17 @@
 /** The frame: a rail on the left, the pipeline across the top.
  *
  * The pipeline is shown as a path rather than a menu because the order is the
- * product — Whiteboard, then Review, then Spec, then Runs — and a menu implies
- * the steps are independent. Steps that are not reachable yet are shown and
- * disabled rather than hidden, so somebody can see what is coming.
+ * product — Whiteboard, then Spec — and a menu implies the steps are
+ * independent.
+ *
+ * Runs is deliberately absent. Nothing writes a run yet, so the screen could
+ * only ever say "nothing has run"; it returns with codegen and the sweep. The
+ * route still resolves, so a bookmark keeps working.
  */
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, FileLock2, LayoutGrid, LogOut, PenLine } from 'lucide-react';
+import { FileLock2, LayoutGrid, LogOut, PenLine } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/features/auth/session';
 import { Badge, cx } from '@/components/ui';
@@ -39,7 +42,6 @@ export default function Shell({ children, boardId }: { children: ReactNode; boar
           on: true,
           badge: spec ? `v${spec.version}` : undefined,
         },
-        { to: '/runs', label: 'Runs', icon: Activity, on: true },
       ]
     : [];
 
@@ -81,20 +83,6 @@ export default function Shell({ children, boardId }: { children: ReactNode; boar
               </Link>
             );
           })}
-          {!boardId && (
-            <Link
-              to="/runs"
-              className={cx(
-                'flex h-8 items-center gap-2 rounded-md px-2.5 text-[12.5px] transition-colors',
-                pathname === '/runs'
-                  ? 'bg-(--color-raised) text-(--color-ink)'
-                  : 'text-(--color-ink-dim) hover:bg-(--color-raised) hover:text-(--color-ink)',
-              )}
-            >
-              <Activity size={14} />
-              Runs
-            </Link>
-          )}
           <Link
             to="/boards"
             className={cx(
