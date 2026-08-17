@@ -345,6 +345,25 @@ trace answers whether it was actually called. Cheap — the data is already in
   reads 'Commercial Invoice'"* — page. So one file yields several entity
   instances of different kinds, and `extract` must return a list per file with
   classification per page-range.
+- **The serial gate on the seed board is contradicted by the corpus, and a toy
+  agent proved it.** Hand-writing an agent against a real frozen spec and running
+  `CAAU4056270` showed `coas_valid` never executing: `invoice_complete` came out
+  `missing_information`, and edge `e2` routes only `pass`. But the eval row says
+  `coa_total: 5, coa_success: 5` — the real shipment failed its invoice check and
+  still had every certificate counted. Remove the gate and **all seven producible
+  columns match exactly.** The compiler's `sequence` sweep already asks this as a
+  question; the corpus answers it.
+- **`total` means different things in two checks that share a scope.**
+  `invoice_complete` reports 20 (five line items × four codes) and `coas_valid`
+  reports 5 (five batches), both at `scope: per_line_item`. So `goods_failed: 2`
+  is either *two failed assertions* or *two failed line items*, and on this data
+  the two readings coincide. The eval set cannot distinguish them, which makes it
+  a spec gap rather than an implementation choice.
+- **Two things the SOP requires have nowhere to live.** *"Log an error mentioning
+  … Missing Information Type"* and *"reported via email with … description of
+  discrepancy"* are both derived from a check result, and `payload_fields` is
+  `tuple[FieldRef, ...]` pointing into entities. This is `Criterion.produces`,
+  already open in `Claude.md` §8, and the SOP demands it twice.
 - **Which cells of §2 are honestly skipped.** `count` quantifier and `scheduled`
   timing are the likely candidates; they should be named, not discovered missing.
 - **`temporalio` is not yet a dependency.** The pure core needs nothing new.
