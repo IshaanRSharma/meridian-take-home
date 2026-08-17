@@ -47,4 +47,4 @@ eval/runs/*.csv
 # Toy agents for falsifying the skeleton contract. Scratch, never shipped.
 test_toy_agents/
 
-demo/
+demo/.cache/
