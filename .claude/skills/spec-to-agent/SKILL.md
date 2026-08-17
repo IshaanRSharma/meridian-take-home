@@ -318,7 +318,43 @@ Build 1 is **not** expected to pass every case. It must compile, run every case,
 and produce a parseable result for each. A case that **errors** is a problem; a
 case that **fails** is the first point on the curve.
 
-## 10. Your summary
+## 10. Review your own output before you finish
+
+You wrote this in one pass and it has not run. Read it back looking for the
+mistakes this pipeline actually produces — not style, not naming.
+
+**Against the spec**
+
+- every primitive in `spec.primitives` has a file, and every file maps to one
+- every declared outcome is reachable from some branch you wrote
+- every `fills` target is a field the output entity declares
+- nothing you wrote hardcodes a value the spec supplies — an entity name, a
+  field path, a threshold, a channel. If it is in the spec, read it from there.
+
+**Against the five rules**
+
+- no address, provider name or credential in any generated line
+- `CheckResult` still reports counts, and `total == passed + failed`
+- nothing in workflow code reads a clock, calls random, or does I/O
+- every `meridian` import is inside the passthrough block
+
+**The mistakes that fail quietly**
+
+- a check that returns `pass` because it examined *nothing* — zero rows is not
+  success, and `examined_anything()` exists to say so
+- a `try/except` that swallows a failure into a business outcome. A bug reported
+  to a supervisor as a discrepancy is worse than a crash.
+- a field read off an entity the step was never given
+- an entity read before anything produces it — trace the flow, not just the names
+- normalisation nobody asked for. Trimming and lowercasing when the criterion
+  says `each_has_matching` is inventing a rule; leave it exact and let the eval
+  demand it.
+
+**Then say what you are unsure about.** A line saying *"I assumed X; if the
+first sweep fails on Y, that assumption is why"* is worth more than a confident
+summary, because it is the first thing to check when something fails.
+
+## 11. Your summary
 
 End with:
 

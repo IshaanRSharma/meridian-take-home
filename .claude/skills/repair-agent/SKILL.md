@@ -151,7 +151,23 @@ mvp verify --agent <slug>                  # imports · conformance
 The gate is **target passes AND no regression**. It can only reject; a human
 overrides, never approves.
 
-## 7. Report
+## 7. Review the patch before you report
+
+Read the diff back and ask the two questions that matter:
+
+- **Does this fix the cause or the symptom?** Making a case pass by special-casing
+  its values is not a repair, it is a hardcode that the next case exposes.
+- **Does the check still measure what it measured?** A criterion deleted, a
+  comparison loosened, an outcome widened — each makes the suite pass by
+  measuring less. Conformance catches the blatant version; the subtle version is
+  on you.
+
+Then check the mistakes this loop actually produces: a `try/except` that turns a
+bug into a business outcome, a normalisation applied where the spec asked for an
+exact match, and a fix in the file the bundle named when the trace showed the
+cause upstream.
+
+## 8. Report
 
 - what changed, in one sentence, and **why that was the cause**
 - which cases it fixes, and which it does not

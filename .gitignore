@@ -21,10 +21,9 @@ dist/
 .env.local
 *.pem
 
-# Meridian's own material — theirs, not ours to redistribute.
-# Our design notes under docs/design/ are committed.
-docs/*.pdf
-docs/take-home-brief.md
+# Meridian's own material is theirs, not ours to redistribute — and our design
+# notes stay local until the writeup decides what belongs in a public repo.
+docs/
 
 # ── local service data (docker-compose volumes) ──────────────────────────
 .data/
@@ -34,8 +33,9 @@ docs/take-home-brief.md
 .idea/
 *.swp
 
-# Generated agents ARE committed — see Claude.md §7 "agents/ is committed".
-# Nothing under agents/ belongs here.
+# Generated agents are committed once there is one worth reviewing. Held back
+# until the build it belongs to is registered.
+agents/
 
 # Agent worktrees — transient, never committed.
 .claude/worktrees/

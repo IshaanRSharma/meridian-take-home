@@ -17,6 +17,24 @@ distributor: Commercial Invoices and Certificates of Analysis arrive by email
 before a container lands, and the agent checks completeness and consistency
 across a shipment.
 
+The two human-in-the-loop steps — spec to agent, and agent to better agent —
+are run by a person with a coding agent, using checked-in skills:
+
+```bash
+codex                                     # or claude
+> /spec-to-agent                          # reads spec.lock.json, writes agents/<slug>/
+$ mvp eval sweep --build 1
+$ mvp bundle --build 1 | pbcopy           # the copy-ready failure bundle
+> /repair-agent                           # paste, fix one file
+$ mvp build register --from-git
+```
+
+The brief says not to force every step to be autonomous, and this is where that
+lands: the platform's job is to freeze a spec good enough to build from, and to
+make a failure legible enough that one paste fixes it. Both skills live in
+[`.claude/skills/`](./.claude/skills/) and are symlinked to `.codex/skills/` —
+the format is portable across both tools.
+
 **[`Claude.md`](./Claude.md) is the design document.** Every schema and structure
 decision lands there with its reason. Start at §2 for the stack, §3 for the repo
 map, §5 for the schema, §7 for why things are the way they are.
@@ -59,11 +77,12 @@ running anything that talks to a provider.
 |---|---|
 | `meridian/` | the Python backend — one package, two entrypoints (`api`, `worker`), its own `db/` and its own `.env` |
 | `ui/` | the React frontend, HTTP-only against `meridian/`, its own `.env` |
-| `agents/` | **generated** code, committed; the repair loop edits here |
-
+| `meridian/src/meridian/runtime/` | the **skeleton** a generated agent imports — a scaffold, not a framework |
+| `.claude/skills/` | `spec-to-agent` and `repair-agent`, the two human-run steps |
+| `agents/` | **generated** code — local until a build is worth reviewing |
 | `fixtures/` | recorded emails, documents and expected outputs |
 | `bindings/` | per-customer YAML; no secrets |
-| `docs/` | the brief, the SOP and the deck — **local only**, gitignored |
+| `docs/` | the brief, the SOP, the deck and our design notes — **local only** |
 
 Dependencies are added by the unit that first needs them rather than declared up
 front, so each commit's dependency diff says what the code actually started
@@ -157,12 +176,12 @@ Budget and cut list in [`SCOPE.md`](./SCOPE.md).
 - [ ] **0** Composio OAuth, inbox snapshot to `fixtures/emails/`
 - [x] **1** `domain/` — primitives, graph, review, frozen
 - [x] **2** migrations, `repositories/`, seed board
-- [ ] **3** `compiler/` — *checkpoint: a spec freezes*
-- [ ] **4** `cli.py`
+- [x] **3** `compiler/` — *checkpoint: a spec freezes*
+- [x] **4** `cli.py`
 - [ ] **5** `api/` skeleton + Railway — three services, deployed thin and early
-- [ ] **6** `reviewer/` — two rounds, real threads
-- [ ] **7** `runtime/` — the skeleton generated agents import
-- [ ] **8** `codegen/` — *checkpoint: an agent is generated*
+- [x] **6** `reviewer/` — two rounds, real threads
+- [x] **7** `runtime/` — the skeleton generated agents import
+- [ ] **8** `spec-to-agent` skill — *checkpoint: an agent is generated*
 - [ ] **9** eval cases from the snapshot
 - [ ] **10** `healing/` — *checkpoint: the curve moves*
 - [ ] **11** `events.py`, realtime, background jobs
