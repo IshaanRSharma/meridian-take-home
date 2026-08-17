@@ -81,8 +81,11 @@ class SpecPrimitive(DomainModel):
 class FrozenSpec(DomainModel):
     """A board, settled and sealed.
 
-    The checksum covers everything except itself and the timestamp, so two
-    freezes of an unchanged board agree and any later edit is detectable.
+    The checksum covers content and nothing else — not itself, not the moment of
+    sealing, and not the version. A version says which submission this is; a
+    checksum says whether it is the same spec. Keeping them apart is what lets
+    two freezes of an unchanged board agree, which is in turn what lets a
+    pointless re-freeze be refused rather than minting a duplicate.
     """
 
     version: int = 1
@@ -96,6 +99,11 @@ class FrozenSpec(DomainModel):
     # no card, because a claim about an edge does not belong inside a step's
     # file. Without a home here it would be lost at the freeze.
     edge_context: dict[str, ScopedContext] = Field(default_factory=dict)
+    # And a statement about a *thing* — how to recognise a certificate, how a
+    # batch number is written — is true wherever it is read, so it belongs to
+    # the entity rather than to whichever step happened to read it first. The
+    # generator writing the extraction schema is the one that needs it.
+    entity_context: dict[str, ScopedContext] = Field(default_factory=dict)
     capabilities: tuple[str, ...] = ()
 
     def payload(self) -> str:
@@ -103,8 +111,19 @@ class FrozenSpec(DomainModel):
 
         Sorted keys and no whitespace, so the digest depends on content rather
         than on how the JSON happened to be serialised.
+
+        Unset fields are dropped rather than carried as nulls. The consumer is a
+        model reading one card's entry to write one file, and a field nobody
+        filled tells it nothing.
+
+        ``version`` is excluded too. A version says which submission this is; a
+        checksum says whether it is the same spec. Keeping them apart is what
+        lets two freezes of an unchanged board agree, which is in turn what lets
+        a pointless re-freeze be refused instead of minting a duplicate.
         """
-        body = self.model_dump(mode="json", exclude={"checksum", "frozen_at"})
+        body = self.model_dump(
+            mode="json", exclude={"checksum", "frozen_at", "version"}, exclude_none=True
+        )
         return json.dumps(body, sort_keys=True, separators=(",", ":"))
 
     def compute_checksum(self) -> str:

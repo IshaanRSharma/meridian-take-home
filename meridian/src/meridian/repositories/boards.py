@@ -111,6 +111,16 @@ async def save_layout(
     )
 
 
+async def mark_submitted(connection: asyncpg.Connection, board_id: UUID) -> None:
+    """Record that this board has been frozen.
+
+    Separate from writing the spec because it is a fact about the board, not
+    about the snapshot. The freeze runs both inside one transaction, so a spec
+    never exists beside a board that still claims to be in review.
+    """
+    await connection.execute("update boards set status = 'submitted' where id = $1", board_id)
+
+
 def _primitive(row: asyncpg.Record) -> Primitive:
     return _PRIMITIVE.validate_python(
         {

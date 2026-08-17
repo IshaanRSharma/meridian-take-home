@@ -6,6 +6,7 @@ asserted. And a primitive's capability list must decide whether it compiles to
 an activity, because that is the determinism rule expressed as data.
 """
 
+import json
 from datetime import UTC, datetime
 
 from meridian.domain.frozen import FrozenSpec, ScopedContext, SpecPrimitive
@@ -76,6 +77,22 @@ def test_editing_a_primitive_deep_in_the_spec_breaks_the_checksum():
         update={"primitives": original.primitives | {"report_coa_discrepancy": renamed}}
     )
     assert not tampered.is_intact()
+
+
+def test_nothing_the_process_owner_left_unset_reaches_the_generator():
+    # The consumer is a model reading one card's entry to write one file. A
+    # field nobody filled says nothing, and at six cards the nulls outweigh the
+    # content — so they are absent rather than present and empty.
+    def nulls(node: object) -> list[str]:
+        if isinstance(node, dict):
+            return [k for k, v in node.items() if v is None] + [
+                found for v in node.values() for found in nulls(v)
+            ]
+        if isinstance(node, list):
+            return [found for item in node for found in nulls(item)]
+        return []
+
+    assert nulls(json.loads(spec().payload())) == []
 
 
 def test_the_timestamp_is_outside_the_checksum():
