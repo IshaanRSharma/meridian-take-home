@@ -9,8 +9,31 @@ A process owner drew a process, an AI reviewer questioned it, and the answers
 were settled and frozen. **Everything in the spec was approved by a person.
 Nothing you add is.** Implement what the spec determines; stop where it does not.
 
-Read `meridian/src/meridian/runtime/` first — a scaffold, not a fence. Use what
-fits, replace what does not. The five rules are at the end of this file.
+Read `meridian/src/meridian/runtime/` first. It is a **scaffold, not a
+framework** — you import from it, it never calls you, and there is no base class
+to inherit or plugin to register. That is deliberate: it means you can replace
+any part of it that does not suit this process.
+
+**Write real code.** The point of freezing a spec and handing it to you, rather
+than building an engine that interprets specs at runtime, is that you can do
+things a configuration language cannot. If a process needs a parser, a
+normalisation table, a retry that backs off differently, a cache, a second pass
+over ambiguous rows — write it. An interpreter can only ever do what its schema
+anticipated; you are not limited that way, and that freedom is the whole reason
+this pipeline compiles rather than interprets.
+
+**What is actually fixed is small** — §8's five rules, and they are all about not
+breaking something outside this agent. Everything else in `runtime/` is a
+convenience:
+
+| | |
+|---|---|
+| `outcome` · `trace` · `context` | **contracts** — the eval harness and the healing loop read these |
+| `check/*` · `ingest` · `routing` · `policy` · `duration` | **helpers** — use, extend, or replace |
+
+A Check written against `check/*` is shorter and gets the counting right. A
+Check that ignores it entirely and returns a correct `CheckResult` is equally
+valid.
 
 ---
 
@@ -224,6 +247,25 @@ so `store.decline(source, reason)` every time.
 **Low confidence declines rather than guessing.** A certificate of compliance
 reads almost exactly like a certificate of analysis. Extracting against the wrong
 schema yields fields that look right and are not, which is worse than declining.
+
+### The numbers here are yours to choose
+
+`confidence_floor` defaults to `0.6`. Nobody approved that — it is a starting
+point, and it is **yours to tune**, along with anything else in this shape:
+
+```
+how sure before extracting          how many pages to send a model at once
+text-vs-vision fallback threshold   how to split a bundle into documents
+what a "blank" field is             which normalisation to apply when matching
+```
+
+None of these is a business decision, and the test for that is not whether two
+people would disagree — it is **whether anything other than a person can settle
+it.** These have an oracle: pick one wrong and an eval case fails, and the
+repair loop tunes it. A business rule has no oracle, which is why §4 says stop.
+
+Say in your summary which numbers you chose and why, so the first sweep's
+failures are readable against them.
 
 ## 7. Three things a workflow file must do
 

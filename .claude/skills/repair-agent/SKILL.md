@@ -91,6 +91,17 @@ If an input produced zero instances, the check is innocent. Fix the producer.
 
 ## 4. Patch
 
+**You are writing code, not editing configuration.** If the right fix is a
+parser, a normalisation table, a lookup, a second pass over ambiguous rows —
+write it. A thing that only tweaks a parameter is often the shallow version of a
+fix that wanted real logic.
+
+**Tuning numbers is a patch, not a spec question.** Confidence floors, page
+batch sizes, what counts as blank, which normalisation to apply — all of these
+have an oracle, and the oracle is the eval suite. Pick one wrong and a case
+fails, which is exactly the signal you are here to act on. A business rule has
+no oracle, which is why §2 says stop for those and not for these.
+
 - **One file.** If the fix needs two, it is probably a skeleton defect — say so.
 - **No new dependencies.**
 - **Minimal.** Do not refactor around the fix; a large diff hides the change
