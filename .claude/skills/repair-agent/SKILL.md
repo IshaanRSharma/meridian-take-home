@@ -89,6 +89,11 @@ coas_valid                   FAIL 5 unmatched  ← the bundle names THIS file
 
 If an input produced zero instances, the check is innocent. Fix the producer.
 
+`FILE` is resolved from `build.json`'s `file_map`, written by whoever generated
+the agent. If the bundle names a file that does not exist, the map is stale —
+say so rather than guessing at a path, because a patch applied to the wrong file
+passes the gate for the wrong reason.
+
 ## 4. Patch
 
 **You are writing code, not editing configuration.** If the right fix is a

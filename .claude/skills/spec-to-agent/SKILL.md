@@ -197,18 +197,73 @@ parses what. How to structure a helper. Retry intervals. Log wording.
 
 ## 5. What to build
 
+### The slug is given to you, never invented
+
+**`spec.lock.json` carries no name.** It has a checksum, a version and the cards
+— nothing that says what this agent is called. So the directory name arrives as
+an argument, and it must be **stable across regenerations**: `agent_builds`
+rows, the repair loop's `file_map` and every failure bundle key on it. If nobody
+told you the slug, **ask**. Do not derive one from the checksum or the board id.
+
+### Four things the platform reads. Everything else is yours.
+
+This is the whole contract. It is short on purpose — the platform depends on
+four things and has no opinion about the rest.
+
 ```
 agents/<slug>/
-  manifest.json    what you may rewrite. READ IT FIRST.
-  spec.lock.json   never edit
-  hints.json       extraction guidance. Repair-owned — preserve if present.
+  spec.lock.json    verbatim, byte for byte. Conformance verifies the checksum.
+  build.json        file_map: {primitive_key: path}   ← the repair loop reads this
+                    plus model · prompt_version · temperature · spec_checksum
+  <an entry point>  runnable, and named in build.json. `mvp eval sweep` runs it.
+  one file per primitive, and its path in file_map
+```
+
+**`file_map` is the load-bearing one.** Localisation resolves
+`primitive_key → file` from it, so a failure bundle can name the file to open.
+Without it the loop falls back to guessing from a comment convention, which
+fails silently the moment anything is renamed.
+
+**One file per primitive** exists so a repair touches one file. That is a rule
+about *blast radius*, not about taste — two primitives in one module means a fix
+to one can break the other and the gate has no way to tell.
+
+Beyond those four: module names, how you split helpers, whether entities are a
+module or a package, how many files a check takes — **yours**. A layout that
+reads well for this process beats one that matches an example.
+
+### Names come from the spec, not from you
+
+Every identifier a human will later grep for should be traceable to the spec:
+
+```
+file name        the primitive key      checks/coas_valid.py
+function name    the primitive key      def coas_valid(...)
+outcome literal  Outcome.name           "missing_coa", never "MISSING" or an enum
+entity access    the entity key         store.instances("commercial_invoice")
+field paths      FieldRef.path          read them; never retype a path
+```
+
+The reason is the failure bundle: it prints `coas_valid :: output_diff` and a
+file path, and a human has to find that code in one look. A file called
+`certificate_checks.py` holding a function called `validate()` breaks that
+without breaking anything a test can see.
+
+### A shape that works, if you want one
+
+Not a requirement — the four things above are. This is what the pre-alert agent
+looks like when written by hand:
+
+```
+agents/inbound_pre_alert/
+  spec.lock.json   build.json   hints.json          (hints: repair-owned, preserve)
   src/
-    workflow.py    signals · waits · dispatch on outcome · return the output entity
+    workflow.py    the @workflow.defn class — signals, waits, dispatch, return
+    worker.py      the entry point
     trigger.py     only when an Event has timing.mode = on_arrival
     entities.py    types from spec.entities
-    checks/        one file per check, named from its key
-    actions/       one file per action
-  tests/cases/     hand-authored ground truth. NEVER overwrite.
+    checks/coas_valid.py            actions/report_coa_discrepancy.py
+  tests/cases/*.json                hand-authored ground truth. NEVER overwrite.
 ```
 
 ## 6. Ingestion: attachments to entity instances
