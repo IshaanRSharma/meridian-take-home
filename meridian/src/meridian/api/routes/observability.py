@@ -66,7 +66,10 @@ def _parsed(value: object) -> dict[str, Any] | None:
 
 
 @router.get("/evals")
-async def read_evals(connection: Connection) -> dict[str, Any]:
+async def read_evals(
+    connection: Connection,
+    board_id: UUID | None = None,
+) -> dict[str, Any]:
     """Ground truth per shipment, beside whatever has actually been run.
 
     The comparison this returns is the product's own scoreboard: the expected
@@ -81,6 +84,11 @@ async def read_evals(connection: Connection) -> dict[str, Any]:
     # A left join in spirit: every shipment appears whether or not it was run,
     # because a case that was never attempted is more interesting than one that
     # passed, and an inner join would hide exactly those.
+    #
+    # Scoped to one board's latest spec when a board is named. A suite measures
+    # a *spec* — cases carry `spec_id` — so an unscoped join reports one board's
+    # runs against another board's ground truth, and `runs_recorded` counts
+    # across specs that never met. Unscoped is the flat feed, and only that.
     recorded = await connection.fetch(
         """
         select c.key, r.id as run_id, r.outcome, r.output, r.errored,
@@ -92,7 +100,15 @@ async def read_evals(connection: Connection) -> dict[str, Any]:
                  order by started_at desc
                  limit 1
           ) r on true
-        """
+         where $1::uuid is null
+            or c.spec_id = (
+                select id from specs
+                 where board_id = $1::uuid
+                 order by version desc
+                 limit 1
+            )
+        """,
+        board_id,
     )
     # The trajectory, so a row that says "error" can say what it was doing when
     # it did. Without this the screen reports a verdict and withholds the only
