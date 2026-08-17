@@ -1,0 +1,553 @@
+{
+  "version": 1,
+  "checksum": "2f5e5123a61c0fc1180f8ea60adeb75ce6802df82ad0fa6c291af7cafea94e35",
+  "board_id": "6915a183-3839-44f2-a595-20db922e7647",
+  "capabilities": [
+    "email.fetch",
+    "email.send",
+    "system.write"
+  ],
+  "edge_context": {},
+  "edges": [
+    {
+      "from_key": "prealert_received",
+      "key": "e1",
+      "on_outcomes": [],
+      "relation": "normal",
+      "to_key": "invoice_complete"
+    },
+    {
+      "from_key": "invoice_complete",
+      "key": "e2",
+      "on_outcomes": [
+        "pass"
+      ],
+      "relation": "normal",
+      "to_key": "coas_valid"
+    },
+    {
+      "from_key": "invoice_complete",
+      "key": "e3",
+      "on_outcomes": [
+        "missing_information"
+      ],
+      "relation": "exception",
+      "to_key": "report_invoice_discrepancy"
+    },
+    {
+      "from_key": "coas_valid",
+      "key": "e4",
+      "on_outcomes": [
+        "pass"
+      ],
+      "relation": "normal",
+      "to_key": "documentation_validated"
+    },
+    {
+      "from_key": "coas_valid",
+      "key": "e5",
+      "on_outcomes": [
+        "missing_coa"
+      ],
+      "relation": "exception",
+      "to_key": "report_coa_discrepancy"
+    },
+    {
+      "from_key": "coas_valid",
+      "key": "e6",
+      "on_outcomes": [
+        "mismatched_coa"
+      ],
+      "relation": "exception",
+      "to_key": "report_coa_discrepancy"
+    },
+    {
+      "from_key": "report_coa_discrepancy",
+      "key": "e7",
+      "on_outcomes": [],
+      "relation": "repeat",
+      "to_key": "coas_valid"
+    },
+    {
+      "from_key": "report_invoice_discrepancy",
+      "key": "e8",
+      "on_outcomes": [],
+      "relation": "repeat",
+      "to_key": "invoice_complete"
+    }
+  ],
+  "entities": {
+    "certificate_of_analysis": {
+      "cardinality": {
+        "kind": "one_per",
+        "per": {
+          "entity": "commercial_invoice",
+          "path": "line_items[].batch_no"
+        }
+      },
+      "fields": {
+        "batch_no": {
+          "type": "string"
+        },
+        "product_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "identified_by": "the page header reads \"Certificate of Analysis\"",
+      "name": "Certificate of Analysis",
+      "sample_path": "fixtures/documents/certificate_of_analysis.pdf"
+    },
+    "commercial_invoice": {
+      "cardinality": {
+        "kind": "one"
+      },
+      "fields": {
+        "container_no": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "invoice_no": {
+          "type": "string"
+        },
+        "line_items": {
+          "items": {
+            "properties": {
+              "anda_number": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "batch_no": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "drug_description": {
+                "type": "string"
+              },
+              "fda_product_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "hts_number": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ndc_number": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "identified_by": "the page header reads \"Commercial Invoice\"",
+      "instructions": "The invoice number is in the top-right corner.",
+      "name": "Commercial Invoice",
+      "sample_path": "fixtures/documents/commercial_invoice.pdf"
+    },
+    "prealert_email": {
+      "cardinality": {
+        "kind": "one"
+      },
+      "fields": {
+        "attachment_names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "received_at": {
+          "type": "string"
+        },
+        "sender": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        }
+      },
+      "identified_by": "it arrives in the pre-alert group mailbox the bot has access to",
+      "instructions": "The SOP says documentation must be reported by email but never says to whom. The sender is the obvious candidate and is deliberately not assumed here. One email carries a subject and a list of attachments, and the attachments are what there are several of; that a shipment gets several emails over days is a fact about the trigger rather than about what an email is.",
+      "name": "Pre-alert email"
+    },
+    "shipment_summary": {
+      "cardinality": {
+        "kind": "one"
+      },
+      "fields": {
+        "coa_success": {
+          "type": "integer"
+        },
+        "coa_total": {
+          "type": "integer"
+        },
+        "failed_coa": {
+          "type": "integer"
+        },
+        "goods_failed": {
+          "type": "integer"
+        },
+        "invoices_failed": {
+          "type": "integer"
+        },
+        "invoices_successful": {
+          "type": "integer"
+        },
+        "invoices_total": {
+          "type": "integer"
+        }
+      },
+      "instructions": "One row per shipment, which is the thing this process exists to produce. Nothing recognises it and nothing counts it, because it never arrives — the checks write into it as they run and it is what the process hands back. Seven fields, one per check measurement. The historical report carries two more, an ASN mismatch count and an open/closed status, and neither is here because nothing on this board can produce either: no card reads an ASN, and no card decides what closes a shipment. Declaring a column the process cannot fill would make the board claim something untrue, so the gap belongs in the review rather than in this list.",
+      "name": "Shipment summary"
+    }
+  },
+  "entity_context": {},
+  "name": "Inbound pre-alert validation",
+  "primitives": {
+    "coas_valid": {
+      "capabilities": [],
+      "config": {
+        "criteria": [
+          {
+            "left": {
+              "entity": "commercial_invoice",
+              "path": "line_items[].batch_no"
+            },
+            "op": "each_has_matching",
+            "reads": [],
+            "right": {
+              "field": {
+                "entity": "certificate_of_analysis",
+                "path": "batch_no"
+              },
+              "kind": "field"
+            }
+          }
+        ],
+        "evidence": [
+          {
+            "entity": "commercial_invoice",
+            "path": "invoice_no"
+          },
+          {
+            "entity": "commercial_invoice",
+            "path": "line_items[].batch_no"
+          }
+        ],
+        "fills": [
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "coa_total"
+            },
+            "measure": "checked"
+          },
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "coa_success"
+            },
+            "measure": "passed"
+          },
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "failed_coa"
+            },
+            "measure": "failed"
+          }
+        ],
+        "inputs": [
+          "commercial_invoice",
+          "certificate_of_analysis"
+        ],
+        "instructions": "Each batch should have its own COA. Cross-check each batch listed on the invoice against a corresponding COA document.",
+        "name": "Does every batch on the invoice have a matching COA?",
+        "on_missing_input": "wait",
+        "outcomes": [
+          {
+            "name": "pass",
+            "priority": 0
+          },
+          {
+            "description": "a batch on the invoice has no COA",
+            "name": "missing_coa",
+            "priority": 1
+          },
+          {
+            "description": "a COA exists but its batch number disagrees",
+            "name": "mismatched_coa",
+            "priority": 2
+          }
+        ],
+        "quantifier": "all",
+        "scope": "per_line_item"
+      },
+      "context": {
+        "inherited": [],
+        "local": [],
+        "negative": [],
+        "provenance": []
+      },
+      "key": "coas_valid",
+      "primitive_type": "check"
+    },
+    "documentation_validated": {
+      "capabilities": [],
+      "config": {
+        "effect": "noop",
+        "inputs": [],
+        "is_terminal": true,
+        "name": "Documentation validated",
+        "outcomes": [],
+        "payload_fields": [],
+        "recipients": []
+      },
+      "context": {
+        "inherited": [],
+        "local": [],
+        "negative": [],
+        "provenance": []
+      },
+      "key": "documentation_validated",
+      "primitive_type": "action"
+    },
+    "invoice_complete": {
+      "capabilities": [],
+      "config": {
+        "criteria": [
+          {
+            "left": {
+              "entity": "commercial_invoice",
+              "path": "line_items[].hts_number"
+            },
+            "op": "present",
+            "reads": []
+          },
+          {
+            "left": {
+              "entity": "commercial_invoice",
+              "path": "line_items[].fda_product_code"
+            },
+            "op": "present",
+            "reads": []
+          },
+          {
+            "left": {
+              "entity": "commercial_invoice",
+              "path": "line_items[].ndc_number"
+            },
+            "op": "present",
+            "reads": []
+          },
+          {
+            "left": {
+              "entity": "commercial_invoice",
+              "path": "line_items[].anda_number"
+            },
+            "op": "present",
+            "reads": []
+          }
+        ],
+        "evidence": [
+          {
+            "entity": "commercial_invoice",
+            "path": "invoice_no"
+          },
+          {
+            "entity": "commercial_invoice",
+            "path": "line_items[].drug_description"
+          }
+        ],
+        "fills": [
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "goods_failed"
+            },
+            "measure": "failed"
+          },
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "invoices_total"
+            },
+            "measure": "checked",
+            "per": "per_document"
+          },
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "invoices_successful"
+            },
+            "measure": "passed",
+            "per": "per_document"
+          },
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "invoices_failed"
+            },
+            "measure": "failed",
+            "per": "per_document"
+          }
+        ],
+        "inputs": [
+          "commercial_invoice"
+        ],
+        "instructions": "Review the \"Description of Goods\" section and make sure every line item carries all four identifiers.",
+        "name": "Does every line item include HTS, FDA product code, NDC and ANDA?",
+        "on_missing_input": "wait",
+        "outcomes": [
+          {
+            "name": "pass",
+            "priority": 0
+          },
+          {
+            "description": "a required identifier is absent",
+            "name": "missing_information",
+            "priority": 1
+          }
+        ],
+        "quantifier": "all",
+        "scope": "per_line_item"
+      },
+      "context": {
+        "inherited": [],
+        "local": [],
+        "negative": [],
+        "provenance": []
+      },
+      "key": "invoice_complete",
+      "primitive_type": "check"
+    },
+    "prealert_received": {
+      "capabilities": [
+        "email.fetch"
+      ],
+      "config": {
+        "captures": [
+          "prealert_email",
+          "commercial_invoice",
+          "certificate_of_analysis"
+        ],
+        "channel": "email",
+        "correlation_key": {
+          "entity": "commercial_invoice",
+          "path": "container_no"
+        },
+        "instructions": "Sent by the exporter's clearing agent. Documents arrive in pieces — a shipment may get several emails, and corrected COAs come days later.",
+        "match_condition": "subject contains \"Pre-Alert Documents\" or \"APL USA // PRE-ALERT DOCUMENTATION\"",
+        "name": "Pre-alert documents received",
+        "outcomes": [],
+        "timing": {
+          "kind": "await",
+          "mode": "on_arrival"
+        }
+      },
+      "context": {
+        "inherited": [],
+        "local": [],
+        "negative": [],
+        "provenance": []
+      },
+      "key": "prealert_received",
+      "primitive_type": "event"
+    },
+    "report_coa_discrepancy": {
+      "capabilities": [
+        "email.send"
+      ],
+      "config": {
+        "channel": "email",
+        "effect": "notify",
+        "idempotency_key": "container_no + batch_no + discrepancy_kind",
+        "inputs": [
+          "commercial_invoice",
+          "certificate_of_analysis"
+        ],
+        "instructions": "Report missing or mismatched COAs by email with the invoice number, the batch numbers and a description of the discrepancy.",
+        "is_terminal": false,
+        "name": "Report the COA discrepancy",
+        "outcomes": [],
+        "payload_fields": [
+          {
+            "entity": "commercial_invoice",
+            "path": "invoice_no"
+          },
+          {
+            "entity": "commercial_invoice",
+            "path": "line_items[].batch_no"
+          }
+        ],
+        "recipients": [
+          {
+            "kind": "role",
+            "role": "receiving_supervisor"
+          }
+        ]
+      },
+      "context": {
+        "inherited": [],
+        "local": [],
+        "negative": [],
+        "provenance": []
+      },
+      "key": "report_coa_discrepancy",
+      "primitive_type": "action"
+    },
+    "report_invoice_discrepancy": {
+      "capabilities": [
+        "system.write"
+      ],
+      "config": {
+        "effect": "record",
+        "idempotency_key": "container_no + invoice_no + missing_field",
+        "inputs": [
+          "commercial_invoice"
+        ],
+        "instructions": "Log an error naming the invoice number, the drug description and which information type is missing.",
+        "is_terminal": false,
+        "name": "Log the invoice error",
+        "outcomes": [],
+        "payload_fields": [
+          {
+            "entity": "commercial_invoice",
+            "path": "invoice_no"
+          },
+          {
+            "entity": "commercial_invoice",
+            "path": "line_items[].drug_description"
+          }
+        ],
+        "recipients": [],
+        "system": "Aurologistics WMS"
+      },
+      "context": {
+        "inherited": [],
+        "local": [],
+        "negative": [],
+        "provenance": []
+      },
+      "key": "report_invoice_discrepancy",
+      "primitive_type": "action"
+    }
+  },
+  "slug": "inbound_pre_alert_validation"
+}
