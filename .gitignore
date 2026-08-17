@@ -41,3 +41,5 @@ docs/take-home-brief.md
 .claude/worktrees/
 
 /handoffs
+# Toy agents for falsifying the skeleton contract. Scratch, never shipped.
+test_toy_agents/

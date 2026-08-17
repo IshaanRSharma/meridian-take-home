@@ -1,175 +1,221 @@
 ---
 name: spec-to-agent
-description: Turn a frozen Meridian spec into a runnable Temporal agent under agents/<slug>/. Use when a spec.lock.json needs building into an initial agent, or when regenerating one after a spec revision.
+description: Build a runnable Temporal agent from a frozen Meridian spec.lock.json into agents/<slug>/. Use when a spec needs turning into a first working agent, or when regenerating one after a spec revision.
 ---
 
 # Spec to agent
 
-You are building the first working version of an agent from an approved,
-immutable specification. A process owner drew the process, an AI reviewer
-questioned it, and the answers were settled and frozen. **Everything in the spec
-was approved by a person. Nothing you add is.**
+A process owner drew a process, an AI reviewer questioned it, and the answers
+were settled and frozen. **Everything in the spec was approved by a person.
+Nothing you add is.** Implement what the spec determines; stop where it does not.
 
-That is the whole job: implement what the spec determines, and stop when it
-does not determine something.
+Read `meridian/src/meridian/runtime/` first — a scaffold, not a fence. Use what
+fits, replace what does not. The five rules are at the end of this file.
 
-## Read first
+---
 
-- `agents/<slug>/spec.lock.json` — the specification. Immutable, checksummed.
-- `meridian/src/meridian/runtime/` — the scaffold. Start here, use what fits,
-  replace what does not.
-- `docs/design/skeleton.md` §1 — the five rules, in full.
-
-## What the spec contains
-
-Eight top-level keys:
+## 1. The spec
 
 ```
-version · checksum          identity. Never edit either.
-entities                    what data looks like
-primitives                  the steps
-edges                       (from, to, on_outcomes) — the transition relation
-edge_context                statements about a transition, not about a step
-entity_context              statements about a kind of data
-capabilities                every tool this agent needs, derived from the cards
+version · checksum       identity. Never edit either.
+entities                 JSON Schema + the owner's own words
+primitives               the steps: event · action · check
+edges                    (key, from_key, to_key, on_outcomes) — the transitions
+edge_context             statements about a transition
+entity_context           statements about a kind of data
+capabilities             every tool this agent needs
 ```
 
-**An entity** is a JSON Schema plus the process owner's own words:
+`context` on a primitive is settled business knowledge in English:
+`inherited` came from a broader scope, `local` is about this step, and
+**`negative` states what must NOT happen — do not implement those paths.**
+Ignore `provenance`; it is an audit trail.
 
-```json
-"commercial_invoice": {
-  "name": "Commercial Invoice",
-  "identified_by": "the page header reads \"Commercial Invoice\"",
-  "cardinality": {"kind": "one"},
-  "fields": {"invoice_no": {"type": "string"},
-             "line_items": {"type": "array", "items": {"type": "object",
-                "properties": {"batch_no": {"type": ["string", "null"]}}}}},
-  "instructions": "…"
-}
+## 2. Find the output entity first
+
+Nothing labels it, and everything else depends on it.
+
+> **The output entity is the one no Event captures and no Action produces —
+> the one that only `fills` write into. It is the workflow's return value.**
+
+On the pre-alert spec that is `shipment_summary`: seven integer fields, no
+`identified_by`, and every field is the target of some check's `fill`. It is
+never extracted. The workflow builds it as checks run and returns it.
+
+If two entities fit that description, or none does, **stop** — you cannot know
+what the process produces.
+
+## 3. Compile each card
+
+### Entity → an extraction schema, not a step
+
+`fields` is already JSON Schema. Read it out of `spec.lock.json` at run time
+rather than copying it into code, so the two cannot drift.
+
+**`identified_by` is page-level.** *"The page header reads 'Commercial
+Invoice'"* describes a page, not a file. One attachment may hold an invoice and
+a dozen certificates, so extraction returns **a list of instances per file**,
+classified per page-range. A file that yields one instance is a list of length
+one.
+
+Fields a Check reads are `["string", "null"]` **on purpose**: extraction must
+return a line item that is missing its batch number, or the Check that exists to
+detect that can never fire. Never drop a row for being incomplete.
+
+An entity captured by an Event but read by no Check — `prealert_email` here —
+still gets extracted. It carries the correlation key and the audit trail.
+
+### Event → the way in
+
+| field | compiles to |
+|---|---|
+| `correlation_key` | the workflow id: `<slug>-{value}` |
+| `match_condition` | a predicate in `trigger.py`, **outside** the workflow |
+| `timing.mode: on_arrival` | `signal_with_start` |
+| `timing.mode: scheduled` | a Temporal Schedule; `timing.schedule` is the spec |
+| `timing.deadline` | `await_inputs(ready, deadline)` |
+| `timing.max_lifetime` | `workflow_execution_timeout` |
+| `captures` | the entities this event brings in |
+
+**`deadline` absent means wait indefinitely** — bounded only by
+`max_lifetime`. Do not substitute a default. A timeout of zero fires
+immediately, and inventing one turns "no time limit" into "expire at once".
+
+### Action → an activity, or not
+
+**`capabilities` decides.** Non-empty means it touches the world, so it is a
+Temporal activity. Empty means it is not.
+
+```
+effect: notify   → capability from channel. recipients are ROLES:
+                   ctx.bindings.role("receiving_supervisor"). Never an address.
+effect: record   → system.write. `system` is free text naming the customer's system.
+effect: lookup   → system.read, and it PRODUCES an entity (`produces`).
+                   Honour `timeout` and `on_failure`.
+effect: decide   → block on a human signal, with `timing` as the SLA and
+                   `on_timeout` as the branch when nobody answers.
+effect: noop     → no activity at all. A named end state: record the outcome
+                   and return. `documentation_validated` is this.
 ```
 
-`identified_by` is **page-level** — it says how to recognise the document when
-you are looking at one, and one file may contain several. Fields a Check reads
-are nullable on purpose: extraction must return a line item that is missing a
-batch number, or the Check that exists to detect that can never fire.
+`payload_fields` with an iterated path — `line_items[].drug_description` —
+means **every** value, as a list. The message names all of them.
 
-**A primitive** carries its config, its capabilities, and what was settled about
-it during review:
+**`idempotency_key` absent on a `notify` or `record` is a real hazard, not a
+default.** The board is cyclic: corrected paperwork arrives, the check re-runs,
+and the same message goes out twice. Build a key from the payload so it changes
+when the content changes — *once per distinct situation*, not once ever. Say in
+your summary that you did, since nobody specified it.
 
-```json
-"coas_valid": {
-  "primitive_type": "check",
-  "config": {
-    "criteria": [{"op": "each_has_matching",
-                  "left":  {"entity": "commercial_invoice", "path": "line_items[].batch_no"},
-                  "right": {"kind": "field", "field": {"entity": "certificate_of_analysis",
-                                                       "path": "batch_no"}}}],
-    "scope": "per_line_item", "quantifier": "all",
-    "inputs": ["commercial_invoice", "certificate_of_analysis"],
-    "outcomes": [{"name": "pass", "priority": 0},
-                 {"name": "missing_coa", "priority": 1, "description": "…"},
-                 {"name": "mismatched_coa", "priority": 2, "description": "…"}],
-    "evidence": [...], "fills": [...], "instructions": "…"
-  },
-  "capabilities": [],
-  "context": {"inherited": [...], "local": [...], "negative": [...]}
-}
+### Check → a pure function, always
+
+`capabilities` is always empty on a Check. It stays in workflow code, which is
+what makes a failing eval case fail for a logic reason.
+
+Return `CheckResult(outcome, total, passed, failed, failures)`. `total` must
+equal `passed + failed`. **Counts, never a boolean** — the eval row is
+arithmetic over them.
+
+```
+scope         what one row is: per_case · per_document · per_line_item
+quantifier    all · any · none · count
+inputs        entity keys this reads
+criteria      present · compare · each_has_matching · custom
+outcomes      named, with `priority` — LOWEST priority that applies wins
+evidence      what to report as proof
+fills         where the counts land
 ```
 
-**`context` is settled business knowledge, in English.** `inherited` came from a
-broader scope, `local` is about this step, and **`negative` states what must NOT
-happen — do not implement those paths.** `provenance` is an audit trail; ignore
-it.
+**`fills[].per` defaults to the check's own `scope`.** A fill whose `per` is
+*coarser* than the scope is a roll-up: a document passes exactly when every line
+item under it passes. That is how one rule produces both `goods_failed` (line
+items) and `invoices_failed` (the documents containing them).
 
-## What to build
+**`on_missing_input` absent** and an input has not arrived: **stop and ask.**
+Waiting, failing and skipping give different eval rows, the spec does not say
+which, and two competent people would disagree.
+
+### Edges → routing
+
+`(from_key, to_key, on_outcomes)`. **Empty `on_outcomes` fires whatever the
+outcome** — that is how an Event's edge works. An outcome with no edge is a
+stop, not a crash. `relation: repeat` is an ordinary backward step; the board is
+a state machine, not a DAG.
+
+---
+
+## 4. Stop conditions, made mechanical
+
+Not judgement calls. Check each one:
+
+**More declared outcomes than the criteria can distinguish.** Count the
+distinguishable results of the criteria; compare to `len(outcomes)`. On
+`coas_valid`, one `each_has_matching` yields matched/unmatched — two — against
+three declared outcomes. The `description` fields say *"a batch has no COA"* and
+*"a COA exists but its batch number disagrees"*, and **nothing in the criteria
+can tell those apart.** Stop. Do not invent a similarity threshold.
+
+**An input no upstream step produces.** Every key in `inputs` must be captured
+by an Event, produced by an Action, or filled by a Check.
+
+**A `fills` target that is not a declared field** on the entity it names.
+
+**An eval column nothing fills.** Report it; do not invent a source.
+
+**Two readings that give different numbers**, where the eval set cannot
+distinguish them.
+
+### Decide these yourself — they are implementation
+
+Whitespace and case when matching. Paging a multi-page document. Which library
+parses what. How to structure a helper. Retry intervals. Log wording.
+
+---
+
+## 5. What to build
 
 ```
 agents/<slug>/
-  manifest.json     what you may rewrite. READ IT FIRST.
-  spec.lock.json    never edit
-  hints.json        extraction guidance. Repair-owned — preserve if present.
+  manifest.json    what you may rewrite. READ IT FIRST.
+  spec.lock.json   never edit
+  hints.json       extraction guidance. Repair-owned — preserve if present.
   src/
-    workflow.py     the shell: signals, waits, dispatch on outcome, return
-    trigger.py      only if an Event has timing.mode = on_arrival
-    entities.py     types from spec.entities
-    checks/         one file per check primitive, named from its key
-    actions/        one file per action primitive
-  tests/cases/      hand-authored ground truth. NEVER overwrite.
+    workflow.py    signals · waits · dispatch on outcome · return the output entity
+    trigger.py     only when an Event has timing.mode = on_arrival
+    entities.py    types from spec.entities
+    checks/        one file per check, named from its key
+    actions/       one file per action
+  tests/cases/     hand-authored ground truth. NEVER overwrite.
 ```
 
-## How each card compiles
-
-| card | becomes |
-|---|---|
-| **Entity** | an extraction schema — not a step |
-| **Event** | workflow entry. `correlation_key` → workflow id. `timing.deadline` → `wait_condition(timeout=…)`. `match_condition` → a predicate **outside** the workflow |
-| **Action**, capabilities non-empty | a Temporal activity. `idempotency_key` → a dedupe key |
-| **Check**, capabilities empty | a pure function in workflow code returning `CheckResult` |
-
-**`capabilities` decides the boundary.** Non-empty means it touches the world,
-so it is an activity. A Check always has none — that is what lets it be workflow
-code, and what makes a failing eval case fail for a logic reason.
-
-A Check returns **counts, not a boolean**:
-`CheckResult(outcome, total, passed, failed, failures)`. `total` must equal
-`passed + failed`. `outcome` is one of the declared outcome names, chosen by
-`priority` — lowest wins when several apply.
-
-`fills` project those counts into an output entity at a grain. One criterion
-counted at two grains is how a single rule yields both a line-item count and a
-document count.
-
-## The five rules
+## 6. The five rules
 
 ```
 1  never write  bindings/ · fixtures/ · tests/cases/ · spec.lock.json
-     provisioning and hand-authored ground truth. You cannot regenerate these.
-
-2  no addresses, provider names or credentials in code
-     ctx.tools.call("email.send", {...})  and  ctx.bindings.role("receiving_supervisor")
-     You never learn that email.send is Gmail. That is deliberate — the same
-     spec deploys to a customer on Outlook without becoming a new version.
-
+2  reach the world only via ctx.tools.call(capability) and ctx.bindings.role()
 3  keep CheckResult's shape — the eval row is arithmetic over it
-
 4  keep the trace's shape — the failure bundle is assembled from it
-
-5  no clock, no random, no I/O in workflow code
-     Temporal replays workflow code from history. Comparing against `now` reads
-     ctx.clock, which is a frozen value, not a call.
+5  no clock, no random, no I/O in workflow code.
+   Comparing against `now` reads ctx.clock, which is a frozen value.
 ```
 
-## Verify before you finish
+## 7. Verify
 
 ```bash
-make check                              # ruff · mypy --strict · tests
-mvp verify --agent <slug>               # imports · conformance
+make check                                   # ruff · mypy --strict · tests
+mvp verify --agent <slug>                    # imports · conformance
 mvp eval sweep --build <n> --split train
 ```
 
-Build 1 is **not** expected to pass every case. It is expected to compile, run
-every case, and produce a parseable result for each. A case that *errors* is a
-problem; a case that *fails* is the starting point of the curve.
+Build 1 is **not** expected to pass every case. It must compile, run every case,
+and produce a parseable result for each. A case that **errors** is a problem; a
+case that **fails** is the first point on the curve.
 
-## When to stop
+## 8. Your summary
 
-**If the spec does not determine an answer, stop. Do not choose.**
+End with:
 
-Report which primitive, which decision, and the two or more readings you are
-choosing between. A guess here becomes a business rule nobody approved, and the
-whole point of the frozen spec is that a person signed off on every rule in it.
-
-Examples that mean stop:
-
-- an outcome is declared but nothing in the criteria can produce it, and the
-  `description` does not say how to tell it apart
-- a Check's `inputs` name an entity nothing upstream produces
-- two readings of a criterion would give different numbers, and the eval set
-  cannot distinguish them
-- `fills` target a field on an entity nobody declared
-
-Examples that do **not** mean stop — decide these yourself:
-
-- how to normalise whitespace or case when matching (implementation)
-- how to page through a multi-page document (implementation)
-- which library to parse with, how to structure a helper (implementation)
+- every stop condition you hit — which primitive, which decision, which readings
+- anything you decided that the spec did not determine, and why it was
+  implementation rather than business
+- any eval column nothing fills
