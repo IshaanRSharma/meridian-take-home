@@ -37,6 +37,7 @@ from meridian.domain.errors import ConflictingStateError, NotFoundError
 from meridian.domain.frozen import FrozenSpec
 from meridian.domain.review import Anchor, Thread
 from meridian.healing.gate import Verdict, gate
+from meridian.healing.localize import owners_from_spec
 from meridian.repositories import builds as builds_repo
 from meridian.repositories import evals as evals_repo
 from meridian.repositories import repairs as repairs_repo
@@ -236,6 +237,28 @@ async def record_repair(  # noqa: PLR0913 - a repair names what, where, why and 
         },
     )
     return repair, verdict
+
+
+async def unattributable_columns(
+    connection: asyncpg.Connection, *, spec: FrozenSpec, spec_id: UUID
+) -> tuple[str, ...]:
+    """Expected columns no primitive on this board fills.
+
+    The one way a brand-new board silently produces evals worth nothing. A
+    column nothing fills is not an error — the sweep scores it, as a permanent
+    failure that localises to no file and no repair can ever move — so it never
+    announces itself. It just sits at the bottom of every score for ever.
+
+    Worth saying at load time, while the board can still be edited, rather than
+    after somebody has generated an agent and spent a cycle wondering which file
+    to open. It is the generator's own stop condition — *an eval column nothing
+    fills* — asked one step earlier, where the answer is cheaper.
+    """
+    owners = owners_from_spec(spec)
+    measured: set[str] = set()
+    for case in await evals_repo.cases_for(connection, spec_id):
+        measured |= set(case.expected_output)
+    return tuple(sorted(column for column in measured if column not in owners))
 
 
 async def _raise_thread(

@@ -687,13 +687,25 @@ def eval_load(
     """
     cases = [EvalCase.model_validate(case) for case in json.loads(source.read_text())]
 
-    async def work(connection: asyncpg.Connection) -> int:
-        _, spec_id = await _spec(connection, board_id)
+    async def work(connection: asyncpg.Connection) -> tuple[int, tuple[str, ...]]:
+        spec, spec_id = await _spec(connection, board_id)
         for case in cases:
             await evals_repo.save_case(connection, spec_id, case)
-        return len(cases)
+        return len(cases), await record.unattributable_columns(
+            connection, spec=spec, spec_id=spec_id
+        )
 
-    typer.echo(f"{_run(work)} case(s) loaded from {source}")
+    loaded, unfilled = _run(work)
+    typer.echo(f"{loaded} case(s) loaded from {source}")
+    if unfilled:
+        # Not an error. A column nothing fills still scores — as a permanent
+        # failure that localises to no file and no repair can move — so it never
+        # announces itself, and the right moment to hear about it is now, while
+        # the board can still be edited.
+        typer.echo(
+            f"\n  {len(unfilled)} column(s) no card on this board fills: {', '.join(unfilled)}"
+        )
+        typer.echo("  they will score as failures for ever, and no bundle can name a file for them")
 
 
 @eval_app.command("sweep")
