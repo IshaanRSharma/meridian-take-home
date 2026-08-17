@@ -15,9 +15,14 @@ COPY . .
 
 ARG VITE_API_URL
 ARG VITE_SUPABASE_URL
+# Supabase replaced the anon JWT with a publishable key. Both are accepted —
+# `lib/supabase.ts` reads the new name and falls back — so a project created
+# before the change still deploys.
+ARG VITE_SUPABASE_PUBLISHABLE_KEY
 ARG VITE_SUPABASE_ANON_KEY
 ENV VITE_API_URL=$VITE_API_URL \
     VITE_SUPABASE_URL=$VITE_SUPABASE_URL \
+    VITE_SUPABASE_PUBLISHABLE_KEY=$VITE_SUPABASE_PUBLISHABLE_KEY \
     VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 
 RUN npm run build

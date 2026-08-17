@@ -17,8 +17,6 @@ in a number. A screen that invented a plausible actual column would be lying
 about the one thing this system exists to measure.
 """
 
-import json
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -30,10 +28,6 @@ from meridian.repositories.evals import as_json, as_list, errored_from
 
 router = APIRouter(tags=["observability"])
 
-# Four levels up from this file is the repo root: routes → api → meridian →
-# src → meridian(project) → root. Resolved once at import so a bad layout fails
-# loudly at startup rather than on the first request to a screen nobody opened.
-_EVAL_SET = Path(__file__).resolve().parents[5] / "eval" / "expected" / "shipments.json"
 
 
 @router.get("/events")
@@ -69,9 +63,6 @@ async def read_evals(
     actual is null and `runs_recorded` is zero — which is the true state and
     reads as one.
     """
-    expected = json.loads(_EVAL_SET.read_text())
-    shipments = expected.get("shipments", [])
-
     # A left join in spirit: every shipment appears whether or not it was run,
     # because a case that was never attempted is more interesting than one that
     # passed, and an inner join would hide exactly those.
@@ -82,7 +73,7 @@ async def read_evals(
     # across specs that never met. Unscoped is the flat feed, and only that.
     recorded = await connection.fetch(
         """
-        select c.key, r.id as run_id, r.outcome, r.output,
+        select c.key, c.expected_output, r.id as run_id, r.outcome, r.output,
                r.declined, r.ended_at, r.build_id
           from eval_cases c
           left join lateral (
@@ -124,30 +115,26 @@ async def read_evals(
                 "error": step["error"],
             }
         )
-    by_key = {row["key"]: dict(row) for row in recorded}
 
     return {
-        "unit": expected.get("unit"),
-        "source": expected.get("source"),
-        "runs_recorded": sum(1 for row in by_key.values() if row.get("outcome")),
+        "unit": "one row per shipment, not per email and not per invoice",
+        "source": f"{len(recorded)} case(s) loaded against this spec",
+        "runs_recorded": sum(1 for row in recorded if row["outcome"]),
         "shipments": [
             {
-                "expected": shipment,
+                "expected": {"shipment_no": row["key"], **as_json(row["expected_output"])},
                 # `runs.output` is jsonb, and asyncpg hands it back as text on a
                 # connection with no codec registered. A caller that has to
                 # know that is a caller reimplementing this route.
-                "actual": as_json(by_key.get(shipment["shipment_no"], {}).get("output")) or None,
-                "outcome": by_key.get(shipment["shipment_no"], {}).get("outcome"),
+                "actual": as_json(row["output"]) or None,
+                "outcome": row["outcome"],
                 # Why, not just what. An errored case with no message is a dead
                 # end on screen; a failing case with no trace is a verdict
                 # nobody can act on.
-                "errored": errored_from(
-                    by_key.get(shipment["shipment_no"], {}).get("outcome"),
-                    as_json(by_key.get(shipment["shipment_no"], {}).get("output")),
-                ),
-                "steps": steps.get(by_key.get(shipment["shipment_no"], {}).get("run_id"), []),
-                "declined": as_list(by_key.get(shipment["shipment_no"], {}).get("declined")),
+                "errored": errored_from(row["outcome"], as_json(row["output"])),
+                "steps": steps.get(row["run_id"], []),
+                "declined": as_list(row["declined"]),
             }
-            for shipment in shipments
+            for row in recorded
         ],
     }
