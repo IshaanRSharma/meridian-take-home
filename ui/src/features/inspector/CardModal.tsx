@@ -25,6 +25,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Sparkles, Trash2, X } from 'lucide-react';
 import { api, type Board, type Finding, type Primitive, type Thread } from '@/lib/api';
 import { Badge, Button, Problem, SeverityBadge, cx } from '@/components/ui';
+import { fieldWord, categoryWord } from '@/lib/words';
 
 /** What the fill stage may draft, per card type. Mirrors `authoring.ALLOWED`;
  *  shown so somebody can see why a field stayed blank. */
@@ -211,8 +212,8 @@ export default function CardModal({
               <dl className="mt-2 space-y-1.5">
                 {filled.map(([key, value]) => (
                   <div key={key} className="flex gap-3 text-[12px]">
-                    <dt className="w-[130px] shrink-0 font-mono text-[11px] text-(--color-ink-faint)">
-                      {key}
+                    <dt className="w-[150px] shrink-0 text-[11.5px] text-(--color-ink-faint)">
+                      {fieldWord(key)}
                     </dt>
                     <dd className="min-w-0 flex-1 break-words text-(--color-ink)">
                       {render(value)}
@@ -233,7 +234,7 @@ export default function CardModal({
                   <li key={`${finding.anchor}.${finding.field}`} className="flex items-start gap-2.5">
                     <SeverityBadge severity={finding.severity} />
                     <div className="min-w-0">
-                      <p className="font-mono text-[11px] text-(--color-ink-dim)">{finding.field}</p>
+                      <p className="text-[11px] text-(--color-ink-faint)">{fieldWord(finding.field)}</p>
                       <p className="text-[12px] leading-snug text-(--color-ink)">{finding.reason}</p>
                     </div>
                   </li>
@@ -266,7 +267,7 @@ export default function CardModal({
                           {thread.status}
                         </span>
                         <span className="font-mono text-[10px] text-(--color-ink-faint)">
-                          {thread.category.replace(/_/g, ' ')}
+                          {categoryWord(thread.category)}
                         </span>
                       </div>
                       <p className="mt-1 text-[12.5px] leading-snug text-(--color-ink)">
@@ -296,9 +297,9 @@ export default function CardModal({
                 {pickers.map((field) => (
                   <span
                     key={field}
-                    className="rounded border border-(--color-line) px-1.5 py-0.5 font-mono text-[10.5px] text-(--color-ink-faint)"
+                    className="rounded border border-(--color-line-soft) px-1.5 py-0.5 text-[11px] text-(--color-ink-faint)"
                   >
-                    {field}
+                    {fieldWord(field)}
                   </span>
                 ))}
               </div>

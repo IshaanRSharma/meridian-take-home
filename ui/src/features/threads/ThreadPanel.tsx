@@ -20,6 +20,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CornerDownRight, MessageSquare } from 'lucide-react';
 import { api, type Thread } from '@/lib/api';
 import { Badge, Button, Empty, SeverityBadge, cx } from '@/components/ui';
+import { categoryWord } from '@/lib/words';
 
 const STATUS_TONE: Record<Thread['status'], string> = {
   open: 'border-(--color-accent-dim) bg-(--color-accent-wash) text-[#0f766e]',
@@ -140,7 +141,7 @@ function ThreadCard({
           {thread.status}
         </span>
         <SeverityBadge severity={thread.severity} />
-        <Badge mono>{thread.category.replace(/_/g, ' ')}</Badge>
+        <Badge>{categoryWord(thread.category)}</Badge>
         <span className="ml-auto font-mono text-[10px] text-(--color-ink-faint)">
           r{thread.round}
         </span>
