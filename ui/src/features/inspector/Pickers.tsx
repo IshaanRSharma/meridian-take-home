@@ -20,6 +20,7 @@ import { useState } from 'react';
 import { Check, Plus, X } from 'lucide-react';
 import type { Board, Config, PrimitiveType } from '@/lib/api';
 import { Button, cx, inputStyles } from '@/components/ui';
+import FieldsEditor from './Fields';
 
 /** Every addressable field on the board, as `entity.path`.
  *
@@ -68,7 +69,7 @@ const SHOWN: Record<PrimitiveType, string[]> = {
   event: ['captures', 'correlation_key', 'outcomes'],
   action: ['inputs', 'payload_fields', 'produces', 'idempotency_key', 'is_terminal', 'outcomes'],
   check: ['inputs', 'scope', 'quantifier', 'outcomes', 'evidence'],
-  entity: [],
+  entity: ['fields', 'cardinality'],
 };
 
 export default function Pickers({
@@ -100,6 +101,25 @@ export default function Pickers({
       </p>
 
       <div className={cx('space-y-3.5', busy && 'pointer-events-none opacity-50')}>
+        {shown.includes('fields') && (
+          <FieldsEditor value={c.fields} onChange={(fields) => onChange({ fields })} />
+        )}
+
+        {shown.includes('cardinality') && (
+          <OneOf
+            label="How many turn up"
+            options={[
+              { value: 'one', label: 'one per case' },
+              { value: 'many', label: 'several per case' },
+              { value: 'one_per', label: 'one for each row on another card' },
+            ]}
+            chosen={
+              (c.cardinality as { kind?: string } | null)?.kind ?? null
+            }
+            onChange={(kind) => onChange({ cardinality: kind ? { kind } : null })}
+          />
+        )}
+
         {shown.includes('captures') && (
           <EntityList
             label="What arrives with it"
