@@ -53,6 +53,20 @@ function readsFrom(card: Primitive): string[] {
   return Array.isArray(inputs) ? inputs.filter((key): key is string => typeof key === 'string') : [];
 }
 
+/** Dimmed when something else is highlighted, and briefly marked when it has
+ *  just been dropped — a card that appears silently among ten others is a card
+ *  somebody has to hunt for. */
+function nodeClass(
+  key: string,
+  options: { highlight: string | null; landed: string | null },
+): string | undefined {
+  const parts = [
+    options.highlight && options.highlight !== key ? 'opacity-35' : null,
+    options.landed === key ? 'landed' : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' ') : undefined;
+}
+
 export interface Built {
   nodes: FlowNode[];
   edges: FlowEdge[];
@@ -62,7 +76,7 @@ export function build(
   board: Board,
   findings: Finding[],
   threads: Thread[],
-  options: { showDataLinks: boolean; highlight: string | null },
+  options: { showDataLinks: boolean; highlight: string | null; landed: string | null },
 ): Built {
   const byAnchor = new Map<string, Finding[]>();
   for (const finding of findings) {
@@ -123,7 +137,7 @@ export function build(
         isTrigger: card.primitive_type === 'event' && !hasAnyIn.has(card.key),
         isTerminal: card.config.is_terminal === true || (!hasAnyOut.has(card.key) && names.length === 0 && card.primitive_type === 'action'),
       } satisfies CardData,
-      className: options.highlight && options.highlight !== card.key ? 'opacity-35' : undefined,
+      className: nodeClass(card.key, options),
     });
   });
 
@@ -153,7 +167,7 @@ export function build(
         isTrigger: false,
         isTerminal: false,
       } satisfies CardData,
-      className: options.highlight && options.highlight !== card.key ? 'opacity-35' : undefined,
+      className: nodeClass(card.key, options),
     });
   });
 

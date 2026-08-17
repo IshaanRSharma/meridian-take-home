@@ -41,7 +41,12 @@ interface Props {
   findings: Finding[];
   threads: Thread[];
   selected: string | null;
+  /** Highlight a card on the canvas. Does not open anything. */
   onSelect: (key: string | null) => void;
+  /** Open a card for editing. Deliberately separate from selecting: a card
+   *  arrives on the board first and is opened second, so dropping one does not
+   *  bury the thing you just placed under a dialogue. */
+  onOpen: (key: string) => void;
   highlight: string | null;
 }
 
@@ -53,16 +58,19 @@ export default function Canvas(props: Props) {
   );
 }
 
-function Inner({ board, findings, threads, selected, onSelect, highlight }: Props) {
+function Inner({ board, findings, threads, selected, onSelect, onOpen, highlight }: Props) {
   const queryClient = useQueryClient();
   const flow = useReactFlow();
   const [showDataLinks, setShowDataLinks] = useState(true);
+  // Cleared on a timer so the drop animation plays once rather than on every
+  // re-render for as long as the card stays selected.
+  const [landed, setLanded] = useState<string | null>(null);
   const pending = useRef<Record<string, [number, number]>>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const built = useMemo(
-    () => build(board, findings, threads, { showDataLinks, highlight }),
-    [board, findings, threads, showDataLinks, highlight],
+    () => build(board, findings, threads, { showDataLinks, highlight, landed }),
+    [board, findings, threads, showDataLinks, highlight, landed],
   );
 
   // React Flow owns node positions while a drag is in flight; the query owns
@@ -86,7 +94,11 @@ function Inner({ board, findings, threads, selected, onSelect, highlight }: Prop
       api.boards.addCard(board.id, card),
     onSuccess: (made) => {
       refresh();
+      // Selected, not opened. The card lands where it was dropped and stays
+      // visible; entering values is a second, deliberate act.
       onSelect(made.key);
+      setLanded(made.key);
+      setTimeout(() => setLanded(null), 700);
     },
   });
 
@@ -180,7 +192,10 @@ function Inner({ board, findings, threads, selected, onSelect, highlight }: Prop
           event.preventDefault();
           event.dataTransfer.dropEffect = 'move';
         }}
-        onNodeClick={(_, node) => onSelect(node.id)}
+        onNodeClick={(_, node) => {
+          onSelect(node.id);
+          onOpen(node.id);
+        }}
         onPaneClick={() => onSelect(null)}
         nodesConnectable
         proOptions={{ hideAttribution: true }}
