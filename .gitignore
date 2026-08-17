@@ -33,9 +33,11 @@ docs/
 .idea/
 *.swp
 
-# Generated agents are committed once there is one worth reviewing. Held back
-# until the build it belongs to is registered.
-agents/
+# Generated agents ARE committed. A build is a commit — `agent_builds.source_ref`
+# is `agents/<slug>@<sha>` — so an ignored agent directory would make every
+# source_ref name a commit that does not contain the code it points at. Their
+# bytecode is not ours to carry, though.
+agents/**/__pycache__/
 
 # Agent worktrees — transient, never committed.
 .claude/worktrees/
