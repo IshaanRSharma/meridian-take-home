@@ -160,7 +160,16 @@ class InboundPreAlertValidation:
             instances = gathered.entities()
             for source, reason in gathered.skipped():
                 self._trace.decline(source, reason)
-            recorder.produced({key: len(rows) for key, rows in instances.items()})
+            # read-vs-kept rather than a bare count: two invoices where one is
+            # expected is either two documents or one read twice, and those have
+            # opposite fixes. A bare count cannot tell them apart, so a reader
+            # has to re-run ingestion to find out what the trace already knew.
+            recorder.produced(
+                {
+                    key: f"{counts['kept']} of {counts['read']} read"
+                    for key, counts in gathered.read_and_kept().items()
+                }
+            )
         return instances
 
     async def _perform(

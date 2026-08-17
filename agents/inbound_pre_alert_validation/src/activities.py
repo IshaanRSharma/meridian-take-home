@@ -69,10 +69,22 @@ class Gathered:
 
     instances: str = "{}"
     declined: str = "[]"
+    provenance: str = "{}"
+    """How many instances of each entity were read, and how many survived.
+
+    Counts alone cannot say whether two invoices are two documents or one
+    document read twice, and those have opposite fixes. Read-versus-kept
+    separates them in the trace, where a bundle can print it, instead of
+    requiring somebody to re-run ingestion by hand to find out."""
 
     def entities(self) -> dict[str, list[dict[str, Any]]]:
         """The instances, back as data."""
         loaded: dict[str, list[dict[str, Any]]] = json.loads(self.instances)
+        return loaded
+
+    def read_and_kept(self) -> dict[str, dict[str, int]]:
+        """Per entity, how many instances were read and how many were distinct."""
+        loaded: dict[str, dict[str, int]] = json.loads(self.provenance)
         return loaded
 
     def skipped(self) -> list[tuple[str, str]]:
@@ -141,9 +153,16 @@ class Ingestion:
             )
 
         declined.extend((s.source, s.reason) for s in store.skipped)
+        kept = {key: _distinct(store.instances(key)) for key in store.counts()}
         return Gathered(
-            instances=json.dumps({key: _distinct(store.instances(key)) for key in store.counts()}),
+            instances=json.dumps(kept),
             declined=json.dumps(declined),
+            provenance=json.dumps(
+                {
+                    key: {"read": len(store.instances(key)), "kept": len(kept[key])}
+                    for key in store.counts()
+                }
+            ),
         )
 
 
@@ -156,14 +175,63 @@ def _distinct(instances: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     the number of emails rather than the number of invoices, and every count
     derived from it wrong by the same factor.
 
-    Identity is the extracted content, because nothing on the board declares a
-    key for an entity and content is what "the same document" means. Extraction
-    runs at temperature zero, so the same page yields the same fields.
+    **Nothing on the board declares an identity for an entity.** `identified_by`
+    says how to *recognise* one, which is a different question from how to tell
+    two apart, so identity has to be inferred from what was read.
+
+    Byte-equality is too strict. The same document read from two page ranges
+    gives one full reading and one fragment, and they are not equal — so both
+    survive, and a count that should be one is two. Agreement on the scalar
+    fields both populate is the workable notion: two readings of one document
+    agree on everything they both saw, while two genuinely different documents
+    differ on the field that names them.
+
+    Where two agree, the fuller reading wins — a fragment carries strictly less
+    of the same document, and keeping it would discard rows the check needs.
     """
-    seen: dict[str, dict[str, Any]] = {}
+    best: dict[str, dict[str, Any]] = {}
     for instance in instances:
-        seen.setdefault(json.dumps(instance, sort_keys=True, default=str), dict(instance))
-    return list(seen.values())
+        key = _identity(instance)
+        if key not in best or _filled(instance) > _filled(best[key]):
+            best[key] = dict(instance)
+    return list(best.values())
+
+
+def _identity(instance: Mapping[str, Any]) -> str:
+    """What two readings of the same document agree on.
+
+    Scalars only. A list is where a partial reading differs — one page of line
+    items against five — so including it would make every fragment its own
+    document, which is the behaviour being fixed.
+    """
+    scalars = {
+        field: value
+        for field, value in sorted(instance.items())
+        if value is not None and not isinstance(value, list | dict) and str(value).strip()
+    }
+    return json.dumps(scalars, sort_keys=True, default=str)
+
+
+def _filled(instance: Mapping[str, Any]) -> int:
+    """How much of a document one reading actually recovered.
+
+    Counts values rather than fields, so five line items beat one. This is only
+    ever compared between readings that already agree on identity, so it is
+    choosing the better look at one document and never between two documents.
+    """
+    total = 0
+    for value in instance.values():
+        if isinstance(value, list):
+            total += sum(
+                1
+                for row in value
+                if isinstance(row, dict)
+                for cell in row.values()
+                if cell is not None and str(cell).strip()
+            )
+        elif value is not None and str(value).strip():
+            total += 1
+    return total
 
 
 @dataclass(frozen=True)
