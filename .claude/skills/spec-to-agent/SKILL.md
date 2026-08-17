@@ -592,6 +592,22 @@ answer = await workflow.execute_activity(
    Comparing against `now` reads ctx.clock, which is a frozen value.
 ```
 
+**Rule 4 has a specific meaning: every step records how much it examined.**
+Not merely that it ran and not merely whether it passed. Record the counts for a
+check and the instance counts for anything that gathers, because the reader
+downstream separates two failures that look identical in a score:
+
+```
+a step that ran and disagreed        total 5, failed 2
+a step that never ran on anything    total 0, and "pass" is meaningless
+```
+
+A trace carrying only names and pass/fail cannot tell those apart, and neither
+can anybody reading it. It also makes the second cheap check possible — a count
+that is a small integer *multiple* of the expected one is a grouping mistake
+upstream, not arithmetic in the step being blamed — and that is the difference
+between a repair that fixes a cause and one that fixes a symptom.
+
 ## 9. The code has to pass the same gate as the rest of the repo
 
 **Python 3.12.** Generated agents are Python because the repair loop then edits
