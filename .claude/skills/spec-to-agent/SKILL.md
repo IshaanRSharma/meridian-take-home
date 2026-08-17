@@ -592,10 +592,11 @@ answer = await workflow.execute_activity(
    Comparing against `now` reads ctx.clock, which is a frozen value.
 ```
 
-**Rule 4 has a specific meaning: every step records how much it examined.**
-Not merely that it ran and not merely whether it passed. Record the counts for a
-check and the instance counts for anything that gathers, because the reader
-downstream separates two failures that look identical in a score:
+**Rule 4 has a specific meaning: every step records how much it examined, and
+what it saw.** Not merely that it ran and not merely whether it passed. Record
+the counts for a check and the instance counts for anything that gathers,
+because the reader downstream separates two failures that look identical in a
+score:
 
 ```
 a step that ran and disagreed        total 5, failed 2
@@ -607,6 +608,29 @@ can anybody reading it. It also makes the second cheap check possible — a coun
 that is a small integer *multiple* of the expected one is a grouping mistake
 upstream, not arithmetic in the step being blamed — and that is the difference
 between a repair that fixes a cause and one that fixes a symptom.
+
+**Then record the values themselves.** Counts say a step ran; values say whether
+it ran on the right thing. A check reporting `1 failed` sends the reader back to
+the documents; a check reporting *what* failed and *what it was matched against*
+is the diagnosis, and both are already in your hands when you write the count:
+
+```
+coas_valid       failed: 1
+                 failing:   ["UCB26016A"]
+                 available: ["UCB26009", "UCB26014", "UCB26016"]
+
+read_documents   commercial_invoice: 1 of 3 read
+                 commercial_invoice.read: [{invoice_no: "U03/25-26/4790"}]
+```
+
+The trailing letter explains itself there. Without those two lines somebody
+opens a PDF to learn it, and that is the whole cost the bundle exists to remove.
+
+For a check, the failing subjects and the candidates they were compared with.
+For anything that gathers, what each instance is *named by* — its scalar fields,
+never its whole contents. **Cap both.** One shipment in the running corpus
+carries eleven invoices and fourteen certificates, and a trace nobody reads is
+worth as little as no trace.
 
 ## 9. The code has to pass the same gate as the rest of the repo
 
