@@ -188,7 +188,26 @@ agents/<slug>/
   tests/cases/     hand-authored ground truth. NEVER overwrite.
 ```
 
-## 6. The five rules
+## 6. Two things a workflow file must do
+
+Both found by running a real workflow, and neither is guessable.
+
+**Pass `pydantic_core` through explicitly.** Pydantic loads it lazily on first
+model construction, which happens *inside* the sandbox, so the sandbox warns and
+reloads it every run:
+
+```python
+with workflow.unsafe.imports_passed_through():
+    import pydantic_core  # loaded lazily by pydantic; pass it through or pay a reload
+
+    from meridian.runtime import CheckResult, RunTrace
+```
+
+**Return a dataclass, not `dict[str, object]`.** Temporal's payload converter
+refuses `object` and fails at the boundary with a type error naming a key rather
+than a cause. Concrete types, or nothing crosses.
+
+## 7. The five rules
 
 ```
 1  never write  bindings/ · fixtures/ · tests/cases/ · spec.lock.json
@@ -199,7 +218,7 @@ agents/<slug>/
    Comparing against `now` reads ctx.clock, which is a frozen value.
 ```
 
-## 7. Verify
+## 8. Verify
 
 ```bash
 make check                                   # ruff · mypy --strict · tests
@@ -211,7 +230,7 @@ Build 1 is **not** expected to pass every case. It must compile, run every case,
 and produce a parseable result for each. A case that **errors** is a problem; a
 case that **fails** is the first point on the curve.
 
-## 8. Your summary
+## 9. Your summary
 
 End with:
 
