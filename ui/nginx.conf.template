@@ -1,0 +1,31 @@
+# Served by nginx:alpine, which runs envsubst over this file at start-up.
+# ${PORT} is Railway's; $uri is nginx's own and survives because envsubst only
+# replaces names present in the environment.
+
+server {
+    listen       ${PORT};
+    server_name  _;
+    root         /usr/share/nginx/html;
+    index        index.html;
+
+    # The SPA rule. react-router owns every path, so anything that is not a real
+    # file has to come back as index.html or a refresh on /whiteboard is a 404.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Hashed filenames, so the bundle can be cached hard. index.html must not be
+    # — it is what points at the current hashes.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    gzip             on;
+    gzip_types       text/css application/javascript application/json image/svg+xml;
+    gzip_min_length  1024;
+}
