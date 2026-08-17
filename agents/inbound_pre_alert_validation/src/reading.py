@@ -178,7 +178,39 @@ class Classifier:
                 {"role": "user", "content": f"Kinds:\n{options}\n\nDocument:\n{text[:6000]}"},
             ],
         )
-        return _verdict(answer.choices[0].message.content or "{}")
+        return corroborate(_verdict(answer.choices[0].message.content or "{}"), text, candidates)
+
+
+def corroborate(verdict: Verdict, text: str, candidates: Sequence[Candidate]) -> Verdict:
+    """Hold a verdict against the recognition rule the process owner wrote.
+
+    `identified_by` says the page header reads a particular phrase. That is a
+    checkable claim, and checking it costs nothing — so a document the model
+    named without the header to support it is reported less confidently, and the
+    existing floor decides what to do about it.
+
+    This is not distrust of the model in general. It is that shipping paperwork
+    all looks alike: a bill of lading sat in the corpus being read as a
+    commercial invoice, which inflated the invoice count on every shipment
+    carrying one. The header discriminates them exactly, because that is what
+    the process owner said to look at.
+
+    Confidence is halved rather than the verdict rejected, so there is still one
+    knob — the floor — rather than two mechanisms disagreeing about the same
+    question.
+    """
+    if verdict.entity == UNRECOGNISED:
+        return verdict
+    wanted = next((c.identified_by for c in candidates if c.entity == verdict.entity), "")
+    phrases = keywords_of(wanted)
+    if not phrases:
+        # Nothing quoted to check against, so there is nothing to corroborate
+        # and no reason to doubt what came back.
+        return verdict
+    head = header_of(text)
+    if any(phrase in head for phrase in phrases):
+        return verdict
+    return Verdict(entity=verdict.entity, confidence=verdict.confidence / 2)
 
 
 class Extractor:

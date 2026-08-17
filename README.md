@@ -39,6 +39,9 @@ the format is portable across both tools.
 decision lands there with its reason. Start at §2 for the stack, §3 for the repo
 map, §5 for the schema, §7 for why things are the way they are.
 
+**[`RUNNING.md`](./RUNNING.md) is how to actually run it**, in four paths from
+"just the tests" to "generate an agent and repair it", with the gotchas.
+
 ## Quickstart
 
 ```bash
