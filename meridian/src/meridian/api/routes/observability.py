@@ -83,7 +83,8 @@ async def read_evals(connection: Connection) -> dict[str, Any]:
     # passed, and an inner join would hide exactly those.
     recorded = await connection.fetch(
         """
-        select c.key, r.outcome, r.output, r.ended_at, r.build_id
+        select c.key, r.id as run_id, r.outcome, r.output, r.errored,
+               r.declined, r.ended_at, r.build_id
           from eval_cases c
           left join lateral (
                 select * from runs
@@ -93,6 +94,29 @@ async def read_evals(connection: Connection) -> dict[str, Any]:
           ) r on true
         """
     )
+    # The trajectory, so a row that says "error" can say what it was doing when
+    # it did. Without this the screen reports a verdict and withholds the only
+    # thing that explains it, which sends the reader to a terminal.
+    trails = await connection.fetch(
+        """
+        select run_id, seq, primitive_key, status, output, error
+          from run_steps
+         where run_id = any($1::uuid[])
+         order by run_id, seq
+        """,
+        [row["run_id"] for row in recorded if row["run_id"]],
+    )
+    steps: dict[Any, list[dict[str, Any]]] = {}
+    for step in trails:
+        steps.setdefault(step["run_id"], []).append(
+            {
+                "seq": step["seq"],
+                "step": step["primitive_key"],
+                "status": step["status"],
+                "output": _parsed(step["output"]),
+                "error": step["error"],
+            }
+        )
     by_key = {row["key"]: dict(row) for row in recorded}
 
     return {
@@ -107,6 +131,14 @@ async def read_evals(connection: Connection) -> dict[str, Any]:
                 # know that is a caller reimplementing this route.
                 "actual": _parsed(by_key.get(shipment["shipment_no"], {}).get("output")),
                 "outcome": by_key.get(shipment["shipment_no"], {}).get("outcome"),
+                # Why, not just what. An errored case with no message is a dead
+                # end on screen; a failing case with no trace is a verdict
+                # nobody can act on.
+                "errored": by_key.get(shipment["shipment_no"], {}).get("errored"),
+                "steps": steps.get(by_key.get(shipment["shipment_no"], {}).get("run_id"), []),
+                "declined": json.loads(
+                    by_key.get(shipment["shipment_no"], {}).get("declined") or "[]"
+                ),
             }
             for shipment in shipments
         ],

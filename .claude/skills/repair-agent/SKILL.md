@@ -133,6 +133,38 @@ skeleton_defect         the agent has no seam to express the fix    → STOP,
 The first test is **who owns the decision**, never where the file lives. If a
 person has to choose, it is a spec gap however easy the code would be.
 
+### The default is to decide. `spec_gap` is rare and must stay rare.
+
+Most of what looks like a business question is not one. A shipment arriving by
+air instead of sea, a document with no text layer, an identifier in a different
+field, a set of attachments in a shape nothing has seen — all of these are
+*unfamiliar*, and unfamiliar is not the same as undecidable. Treating them as
+gaps sends questions to somebody who would answer *"work it out"*, and a loop
+that stops on every novelty has given up the whole advantage of code being the
+patch surface.
+
+**The test that separates them is whether the suite can tell you that you were
+wrong:**
+
+```
+the eval would fail if I chose badly       →  decide, record it, let the suite judge
+the eval would pass either way             →  STOP. nothing here is an oracle
+```
+
+That second line is what a spec gap actually is. Not "hard", not "unfamiliar" —
+**unfalsifiable**. If two answers both produce a passing suite and only one is
+right, no amount of running tells you which, and choosing quietly is how a
+business decision nobody approved ends up in code.
+
+Two shapes reach that bar in practice, and they are worth knowing by name:
+
+- **the unit of work** — what counts as one case. Aggregate at the wrong grain
+  and every number is internally consistent and wrong together.
+- **identity** — whether two differently-written things are the same thing.
+  Both readings are self-consistent, and only the owner knows.
+
+Everything else: decide, write the assumption with a `falsified_if`, move on.
+
 The second test is **whether you can express the fix at all**, and it is asked
 second because it only matters once you know the decision is yours:
 
