@@ -41,6 +41,10 @@ export default function Whiteboard({ boardId }: { boardId: string }) {
   // arrives from a card rather than from the list, so the conversation they
   // asked for is the one in front of them.
   const [focusThread, setFocusThread] = useState<string | null>(null);
+  // Every element the hovered thread is anchored to. The canvas dims the rest,
+  // which is the only place the many-anchored shape of a conversation is
+  // visible — the chips under a question are a list and read like one.
+  const [span, setSpan] = useState<readonly string[] | null>(null);
 
   const board = useQuery({
     queryKey: ["board", boardId],
@@ -114,7 +118,7 @@ export default function Whiteboard({ boardId }: { boardId: string }) {
           selected={selected}
           onSelect={setSelected}
           onOpen={setOpened}
-          highlight={null}
+          highlight={span}
         />
 
         {/* The handle, on the canvas rather than on the panel, so it stays
@@ -237,6 +241,7 @@ export default function Whiteboard({ boardId }: { boardId: string }) {
                 threads={threads.data ?? []}
                 selected={selected}
                 focus={focusThread}
+                onHover={setSpan}
                 onGoTo={(key) => setSelected(key)}
               />
             )}

@@ -252,6 +252,13 @@ def _from_blanks(board: Board, number: int) -> list[Thread]:
     Deterministic on purpose. `reason` is already a sentence a warehouse
     supervisor can answer — putting it through a model would only risk it coming
     back worse, and would spend a slot the model needs for what only it can see.
+
+    **No field name reaches the person answering.** This used to end with *"and
+    `idempotency_key` is where it would go"*, which names a schema field to
+    somebody who has never seen the schema and never will — the same mistake as
+    a `channel: system_of_record` enum, one layer up. Where the answer lands is
+    ours to know; `decision_key` already carries `(anchor, field)` for dedup and
+    for the audit path, so nothing is lost by not saying it out loud.
     """
     return [
         Thread(
@@ -260,7 +267,8 @@ def _from_blanks(board: Board, number: int) -> list[Thread]:
             origin="lint",
             round=number,
             question=finding.reason,
-            reason=f"Nothing on the board says it, and {finding.field} is where it would go.",
+            reason="Nothing on the board says this, so whoever builds it would "
+            "have to decide for you.",
             anchors=(Anchor.parse(finding.anchor),),
             # Findings already merge on (anchor, field), so this pair is unique
             # by construction — which makes it exactly the identity dedup needs.

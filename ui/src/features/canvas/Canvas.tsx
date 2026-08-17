@@ -57,7 +57,8 @@ interface Props {
    *  arrives on the board first and is opened second, so dropping one does not
    *  bury the thing you just placed under a dialogue. */
   onOpen: (key: string) => void;
-  highlight: string | null;
+  /** Keys to keep lit; everything else dims. Null means dim nothing. */
+  highlight: readonly string[] | null;
 }
 
 export default function Canvas(props: Props) {

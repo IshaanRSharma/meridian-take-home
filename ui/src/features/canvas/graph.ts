@@ -58,12 +58,17 @@ function readsFrom(card: Primitive): string[] {
  *  somebody has to hunt for. */
 function nodeClass(
   key: string,
-  options: { highlight: string | null; landed: string | null },
+  options: { highlight: readonly string[] | null; landed: string | null },
 ): string | undefined {
-  const parts = [
-    options.highlight && options.highlight !== key ? 'opacity-35' : null,
-    options.landed === key ? 'landed' : null,
-  ].filter(Boolean);
+  // A set rather than one key, because a thread is anchored to as many
+  // elements as the question spans — a card, the line out of it and the thing
+  // it reads can all be one conversation. Dimming everything else is what
+  // makes that span visible as a shape instead of a list of names.
+  const dimmed =
+    options.highlight !== null && options.highlight.length > 0 && !options.highlight.includes(key);
+  const parts = [dimmed ? 'opacity-20' : null, options.landed === key ? 'landed' : null].filter(
+    Boolean,
+  );
   return parts.length ? parts.join(' ') : undefined;
 }
 
@@ -78,7 +83,7 @@ export function build(
   threads: Thread[],
   options: {
     showDataLinks: boolean;
-    highlight: string | null;
+    highlight: readonly string[] | null;
     landed: string | null;
     onRemove: (key: string) => void;
   },

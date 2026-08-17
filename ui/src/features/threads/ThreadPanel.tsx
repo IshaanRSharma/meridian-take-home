@@ -34,6 +34,7 @@ export default function ThreadPanel({
   onGoTo,
   selected,
   focus,
+  onHover,
 }: {
   boardId: string;
   threads: Thread[];
@@ -41,6 +42,9 @@ export default function ThreadPanel({
   selected: string | null;
   /** Arrived here from a card rather than from the list. */
   focus?: string | null;
+  /** Which thread the pointer is over, so the canvas can light up every
+   *  element that thread is anchored to. Null on the way out. */
+  onHover?: (anchors: readonly string[] | null) => void;
 }) {
   if (threads.length === 0) {
     return (
@@ -64,6 +68,7 @@ export default function ThreadPanel({
           onGoTo={onGoTo}
           selected={selected}
           focused={focus === thread.id}
+          onHover={onHover}
         />
       ))}
     </div>
@@ -76,12 +81,14 @@ function ThreadCard({
   onGoTo,
   selected,
   focused,
+  onHover,
 }: {
   boardId: string;
   thread: Thread;
   onGoTo: (key: string) => void;
   selected: string | null;
   focused?: boolean;
+  onHover?: (anchors: readonly string[] | null) => void;
 }) {
   const queryClient = useQueryClient();
   const here = useRef<HTMLDivElement>(null);
@@ -115,6 +122,8 @@ function ThreadCard({
   return (
     <div
       ref={here}
+      onMouseEnter={() => onHover?.(anchors.map((anchor) => anchor.key!))}
+      onMouseLeave={() => onHover?.(null)}
       className={cx(
         'px-4 py-3.5 transition-colors',
         isHere && 'bg-(--color-raised)',
