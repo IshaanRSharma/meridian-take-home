@@ -38,6 +38,11 @@ What is in there, so you are not rebuilding it:
 entities.EntityStore     instances keyed by entity, plus what was DECLINED
 ingest.ingest            sources -> classify -> extract -> store
 check.resolve            a FieldRef into rows, with (document, indices)
+                         Row is a dataclass; Failure beside it is a pydantic
+                         model, so dataclasses.replace raises on one and not the
+                         other — and only on the path where something failed
+trace.RunTrace           takes (spec_version, spec_checksum); a run has to say
+                         which contract it implemented
 check.present/compare/each_has_matching       the criterion kernels
 check.tally/roll_up      counts at a grain, and one grain coarser
 check.apply_fills        counts and failing subjects into the output row
@@ -442,6 +447,22 @@ so `store.decline(source, reason)` every time.
 reads almost exactly like a certificate of analysis. Extracting against the wrong
 schema yields fields that look right and are not, which is worse than declining.
 
+**The same instance may arrive more than once, so deduplicate.** A process that
+resumes receives its inputs in overlapping batches — the later delivery repeats
+what the earlier one carried and adds what is new, because a sender resends a
+whole set rather than a diff. Store instances per arrival and every count
+becomes a multiple of how many times the process woke up, which is wrong in a
+way that looks plausible: the numbers are consistent with each other and all of
+them are inflated by the same factor.
+
+Deduplicate on extracted content. Nothing on a board declares an identity for an
+entity — `identified_by` says how to *recognise* one, not how to tell two apart
+— so content is what "the same one" can mean, and extraction at temperature zero
+makes it stable. If the board ever declares an identity, use that instead.
+
+This applies to every process with a `repeat` edge or a signal, which is the
+only reason durable execution is in the stack at all.
+
 ### Leave seams where a repair will need them
 
 Whatever you write, build 1 will be wrong about something — not through
@@ -486,10 +507,10 @@ repair loop tunes it. A business rule has no oracle, which is why §4 says stop.
 Say in your summary which numbers you chose and why, so the first sweep's
 failures are readable against them.
 
-## 7. Three things a workflow file must do
+## 7. Five things a workflow file must do
 
-All three found by running a real workflow. None is guessable, and the third
-costs an afternoon if you meet it cold.
+All five found by running a real workflow. None is guessable, and three of them
+present as a hang rather than an error, which is what makes them expensive.
 
 **Put EVERY `meridian` import inside the passthrough block.**
 
@@ -513,6 +534,26 @@ wrap the call in `asyncio.wait_for` to surface it.
 **Return a dataclass, not `dict[str, object]`.** Temporal's payload converter
 refuses `object` and fails at the boundary with a type error naming a key rather
 than a cause.
+
+**Import your own modules absolutely, never relatively.** The sweep puts the
+entry point's *directory* on `sys.path` and imports each module top-level — it
+has to, because Temporal's sandbox re-imports the workflow's module by name
+through the ordinary finders on every workflow task. So `from . import x` raises
+*attempted relative import with no known parent package*, and only when the
+sweep runs it: importing the package by hand works fine, which is what makes
+this one worth knowing in advance.
+
+**Pass `result_type=` when you call an activity by its string name.** Naming an
+activity as a string is right whenever it belongs to the scaffold rather than to
+your agent — but it leaves Temporal no signature to read a return type from, so
+it hands back a bare `dict`. The first attribute access on it raises inside
+workflow code, and that is a hang.
+
+```python
+answer = await workflow.execute_activity(
+    "invoke_capability", call, result_type=CapabilityResult, ...
+)
+```
 
 ## 8. The five rules
 

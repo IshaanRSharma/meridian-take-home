@@ -325,3 +325,119 @@ async def test_a_question_can_be_answered_over_http(client: AsyncClient) -> None
     answered = next(t for t in after if t["id"] == open_now[0]["id"])
     assert answered["status"] == "answered"
     assert answered["messages"][-1]["body"] == "The duty manager handles it."
+
+
+# --- documents ----------------------------------------------------------------
+#
+# Claude.md §18 names three CRUD surfaces — board, threads, documents — and this
+# was the one that stayed a CLI command until a canvas could accept a dropped
+# file. A written procedure describes the process rather than flowing through it,
+# so it is never a card and never in the frozen spec.
+
+
+async def test_a_procedure_is_read_and_comes_back_with_its_text(
+    client: AsyncClient, board: str
+) -> None:
+    written = b"1. Check the paperwork.\n2. Report anything wrong within one working day.\n"
+
+    attached = await client.post(
+        f"/boards/{board}/documents",
+        files={"file": ("procedure.md", written, "text/markdown")},
+    )
+
+    assert attached.status_code == 201
+    body = attached.json()
+    assert body["filename"] == "procedure.md"
+    assert body["kind"] == "sop"
+    # The text, not just an id. A scan that transcribed badly is invisible
+    # otherwise, and it would look like the reviewer ignoring a procedure it had
+    # simply never been able to read.
+    assert "one working day" in body["text"]
+    assert body["id"]
+
+
+async def test_markdown_is_decoded_rather_than_sent_to_a_model(
+    client: AsyncClient, board: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Paying a model to retype a file you can open is waste dressed as
+    # sophistication. `offline` already mutes the transport, so this asserts the
+    # stronger thing: nothing was called at all.
+    async def refuse(**_: Any) -> Any:
+        raise AssertionError("a file that is already text must not reach a model")
+
+    monkeypatch.setattr("meridian.core.llm._default_transport", lambda: refuse)
+
+    attached = await client.post(
+        f"/boards/{board}/documents",
+        files={"file": ("procedure.txt", b"a rule", "text/plain")},
+    )
+
+    assert attached.status_code == 201
+
+
+async def test_a_file_that_cannot_be_read_says_what_would_fix_it(
+    client: AsyncClient, board: str
+) -> None:
+    refused = await client.post(
+        f"/boards/{board}/documents",
+        files={"file": ("procedure.docx", b"PK\x03\x04", "application/octet-stream")},
+    )
+
+    assert refused.status_code == 415
+    # Not "upload failed". The extension and the remedy, because one of those
+    # sends somebody to read logs and the other is something they can do.
+    assert ".docx" in refused.json()["detail"]
+    assert "markdown" in refused.json()["detail"]
+
+
+async def test_documents_come_back_in_a_stable_order(client: AsyncClient, board: str) -> None:
+    for name in ("second.md", "first.md"):
+        await client.post(
+            f"/boards/{board}/documents", files={"file": (name, b"a rule", "text/markdown")}
+        )
+
+    listed = await client.get(f"/boards/{board}/documents")
+
+    assert [d["filename"] for d in listed.json()] == ["first.md", "second.md"]
+
+
+async def test_detaching_a_document_stops_the_next_round_reading_it(
+    client: AsyncClient, board: str
+) -> None:
+    attached = await client.post(
+        f"/boards/{board}/documents", files={"file": ("procedure.md", b"a rule", "text/markdown")}
+    )
+    doc_id = attached.json()["id"]
+
+    gone = await client.delete(f"/boards/{board}/documents/{doc_id}")
+
+    assert gone.status_code == 204
+    assert await (await client.get(f"/boards/{board}/documents")).aread() == b"[]"
+
+
+async def test_a_document_cannot_be_deleted_through_the_wrong_board(
+    client: AsyncClient, board: str
+) -> None:
+    # The id is unguessable, but unguessable is not an authorisation model — and
+    # the caller already named a board in the URL, so honouring it costs one
+    # predicate.
+    attached = await client.post(
+        f"/boards/{board}/documents", files={"file": ("procedure.md", b"a rule", "text/markdown")}
+    )
+    other = str((await client.post("/boards", json={"name": "Another process"})).json()["id"])
+
+    refused = await client.delete(f"/boards/{other}/documents/{attached.json()['id']}")
+
+    assert refused.status_code == 404
+    assert len((await client.get(f"/boards/{board}/documents")).json()) == 1
+
+
+async def test_attaching_to_a_board_that_is_not_there_is_a_404(client: AsyncClient) -> None:
+    # Before any work, so an upload against a missing board does not spend a
+    # model call finding out.
+    refused = await client.post(
+        f"/boards/{uuid4()}/documents",
+        files={"file": ("scan.pdf", b"%PDF-1.4", "application/pdf")},
+    )
+
+    assert refused.status_code == 404

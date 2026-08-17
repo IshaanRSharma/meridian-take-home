@@ -49,7 +49,13 @@ class Deletion:
     """Connections that now point at nothing, in either direction."""
 
     still_named_by: tuple[str, ...] = ()
-    """Cards whose config still names the deleted key — `inputs`, `captures`."""
+    """Cards whose config still names the deleted key, however it names it.
+
+    Not only what the card *reads*. A Check's `fills` write into the entity a
+    process produces without taking it as an input, so the output row is named
+    by every check and read by none — and it is the deletion that costs the
+    most.
+    """
 
 
 async def card(connection: asyncpg.Connection, board_id: UUID, key: str) -> Deletion:
@@ -60,11 +66,7 @@ async def card(connection: asyncpg.Connection, board_id: UUID, key: str) -> Dele
         raise NotFoundError(key)
 
     orphaned = tuple(edge for edge in drawn.edges if key in (edge.from_key, edge.to_key))
-    naming = tuple(
-        other.key
-        for other in drawn.primitives
-        if other.key != key and key in (*other.reads(), *other.produces())
-    )
+    naming = drawn.references_to(key)
 
     await boards.delete_primitive(connection, board_id, key)
     await boards.clear_position(connection, board_id, key)

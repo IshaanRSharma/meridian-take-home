@@ -11,6 +11,7 @@ the spec a second, silently divergent copy.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from meridian.runtime import CheckResult
@@ -34,6 +35,16 @@ def exact(value: str) -> str:
     return value
 
 
+def _seen(value: Any, normalise: Any) -> Any:
+    """A batch number as the comparison sees it.
+
+    A line item genuinely missing its batch number stays `None` rather than
+    becoming the string "None", which would match nothing and read in the
+    evidence as a value the document did not contain.
+    """
+    return None if value is None else normalise(str(value))
+
+
 def coas_valid(
     config: dict[str, Any],
     store: EntityStore,
@@ -50,10 +61,11 @@ def coas_valid(
 
     # The seam. `each_has_matching` is imported and called from here, so
     # canonicalising the inputs before it is an ordinary patch in this file —
-    # there is no constructor argument to look for and none is needed.
+    # there is no constructor argument to look for and none is needed. The rows
+    # keep their locator and their place, because the counts roll up by those.
     certificates = [normalise(str(cell.value)) for cell in right if cell.value is not None]
     failures = each_has_matching(
-        [cell.model_copy(update={"value": normalise(str(cell.value))}) for cell in rows],
+        [replace(cell, value=_seen(cell.value, normalise)) for cell in rows],
         certificates,
         config["scope"],
     )

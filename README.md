@@ -23,8 +23,8 @@ are run by a person with a coding agent, using checked-in skills:
 ```bash
 codex                                     # or claude
 > /spec-to-agent                          # reads spec.lock.json, writes agents/<slug>/
-$ meridian eval sweep --build 1
-$ meridian bundle --build 1 | pbcopy           # the copy-ready failure bundle
+$ meridian eval sweep <board>
+$ meridian bundle <board> | pbcopy             # the copy-ready failure bundle
 > /repair-agent                           # paste, fix one file
 $ meridian build register --from-git
 ```
@@ -38,10 +38,6 @@ the format is portable across both tools.
 **[`Claude.md`](./Claude.md) is the design document.** Every schema and structure
 decision lands there with its reason. Start at §2 for the stack, §3 for the repo
 map, §5 for the schema, §7 for why things are the way they are.
-
-**[`SCOPE.md`](./SCOPE.md) is what actually ships**, in what order, and why
-everything else was cut. Read it second — it is the shorter of the two and it
-explains the shape of the repo.
 
 ## Quickstart
 
@@ -88,6 +84,127 @@ Dependencies are added by the unit that first needs them rather than declared up
 front, so each commit's dependency diff says what the code actually started
 using. The committed stack is `Claude.md` §2.
 
+## Inside the backend
+
+One package, nine directories. Each one has a `README.md` saying what is in it and
+why it is shaped that way, so the answer to "where does this live" is one hop.
+
+| directory | what it owns | reads |
+|---|---|---|
+| [`domain/`](./meridian/src/meridian/domain/) | the four cards, the board, the review types, the frozen spec | nothing internal |
+| [`core/`](./meridian/src/meridian/core/) | env, the connection pool, the one seam to OpenAI | `domain` |
+| [`repositories/`](./meridian/src/meridian/repositories/) | all the SQL, rows to domain types and back | `domain` |
+| [`authoring/`](./meridian/src/meridian/authoring/) | how a card gets on the board, including from prose | `domain`, `repositories` |
+| [`compiler/`](./meridian/src/meridian/compiler/) | what "incomplete" means, and the freeze | `domain` |
+| [`reviewer/`](./meridian/src/meridian/reviewer/) | board to questions, answers to statements | `domain`, `compiler`, `repositories` |
+| [`healing/`](./meridian/src/meridian/healing/) | sweep, localise, the pasteable bundle, the gate | `domain`, `repositories`, `runtime` |
+| [`runtime/`](./meridian/src/meridian/runtime/) | the contract generated agents import | `domain` only |
+| [`api/`](./meridian/src/meridian/api/) | a thin trigger layer over all of it | everything except `runtime` |
+
+That last column is a test, not a comment. `tests/test_layering.py` walks the
+imports and fails if anything points upward. The two rules worth knowing:
+
+**`authoring` cannot import `compiler`.** If it could, refusing an edit because of a
+lint finding would be one import away, and that would make the canvas modal and
+delete the findings the review loop runs on.
+
+**`runtime` may import `domain` and nothing else.** Generated agents import
+`runtime`, so if it could reach the compiler then every deployed agent would be
+carrying the authoring toolchain.
+
+## End to end
+
+What actually happens, in order, with the commands that do it. Everything below
+runs headlessly. The UI is a viewer of a system that works without it.
+
+**1. Draw something.** A card is placeable with a name and nothing else. Nothing
+refuses, because a process owner who drops a card and goes to lunch has to be able
+to come back to it.
+
+```bash
+meridian board new "Inbound pre-alert validation"
+meridian card add <board> --type check --name "Does every batch have a matching COA?"
+meridian edge add <board> invoice_complete coas_valid --on pass
+meridian board lint <board>              # what is missing, worst first
+```
+
+**2. Attach a procedure, if one exists.** Most processes have no document, which is
+why the whiteboard exists. When there is one it is the highest-value input, because
+a disagreement between the drawing and the procedure is checkable rather than
+speculative. Markdown is read off disk. A PDF or a photo of a printed sheet goes to
+the model, which reads the page.
+
+```bash
+meridian board attach <board> docs/sop-inbound-pre-alert.pdf --kind sop
+```
+
+**3. Review.** The round refuses if the drawing is not a workable process yet, then
+settles what was answered since last time, walks every declared outcome, reads any
+attached procedure, and asks at most six things.
+
+```bash
+meridian review run <board>
+meridian thread list <board>
+meridian thread answer <thread> "The receiving supervisor gets it."
+meridian thread reject <thread> "Expiry is not checked at this stage."
+```
+
+A rejected question is not deleted. It compiles into the spec as negative
+knowledge, so a later round does not re-ask and the code generator knows the case
+was considered.
+
+**4. Answer, then edit the canvas.** These are two separate things and the system
+insists on both. `answered` means the knowledge exists. `resolved` means the
+drawing shows it, and the process owner does not get to declare that: the next
+round re-runs the walk that raised the question and compares.
+
+**5. Freeze.** Refuses on blocking findings and on any unsettled question. This is
+where authority transfers from a person to a test suite.
+
+```bash
+meridian review settle <board>           # the freeze path runs this too
+meridian spec freeze <board>
+meridian spec check <board>              # what a spec still leaves to its implementer
+meridian spec yield <board>              # how much of it the drawing could not have said
+meridian spec export <board>             # writes agents/<slug>/spec.lock.json
+```
+
+`spec check` is the gate worth running before generating anything. It hands each
+card to a model as its implementer and asks what it would have to decide for
+itself. An empty answer is the one worth reaching.
+
+**6. Generate.** A human step, run in a terminal with a coding agent. The skill
+reads `spec.lock.json` and writes `agents/<slug>/`.
+
+```bash
+codex                                    # or claude
+> /spec-to-agent
+meridian build register <board> --from-git
+```
+
+**7. Run it.** The generated agent runs itself: `build.json` names an entry point,
+and everything Temporal happens inside the agent. It boots a real Temporal server
+in-process with a skipping clock, so a deadline measured in days resolves in
+milliseconds.
+
+```bash
+meridian eval load <board> --from fixtures/expected/shipments.json
+meridian eval sweep <board>              # latest build, or pass an iteration
+```
+
+**8. Repair.** One failing signature at a time. The bundle is the product: it has
+to be fixable by somebody who has never seen the repo, from the block alone.
+
+```bash
+meridian bundle <board> | pbcopy         # largest failure bucket by default
+> /repair-agent                          # paste, fix one file
+meridian build register <board> --from-git
+meridian eval sweep <board>              # a new point on the curve
+```
+
+The gate can only reject. A human is required to override it and never to approve
+in its place.
+
 ## Authoring a card
 
 A process owner never fills in a form. A card is placeable with a name and
@@ -114,11 +231,16 @@ Consciously cut, with the reason. `SCOPE.md` carries the full list.
 
 **Authoring**
 
-- **Upload an SOP and draft the whole board.** Same call shape as the text path
-  plus PDF→text, so it is nearly free once that exists. Deferred so the demo's
+- **Draft the whole board from an SOP.** Attaching one already works
+  (`meridian board attach`, and a PDF or a photo of a printed sheet goes to the
+  model to be read), and the reviewer aligns what it says onto the cards it bears
+  on. What is deferred is generating the cards from it. Held back so the demo's
   seed board stays hand-verified and deterministic rather than varying per run.
-- **Drop a sample document on the canvas to propose an entity's fields.**
-  `meridian fixtures pull` does this from the real inbox today.
+- **Drop a sample document to propose an entity's fields.** Nothing populates
+  `sample_extracted` today, so a constraint a process owner states cannot be
+  checked against a real value. That check is designed and unbuilt, and it is
+  the highest-value thing on this list: it catches an answer being *wrong*
+  rather than missing.
 
 **Where the vocabulary strains** — all three are named limitations, none needed
 for pre-alert:
@@ -133,6 +255,16 @@ for pre-alert:
 - **Compensation.** Two writes that must succeed or fail together. Pre-alert's
   only write is an email, which cannot be undone — hence `idempotency_key`
   rather than rollback.
+- **Things that happen in no particular order.** The vocabulary has branching and
+  no parallelism: an edge carries an outcome or it is the one way on. Two
+  unconditional edges out of one step is how somebody draws "these both happen",
+  and nothing here can express it. This one is enforced rather than noted. The
+  interpreter refuses to guess which branch to walk and a lint rule says so on
+  the card, because the previous behaviour was worse than a refusal: the board
+  linted clean, reported every step reachable, walked whichever branch was drawn
+  first, and called a situation successful without ever running the check it was
+  named for. POWL, which the design cites for soundness, has partial order as a
+  first-class construct. We took the soundness argument and left that behind.
 
 **Review**
 
@@ -166,25 +298,3 @@ for pre-alert:
   exist; past roughly forty it would.
 - **Probe hit rates by `(primitive_type, category)`** across deployments, so
   ranking becomes empirical with zero customer data moving between them.
-
-## Status
-
-Built in units, each gated on a contract and a test list before implementation.
-Budget and cut list in [`SCOPE.md`](./SCOPE.md).
-
-- [x] repo skeleton, tooling, local services
-- [ ] **0** Composio OAuth, inbox snapshot to `fixtures/emails/`
-- [x] **1** `domain/` — primitives, graph, review, frozen
-- [x] **2** migrations, `repositories/`, seed board
-- [x] **3** `compiler/` — *checkpoint: a spec freezes*
-- [x] **4** `cli.py`
-- [ ] **5** `api/` skeleton + Railway — three services, deployed thin and early
-- [x] **6** `reviewer/` — two rounds, real threads
-- [x] **7** `runtime/` — the skeleton generated agents import
-- [ ] **8** `spec-to-agent` skill — *checkpoint: an agent is generated*
-- [ ] **9** eval cases from the snapshot
-- [ ] **10** `healing/` — *checkpoint: the curve moves*
-- [ ] **11** `events.py`, realtime, background jobs
-- [ ] **12** `ui/` — canvas, comments, submit, spec viewer
-- [ ] **13** Temporal and Composio on the real path
-- [ ] **14** README, PDF, Loom, final deploy

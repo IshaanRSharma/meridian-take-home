@@ -21,8 +21,6 @@ dist/
 .env.local
 *.pem
 
-# Meridian's own material is theirs, not ours to redistribute — and our design
-# notes stay local until the writeup decides what belongs in a public repo.
 docs/
 
 # ── local service data (docker-compose volumes) ──────────────────────────
@@ -48,3 +46,5 @@ agents/**/__pycache__/
 eval/runs/*.csv
 # Toy agents for falsifying the skeleton contract. Scratch, never shipped.
 test_toy_agents/
+
+demo/

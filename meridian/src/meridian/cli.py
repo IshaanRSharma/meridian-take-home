@@ -39,7 +39,7 @@ from meridian.domain.build import Build, EvalCase, Repair, RunResult
 from meridian.domain.errors import ConflictingStateError, IncompleteError, NotFoundError
 from meridian.domain.frozen import FrozenSpec
 from meridian.domain.graph import BoardFinding, Primitive
-from meridian.domain.review import Assertion, ReferenceDoc, Thread
+from meridian.domain.review import Assertion, DocKind, ReferenceDoc, Thread
 from meridian.healing import bundle as bundle_
 from meridian.healing import record
 from meridian.healing import sweep as sweep_
@@ -87,6 +87,11 @@ CardKey = Annotated[str, typer.Argument(help="the card's key")]
 Iteration = Annotated[
     int | None, typer.Option("--build", help="which build; the latest by default")
 ]
+# Where `<slug>/` lives. A parameter rather than a constant because a candidate
+# build is an ordinary thing to want to measure before it replaces the one on
+# the shelf — and because two people generating the same agent at once should
+# not have to take turns over one directory.
+AgentsRoot = Annotated[str, typer.Option("--agents", help="directory holding <slug>/")]
 
 
 def _run[T](work: Callable[[asyncpg.Connection], Awaitable[T]]) -> T:
@@ -119,6 +124,11 @@ def _run[T](work: Callable[[asyncpg.Connection], Awaitable[T]]) -> T:
     except IncompleteError as refused:
         typer.echo(str(refused))
         raise typer.Exit(1) from refused
+    except sweep_.AgentNotRunnableError as unrunnable:
+        # Distinct from a case that failed: nothing ran, so there is no score to
+        # read and no bundle to open. The fix is on disk, not in the suite.
+        typer.echo(f"This build cannot be run: {unrunnable}")
+        raise typer.Exit(1) from unrunnable
     except NotFoundError as missing:
         typer.echo(f"Not found: {missing}")
         raise typer.Exit(1) from missing
@@ -163,7 +173,7 @@ def board_new(name: Annotated[str, typer.Argument(help="what this process is cal
 def board_attach(
     board_id: BoardId,
     path: Annotated[Path, typer.Argument(help="a written procedure describing this process")],
-    kind: Annotated[str, typer.Option(help="sop · policy · email · other")] = "sop",
+    kind: Annotated[DocKind, typer.Option(help="sop · policy · email · other")] = "sop",
 ) -> None:
     """Attach a written procedure for the reviewer to read.
 
@@ -183,7 +193,7 @@ def board_attach(
     except (extract.UnreadableError, OSError) as unreadable:
         typer.echo(str(unreadable))
         raise typer.Exit(1) from unreadable
-    doc = ReferenceDoc(kind=kind, filename=path.name, text=text)  # type: ignore[arg-type]
+    doc = ReferenceDoc(kind=kind, filename=path.name, text=text)
     attached = _run(lambda c: reference_docs.save(c, board_id, doc, storage_path=str(path)))
     typer.echo(f"attached {doc.filename} ({len(text)} characters read)  {attached}")
 
@@ -598,6 +608,7 @@ def build_register(
         bool, typer.Option("--from-git", help="read HEAD and the agent's build.json")
     ] = True,
     author: Annotated[str, typer.Option("--as", help="codegen · repair · human")] = "codegen",
+    agents: AgentsRoot = "agents",
 ) -> None:
     """Record the agent on disk as a build of this board's latest spec.
 
@@ -620,6 +631,7 @@ def build_register(
             repo_root=_repo_root(),
             cycle_id=sweep_.new_cycle(),
             created_by=author,  # type: ignore[arg-type]
+            agents_dir=agents,
         )
         return built, spec.slug
 
@@ -680,17 +692,27 @@ def eval_load(
 
 
 @eval_app.command("sweep")
-def eval_sweep(
+def eval_sweep(  # noqa: PLR0913, PLR0917 - what to run, against which build, for how long
     board_id: BoardId,
     iteration: Iteration = None,
     split: Annotated[str | None, typer.Option(help="train · holdout; both by default")] = None,
     case: Annotated[list[str] | None, typer.Option(help="run only these keys")] = None,
+    seconds: Annotated[
+        float, typer.Option("--timeout", help="give up on a case after this long")
+    ] = sweep_.CASE_TIMEOUT_SECONDS,
+    agents: AgentsRoot = "agents",
 ) -> None:
     """Run every case through the build and record what happened.
 
     Per column, because a patch that fixes one and breaks another leaves the row
     failing before and after — so a row-level score watches a regression go past
     without changing.
+
+    `--timeout` is worth knowing about. An exception in Temporal workflow code
+    is a workflow task failure, which retries forever — so a broken agent does
+    not fail, it *hangs*, and the timeout is the only thing that turns silence
+    back into a result. The default suits real work; drop it while iterating,
+    because the wait is the whole cost of a bad build.
     """
 
     async def work(connection: asyncpg.Connection) -> sweep_.Swept:
@@ -706,8 +728,9 @@ def eval_sweep(
             build=built,
             spec=spec,
             cases=cases,
-            agents_root=_repo_root() / "agents",
+            agents_root=_repo_root() / agents,
             cycle_id=sweep_.new_cycle(),
+            case_timeout=seconds,
         )
 
     _sweep_report(_run(work), split)
@@ -718,9 +741,17 @@ def eval_case(
     board_id: BoardId,
     key: Annotated[str, typer.Argument(help="the case to run, e.g. CAAU4056270")],
     iteration: Iteration = None,
+    seconds: Annotated[float, typer.Option("--timeout", help="give up after this long")] = 60.0,
+    agents: AgentsRoot = "agents",
 ) -> None:
-    """Run one case. The first thing to try after a patch."""
-    eval_sweep(board_id, iteration=iteration, split=None, case=[key])
+    """Run one case. The first thing to try after a patch.
+
+    A shorter default timeout than a full sweep, because this is the iterating
+    command and a hang is the failure mode you meet most while iterating.
+    """
+    eval_sweep(
+        board_id, iteration=iteration, split=None, case=[key], seconds=seconds, agents=agents
+    )
 
 
 @app.command("bundle")
@@ -730,6 +761,7 @@ def bundle(
     signature: Annotated[
         str | None, typer.Option(help="which failure; the largest bucket by default")
     ] = None,
+    agents: Annotated[Path, typer.Option(help="where agent directories live")] = Path("agents"),
 ) -> None:
     """The failure block, ready to paste. This is the product.
 
@@ -743,7 +775,13 @@ def bundle(
     async def work(connection: asyncpg.Connection) -> str:
         spec, spec_id = await _spec(connection, board_id)
         built = await _build(connection, spec_id, iteration)
-        return await bundle_.bundle(connection, build=built, spec=spec, signature=signature)
+        return await bundle_.bundle(
+            connection,
+            build=built,
+            spec=spec,
+            signature=signature,
+            agents_root=_repo_root() / agents,
+        )
 
     typer.echo(_run(work))
 

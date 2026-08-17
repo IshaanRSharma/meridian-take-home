@@ -612,6 +612,40 @@ def test_the_seed_board_leaves_mismatched_coa_unwired(seed: Board):
     assert unwired == ["mismatched_coa"]
 
 
+def test_the_entity_a_process_produces_is_named_by_the_checks_that_fill_it(complete: Board):
+    # The one entity nothing reads. `reads()` and `produces()` both come back
+    # empty for it — a Check writes counts into the output row without ever
+    # taking it as an input — so anything asking "who still names this" off
+    # those two alone concludes nobody does, and that is the entity whose
+    # deletion costs the most.
+    assert not [card.key for card in complete.primitives if "shipment_summary" in card.reads()]
+
+    assert complete.references_to("shipment_summary") == ("coas_valid", "invoice_complete")
+
+
+def test_a_field_reference_counts_as_naming_it_even_before_the_step_is_given_it(seed: Board):
+    # `references_are_declared` is blocking, so on a finished board a criterion
+    # naming an entity implies that entity is in `inputs` and both routes agree.
+    # A board mid-drawing is where they part, and that is exactly when a card
+    # gets deleted.
+    reading = seed.p("coas_valid")
+    stripped = reading.model_copy(
+        update={"config": reading.config.model_copy(update={"inputs": ()})}
+    )
+    board = seed.model_copy(
+        update={
+            "primitives": tuple(stripped if p.key == "coas_valid" else p for p in seed.primitives)
+        }
+    )
+
+    assert "certificate_of_analysis" not in board.p("coas_valid").reads()
+    assert "coas_valid" in board.references_to("certificate_of_analysis")
+
+
+def test_nothing_names_a_card_that_nothing_names(seed: Board):
+    assert seed.references_to("documentation_validated") == ()
+
+
 def test_the_seed_board_dead_ends_when_the_invoice_fails(seed: Board):
     # The finding that the corpus later confirms: CAAU4056270 failed its invoice
     # check and still counted 5 of 5 COAs, so the COA check cannot really be

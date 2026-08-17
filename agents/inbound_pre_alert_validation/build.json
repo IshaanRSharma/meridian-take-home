@@ -1,15 +1,27 @@
 {
-  "spec_checksum": "2f5e5123a61c0fc1180f8ea60adeb75ce6802df82ad0fa6c291af7cafea94e35",
-  "entry_point": "agent.py",
-  "model": "claude-opus-5",
+  "spec_version": 1,
+  "spec_checksum": "2f6ad2decc523ba7cb6a3d97bd39f9ef1ddfed455c22cd0035743aa0b02919fc",
+  "entry_point": "src/harness.py",
+  "created_by": "codegen",
+  "model": "gpt-4o-mini",
   "prompt_version": "spec-to-agent@2026-08-17",
   "temperature": 0.0,
   "file_map": {
-    "coas_valid": "checks/coas_valid.py",
-    "invoice_complete": "checks/invoice_complete.py",
-    "prealert_received": "agent.py",
-    "report_coa_discrepancy": "agent.py",
-    "report_invoice_discrepancy": "agent.py",
-    "documentation_validated": "agent.py"
-  }
+    "prealert_received": "src/mail.py",
+    "invoice_complete": "src/checks/invoice_complete.py",
+    "coas_valid": "src/checks/coas_valid.py",
+    "report_invoice_discrepancy": "src/actions/report_invoice_discrepancy.py",
+    "report_coa_discrepancy": "src/actions/report_coa_discrepancy.py"
+  },
+  "$comment": [
+    "file_map names leaf files only. A failure bundle resolves primitive_key to a",
+    "file from here, and pointing one at workflow.py would send every repair at",
+    "the shell all the cards share.",
+    "",
+    "documentation_validated has no entry: effect=noop with is_terminal, so there",
+    "is nothing to implement and nothing a repair could open.",
+    "",
+    ".superseded/ holds an earlier, independent generation of this same agent",
+    "from a concurrent session. Kept rather than deleted; safe to remove."
+  ]
 }

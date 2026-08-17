@@ -416,6 +416,33 @@ class Board(DomainModel):
 
     # --- references ---------------------------------------------------------
 
+    def references_to(self, key: str) -> tuple[str, ...]:
+        """Every other card whose configuration names this key.
+
+        Wider than ``reads`` and ``produces``, and deliberately so: those two
+        answer *what flows through a step*, and a key can be named without
+        flowing anywhere. A Check's ``fills`` write counts into the entity a
+        process produces without ever taking it as an input, so the output row —
+        the one card whose loss costs the most — is named by every check and
+        read by none. A ``FieldRef`` in ``criteria`` or ``payload_fields`` is the
+        other half: on a finished board ``references_are_declared`` makes it
+        imply ``inputs``, but a board mid-drawing is exactly where they part, and
+        that is when somebody deletes a card.
+        """
+        named = {card.key for card in self.primitives if key in (*card.reads(), *card.produces())}
+        named |= {
+            node.key
+            for node in self.nodes()
+            for refs in self.field_references(node).values()
+            if any(ref.entity == key for ref in refs)
+        }
+        named |= {
+            check.key
+            for check in self.checks()
+            if any(fill.field.entity == key for fill in check.config.fills)
+        }
+        return tuple(sorted(named - {key}))
+
     def field_references(self, card: FlowNode) -> dict[str, tuple[FieldRef, ...]]:
         """Field references this card makes, grouped by the config field holding them.
 

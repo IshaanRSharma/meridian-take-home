@@ -23,7 +23,7 @@ from meridian.compiler import rules
 from meridian.core.config import settings
 from meridian.domain.errors import ConflictingStateError, NotFoundError
 from meridian.repositories import boards
-from meridian.seed import SEED, board_from_file
+from meridian.seed import COMPLETE, SEED, board_from_file
 
 pytestmark = [
     pytest.mark.db,
@@ -137,6 +137,23 @@ async def test_deleting_a_card_does_not_edit_the_cards_that_named_it(
     assert (
         "commercial_invoice" in (await boards.get(connection, drawn)).p("coas_valid").config.inputs
     )
+
+
+async def test_deleting_the_row_the_process_produces_names_the_checks_that_fill_it(
+    connection: asyncpg.Connection,
+):
+    # The report exists so an interface can offer one more click, and it went
+    # quiet on the deletion where that offer is worth the most. `shipment_summary`
+    # is the output row: both checks write their counts into it and neither takes
+    # it as an input, so a report built from what a card *reads* concluded nobody
+    # named it. The board still catches it — `fills_resolve` is blocking — but
+    # only after the fact, and by then the offer is gone.
+    finished = await boards.save(connection, board_from_file(COMPLETE))
+
+    gone = await delete.card(connection, finished, "shipment_summary")
+
+    assert gone.still_named_by == ("coas_valid", "invoice_complete")
+    assert any(f.field == "fills" for f in rules.blocking(await boards.get(connection, finished)))
 
 
 async def test_deleting_a_card_takes_its_position_with_it(connection: asyncpg.Connection, drawn):

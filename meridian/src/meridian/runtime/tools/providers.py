@@ -65,7 +65,13 @@ class ComposioProvider:
         is how a check passes for the wrong reason.
         """
         if self._client is None:
-            msg = "Composio is not connected; run `mvp connect check` before a live run"
+            # Names the state, not a command: there is no `connect` command yet,
+            # and an error inviting somebody to run one that does not exist wastes
+            # the one moment they were willing to follow an instruction.
+            msg = (
+                "Composio is not connected: no authenticated client was supplied "
+                "for this user. A live run needs one; the fixture harness does not."
+            )
             raise BindingError(msg)
         try:
             # The SDK is untyped, so the boundary narrows rather than trusting it.

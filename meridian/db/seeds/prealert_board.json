@@ -19,7 +19,7 @@
     "  · no on_missing_input on either check nothing says what to do while waiting",
     "  · no deadline on the event            nothing bounds the wait",
     "  · mismatched_coa has no edge          the SOP names the outcome, not the path",
-    "  · no sample_extracted yet             populated by `mvp fixtures pull`",
+    "  · no sample_extracted yet             samples come from the fixture pull",
     "  · no output entity                    the SOP describes no result row at all",
     "  · nothing reads prealert_email.sender the report has to go somewhere, and",
     "                                        'whoever sent it' is a guess until asked",

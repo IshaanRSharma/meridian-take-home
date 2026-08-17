@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "checksum": "2f5e5123a61c0fc1180f8ea60adeb75ce6802df82ad0fa6c291af7cafea94e35",
-  "board_id": "6915a183-3839-44f2-a595-20db922e7647",
+  "checksum": "2f6ad2decc523ba7cb6a3d97bd39f9ef1ddfed455c22cd0035743aa0b02919fc",
+  "board_id": "d69b28cb-56a9-44f0-ac7c-847621045d23",
   "capabilities": [
     "email.fetch",
     "email.send",

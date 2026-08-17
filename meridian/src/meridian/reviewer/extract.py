@@ -106,15 +106,38 @@ async def text_of(path: Path, *, transport: Transport | None = None) -> str:
     Raises:
         UnreadableError: the file is neither text, a PDF, nor an image.
     """
-    suffix = path.suffix.lower()
-    # Off the loop, because the API calls this too and a scanned procedure is
+    # Off the loop, because the API shares this path and a scanned procedure is
     # megabytes rather than kilobytes.
-    if suffix in PLAIN:
-        return await asyncio.to_thread(path.read_text)
+    raw = await asyncio.to_thread(path.read_bytes)
+    return await text_of_bytes(raw, path.name, transport=transport)
 
-    part = await _as_content(path, suffix)
+
+async def text_of_bytes(
+    raw: bytes, filename: str, *, transport: Transport | None = None
+) -> str:
+    """The same, for a file that never touched the disk.
+
+    An HTTP upload arrives in memory, and writing it to a temporary path just to
+    read it back would add a filesystem to a path that does not need one — plus a
+    cleanup nobody would notice failing. So the bytes are the interface and
+    ``text_of`` is the convenience that reads them.
+
+    ``filename`` is not decoration: its extension decides whether this is decoded
+    or transcribed, and it is what the model is told the document is called.
+
+    Raises:
+        UnreadableError: the extension is neither text, a PDF, nor an image.
+    """
+    suffix = Path(filename).suffix.lower()
+    if suffix in PLAIN:
+        # `replace` rather than raising: a procedure with one mis-encoded curly
+        # quote is still worth reading, and refusing the whole document over a
+        # byte is the wrong trade.
+        return raw.decode("utf-8", errors="replace")
+
+    part = _as_content(raw, filename, suffix)
     if part is None:
-        raise UnreadableError(path)
+        raise UnreadableError(Path(filename))
 
     read = await structured(
         Task.EXTRACT,
@@ -126,20 +149,19 @@ async def text_of(path: Path, *, transport: Transport | None = None) -> str:
     return read.value.text
 
 
-async def _as_content(path: Path, suffix: str) -> dict[str, Any] | None:
+def _as_content(raw: bytes, filename: str, suffix: str) -> dict[str, Any] | None:
     """The file as one content part, or ``None`` if this cannot carry it.
 
-    A data URI rather than an upload: the file is read once, sent once, and never
-    stored anywhere this system has to manage or clean up. At the size of a
-    written procedure that is the right trade — a four-page SOP is well inside
-    what one request carries.
+    A data URI rather than an upload: the bytes are sent once and never stored
+    anywhere this system has to manage or clean up. At the size of a written
+    procedure that is the right trade — a four-page SOP is well inside what one
+    request carries.
     """
-    raw = await asyncio.to_thread(path.read_bytes)
     encoded = base64.b64encode(raw).decode()
     if media := DOCUMENTS.get(suffix):
         return {
             "type": "input_file",
-            "filename": path.name,
+            "filename": filename,
             "file_data": f"data:{media};base64,{encoded}",
         }
     if media := IMAGES.get(suffix):
@@ -153,4 +175,13 @@ def readable(suffix: str) -> bool:
     return lowered in PLAIN or lowered in DOCUMENTS or lowered in IMAGES
 
 
-__all__ = ["DOCUMENTS", "IMAGES", "PLAIN", "Transcribed", "UnreadableError", "readable", "text_of"]
+__all__ = [
+    "DOCUMENTS",
+    "IMAGES",
+    "PLAIN",
+    "Transcribed",
+    "UnreadableError",
+    "readable",
+    "text_of",
+    "text_of_bytes",
+]

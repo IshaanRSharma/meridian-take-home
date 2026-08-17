@@ -1,0 +1,222 @@
+[
+  {
+    "key": "CAAU4056270",
+    "split": "train",
+    "origin": "authored",
+    "input": {
+      "shipment_no": "CAAU4056270"
+    },
+    "expected_output": {
+      "invoices_successful": 0,
+      "invoices_failed": 1,
+      "invoices_total": 1,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 2,
+      "failed_coa": 0,
+      "coa_success": 5,
+      "coa_total": 5,
+      "status": "ACTIVE"
+    },
+    "tags": [
+      "container"
+    ]
+  },
+  {
+    "key": "MNBU3974949",
+    "split": "train",
+    "origin": "authored",
+    "input": {
+      "shipment_no": "MNBU3974949"
+    },
+    "expected_output": {
+      "invoices_successful": 1,
+      "invoices_failed": 0,
+      "invoices_total": 1,
+      "invoices_mismatched_asn": 14,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 17,
+      "coa_total": 17,
+      "status": "RESOLVED"
+    },
+    "tags": [
+      "container"
+    ]
+  },
+  {
+    "key": "176-26926281",
+    "split": "holdout",
+    "origin": "authored",
+    "input": {
+      "shipment_no": "176-26926281"
+    },
+    "expected_output": {
+      "invoices_successful": 1,
+      "invoices_failed": 0,
+      "invoices_total": 1,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 0,
+      "failed_coa": 2,
+      "coa_success": 0,
+      "coa_total": 2,
+      "status": "ACTIVE"
+    },
+    "tags": [
+      "air_waybill"
+    ]
+  },
+  {
+    "key": "TTNU8982561",
+    "split": "train",
+    "origin": "authored",
+    "input": {
+      "shipment_no": "TTNU8982561"
+    },
+    "expected_output": {
+      "invoices_successful": 2,
+      "invoices_failed": 0,
+      "invoices_total": 2,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 7,
+      "coa_total": 7,
+      "status": "RESOLVED"
+    },
+    "tags": [
+      "container"
+    ]
+  },
+  {
+    "key": "MNBU4371364",
+    "split": "train",
+    "origin": "authored",
+    "input": {
+      "shipment_no": "MNBU4371364"
+    },
+    "expected_output": {
+      "invoices_successful": 3,
+      "invoices_failed": 0,
+      "invoices_total": 3,
+      "invoices_mismatched_asn": 9,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 3,
+      "coa_total": 3,
+      "status": "RESOLVED"
+    },
+    "tags": [
+      "container"
+    ]
+  },
+  {
+    "key": "CGMU5630052",
+    "split": "train",
+    "origin": "authored",
+    "input": {
+      "shipment_no": "CGMU5630052"
+    },
+    "expected_output": {
+      "invoices_successful": 1,
+      "invoices_failed": 0,
+      "invoices_total": 1,
+      "invoices_mismatched_asn": 2,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 3,
+      "coa_total": 3,
+      "status": "RESOLVED"
+    },
+    "tags": [
+      "container"
+    ]
+  },
+  {
+    "key": "MNBU3852977",
+    "split": "train",
+    "origin": "authored",
+    "input": {
+      "shipment_no": "MNBU3852977"
+    },
+    "expected_output": {
+      "invoices_successful": 0,
+      "invoices_failed": 3,
+      "invoices_total": 3,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 6,
+      "failed_coa": 0,
+      "coa_success": 6,
+      "coa_total": 6,
+      "status": "ACTIVE"
+    },
+    "tags": [
+      "container"
+    ]
+  },
+  {
+    "key": "MNBU4407370",
+    "split": "train",
+    "origin": "authored",
+    "input": {
+      "shipment_no": "MNBU4407370"
+    },
+    "expected_output": {
+      "invoices_successful": 7,
+      "invoices_failed": 0,
+      "invoices_total": 7,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 12,
+      "coa_total": 12,
+      "status": "RESOLVED"
+    },
+    "tags": [
+      "container"
+    ]
+  },
+  {
+    "key": "HLBU6302759",
+    "split": "train",
+    "origin": "authored",
+    "input": {
+      "shipment_no": "HLBU6302759"
+    },
+    "expected_output": {
+      "invoices_successful": 3,
+      "invoices_failed": 0,
+      "invoices_total": 3,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 9,
+      "coa_total": 9,
+      "status": "RESOLVED"
+    },
+    "tags": [
+      "container"
+    ]
+  },
+  {
+    "key": "MCAU6047165",
+    "split": "train",
+    "origin": "authored",
+    "input": {
+      "shipment_no": "MCAU6047165"
+    },
+    "expected_output": {
+      "invoices_successful": 11,
+      "invoices_failed": 0,
+      "invoices_total": 11,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 0,
+      "failed_coa": 1,
+      "coa_success": 13,
+      "coa_total": 14,
+      "status": "ACTIVE"
+    },
+    "tags": [
+      "container"
+    ]
+  }
+]

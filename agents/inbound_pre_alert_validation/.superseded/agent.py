@@ -148,9 +148,9 @@ class InboundPreAlert:
         await await_inputs(lambda: len(self.arrivals) >= case.expected_sources, case.deadline)
 
         store = self._ingest(trace)
-        counts: dict[str, int] = dict.fromkeys(
-            SPEC["entities"][OUTPUT]["fields"]["properties"], 0
-        )
+        # `fields` is the field map itself, not a JSON Schema object wrapping
+        # one, so the columns are its keys.
+        counts: dict[str, int] = dict.fromkeys(SPEC["entities"][OUTPUT]["fields"], 0)
         walked = await self._walk(trace, store, counts, case)
 
         return Row(

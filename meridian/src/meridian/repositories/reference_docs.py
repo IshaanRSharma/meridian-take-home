@@ -50,9 +50,17 @@ async def save(
     return written
 
 
-async def delete(connection: asyncpg.Connection, doc_id: UUID) -> bool:
-    """Detach one document and say whether one went."""
-    row = await connection.fetchrow("delete from reference_docs where id = $1 returning id", doc_id)
+async def delete(connection: asyncpg.Connection, board_id: UUID, doc_id: UUID) -> bool:
+    """Detach one document from one board, and say whether one went.
+
+    Scoped by board rather than by id alone. The id is a UUID and unguessable,
+    but "unguessable" is not an authorisation model — and the caller reaching this
+    already named a board in the URL, so honouring it costs one predicate and
+    removes a way for a document to be deleted through the wrong board.
+    """
+    row = await connection.fetchrow(
+        "delete from reference_docs where board_id = $1 and id = $2 returning id", board_id, doc_id
+    )
     return row is not None
 
 

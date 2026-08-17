@@ -1,26 +1,119 @@
 {
-  "spec_checksum": "2f5e5123a61c0fc1180f8ea60adeb75ce6802df82ad0fa6c291af7cafea94e35",
+  "spec_checksum": "2f6ad2decc523ba7cb6a3d97bd39f9ef1ddfed455c22cd0035743aa0b02919fc",
+  "$comment": [
+    "Every decision the spec did not determine, with a prediction attached. When a",
+    "case fails the first question is which assumption predicted it, rather than",
+    "what this code does.",
+    "",
+    "prompted_by null is the signal: an assumption with no anchor in the spec is",
+    "the most likely gap on the board. Two of these are null and both are listed",
+    "first."
+  ],
   "assumptions": [
     {
-      "id": "identified_by_is_recognition",
-      "decision": "matched identified_by case-insensitively as a substring of the page text",
-      "prompted_by": "entities.commercial_invoice.identified_by",
-      "because": "the spec quotes a page header; prose describes recognition, not a byte comparison",
-      "falsified_if": "a real invoice is declined, or something that is not one is classified as one"
-    },
-    {
-      "id": "batch_comparison",
-      "decision": "compared batch numbers exactly, via an injected `normalise` defaulting to identity",
-      "prompted_by": "primitives.coas_valid.criteria[0].op",
-      "because": "`each_has_matching` is a typed operator; trimming or lowercasing here would invent a rule nobody stated",
-      "falsified_if": "certificates fail to match batches that differ only in case or surrounding whitespace"
-    },
-    {
-      "id": "status_always_active",
-      "decision": "returned status ACTIVE unconditionally",
+      "id": "status_column_has_no_source",
+      "decision": "did not emit `status`; the row carries only the seven fields some check fills",
       "prompted_by": null,
-      "because": "nothing in the spec says what closes a shipment; the SOP ends at reporting the discrepancy",
-      "falsified_if": "an eval case expects RESOLVED"
+      "because": "the historical report closes or leaves open every shipment and nothing on the board decides which. The rule ACTIVE-iff-any-discrepancy fits all ten historical rows, but fitting a rule to the answer key is fitting the spec to the test set, and no card says it",
+      "falsified_if": "every case fails on `status` \u2014 which it will, and that is the finding rather than the bug"
+    },
+    {
+      "id": "asn_column_has_no_source",
+      "decision": "did not emit `invoices_mismatched_asn`",
+      "prompted_by": null,
+      "because": "no entity carries an ASN, no check reads one, and no field on the board holds one. A number here would be invented rather than inferred",
+      "falsified_if": "every case fails on this column. The likely source is the per-invoice .xlsx in the mailbox, which is a question for the process owner"
+    },
+    {
+      "id": "match_condition_orthographic",
+      "decision": "matched the subject phrase case-insensitively, collapsing separators and accepting 'Pre Alerts Documents' and 'Pre-Alert Documentation' alongside the quoted form",
+      "prompted_by": "primitives.prealert_received.match_condition",
+      "because": "the spec quotes a phrase, and prose on a card describes how to recognise something rather than specifying a byte comparison. Read literally the quoted phrase matches zero of the fourteen real messages",
+      "falsified_if": "a real pre-alert is skipped, or a message that is not one is processed"
+    },
+    {
+      "id": "correlation_key_read_from_the_body",
+      "decision": "took the container number from the message body under a `Container No` label, falling back to a bare ISO container pattern",
+      "prompted_by": "primitives.prealert_received.correlation_key",
+      "because": "the spec names commercial_invoice.container_no, which is true of the finished data and unavailable at trigger time \u2014 correlating is what decides which workflow an attachment belongs to, and extraction has not run yet. Both readings agree on all thirteen messages that name a container",
+      "falsified_if": "two shipments merge into one workflow, or one splits across two"
+    },
+    {
+      "id": "air_waybill_shipments_are_not_correlated",
+      "decision": "a message naming no container is left ungrouped rather than keyed on its air waybill",
+      "prompted_by": "primitives.prealert_received.correlation_key",
+      "because": "one historical shipment is an air waybill and the board's correlation key is a container number. Nothing says how an air shipment correlates",
+      "falsified_if": "an air-freight pre-alert has to be processed. The one such row in the eval set is absent from the mailbox, so nothing exercises this"
+    },
+    {
+      "id": "batch_matching_is_normalised",
+      "decision": "compared batch numbers after trimming whitespace and folding case",
+      "prompted_by": "primitives.coas_valid.context.inherited[0]",
+      "because": "the card carries a settled assertion \u2014 'Batch numbers are matched after trimming spaces and ignoring case'. That is approved knowledge, so normalising implements the spec. The criterion kernel compares exactly by default and is left alone; the folding is applied to its inputs and the failures are restored to the printed values",
+      "falsified_if": "two genuinely different batches are treated as one"
+    },
+    {
+      "id": "unmatched_batches_report_missing_coa",
+      "decision": "every unmatched batch reports `missing_coa`; `mismatched_coa` is never reached",
+      "prompted_by": "primitives.coas_valid.outcomes",
+      "because": "three outcomes are declared and one each_has_matching criterion distinguishes two results. Nothing in the criteria separates 'a batch has no COA' from 'a COA exists but disagrees', and inventing a similarity threshold would be inventing a rule. Both outcomes route to report_coa_discrepancy on this board, so the label is not observable",
+      "falsified_if": "an eval column distinguishes the two, or the two outcomes are ever wired to different actions"
+    },
+    {
+      "id": "repeat_waits_for_new_documents",
+      "decision": "a repeat edge is followed only when more has arrived since the last pass",
+      "prompted_by": "edges.e7,e8.relation",
+      "because": "the cycle exists because corrected paperwork arrives days later. Re-running a check immediately against inputs that have not changed reaches the same conclusion forever, and nothing on the board bounds the loop",
+      "falsified_if": "a shipment stops before a check that should have re-run"
+    },
+    {
+      "id": "max_passes",
+      "decision": "12",
+      "prompted_by": null,
+      "because": "a safety net, not a business rule. The loop already terminates when nothing new arrives; this stops a mis-drawn cycle becoming a workflow Temporal retries forever with no traceback",
+      "falsified_if": "a legitimate shipment needs more than twelve steps"
+    },
+    {
+      "id": "document_boundaries_are_page_headers",
+      "decision": "a page whose header carries a recognition phrase opens a document; pages after it belong to it until the next header",
+      "prompted_by": "entities.*.identified_by",
+      "because": "every identified_by on this board is page-level \u2014 'the page header reads ...'. One attachment is a 37-page bundle of an invoice and its certificates and another is a single certificate; the same rule handles both without either declaring which it is",
+      "falsified_if": "a multi-page invoice splits into several, or a bundle collapses into one"
+    },
+    {
+      "id": "text_layer_before_vision",
+      "decision": "read the PDF text layer, and send to a vision model only when no page yields 40 characters",
+      "prompted_by": null,
+      "because": "the corpus is mixed and most of it is native PDF. Sending everything to vision is slower and less accurate; refusing the scanned bundle loses a whole shipment",
+      "falsified_if": "a document with a junk text layer is read as text and extracts nothing"
+    },
+    {
+      "id": "confidence_floor",
+      "decision": "0.6, the scaffold default, left unchanged",
+      "prompted_by": null,
+      "because": "nothing in the spec sets one. A certificate of compliance reads almost exactly like a certificate of analysis, and extracting against the wrong schema is worse than declining",
+      "falsified_if": "a real certificate is declined, or a compliance certificate is counted as an analysis one"
+    },
+    {
+      "id": "recipients_resolved_outside_the_workflow",
+      "decision": "roles are resolved to addresses before the workflow starts and passed in as input",
+      "prompted_by": "primitives.report_coa_discrepancy.recipients",
+      "because": "an identity in a checksummed spec would make a personnel change force a new version. Resolving at the edge keeps the spec clean and the resolution replayable",
+      "falsified_if": "a role has no binding and the failure surfaces as a missing recipient rather than a named binding error"
+    },
+    {
+      "id": "idempotency_from_the_cards_own_words",
+      "decision": "built the key from container, the failing values and the outcome, as the card's idempotency_key names them",
+      "prompted_by": "primitives.report_coa_discrepancy.idempotency_key",
+      "because": "the card says 'container_no + batch_no + discrepancy_kind' in prose. Hashing exactly those makes one more batch arriving change the key, so a new discrepancy goes out and a repeat of the same one does not",
+      "falsified_if": "a supervisor is told the same thing twice, or a genuinely new discrepancy is suppressed"
+    },
+    {
+      "id": "nothing_is_sent",
+      "decision": "every capability resolves to a recorder; no email leaves and no system is written to",
+      "prompted_by": null,
+      "because": "the graded artefact is the row the process produces. A recorded call is assertable where a delivered message is a screenshot, and shadow mode removes the only irreversible operation in the system",
+      "falsified_if": "a demo needs a real send, which is a mode flag rather than a change"
     }
   ]
 }

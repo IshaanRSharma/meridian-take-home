@@ -13,6 +13,7 @@ tried against this signature.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -275,3 +276,89 @@ async def test_nothing_in_the_bundle_is_a_uuid(connection: asyncpg.Connection, b
     text = await rendered(connection, build)
 
     assert not re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}", text)
+
+
+# --- the guesses that produced the code ------------------------------------
+
+
+def _with_assumptions(agent_dir: Path) -> None:
+    """Three assumptions: one about this step, one about another, one unanchored."""
+    (agent_dir / "assumptions.json").write_text(
+        json.dumps(
+            {
+                "spec_checksum": a_spec().checksum,
+                "assumptions": [
+                    {
+                        "id": "batch_matching_is_normalised",
+                        "decision": "folded case and trimmed whitespace before matching",
+                        "prompted_by": "primitives.coas_valid.context.inherited[0]",
+                        "because": "the card carries a settled assertion saying so",
+                        "falsified_if": "two genuinely different values are treated as one",
+                    },
+                    {
+                        "id": "invoice_pages_are_one_document",
+                        "decision": "treated consecutive pages as one instance",
+                        "prompted_by": "primitives.invoice_complete.scope",
+                        "because": "unrelated to the failing step",
+                        "falsified_if": "a document splits",
+                    },
+                    {
+                        "id": "confidence_floor",
+                        "decision": "0.6",
+                        "prompted_by": None,
+                        "because": "nothing in the spec sets one",
+                        "falsified_if": "something real is declined",
+                    },
+                ],
+            }
+        )
+    )
+
+
+async def test_it_carries_the_assumptions_that_could_explain_this_failure(
+    connection: asyncpg.Connection, build: Build, agent_dir: Path, swept
+):
+    """The bundle answers "which guess predicted this?" without a second lookup.
+
+    Both skills tell a repair agent to read `assumptions.json` first. If the
+    block it pastes does not contain them, that instruction only works when
+    somebody remembers to open the file — which is exactly the kind of step that
+    stops happening.
+    """
+    _with_assumptions(agent_dir)
+
+    text = await rendered(connection, build, agents_root=agent_dir.parent)
+
+    assert "batch_matching_is_normalised" in text
+    assert "two genuinely different values are treated as one" in text
+
+
+async def test_an_assumption_anchored_nowhere_is_always_carried(
+    connection: asyncpg.Connection, build: Build, agent_dir: Path, swept
+):
+    """A null `prompted_by` is the signal — no anchor in the spec, most likely gap."""
+    _with_assumptions(agent_dir)
+
+    text = await rendered(connection, build, agents_root=agent_dir.parent)
+
+    assert "confidence_floor" in text
+
+
+async def test_assumptions_about_other_steps_are_left_out(
+    connection: asyncpg.Connection, build: Build, agent_dir: Path, swept
+):
+    """The bundle is one signature. Carrying every guess would bury the relevant ones."""
+    _with_assumptions(agent_dir)
+
+    text = await rendered(connection, build, agents_root=agent_dir.parent)
+
+    assert "invoice_pages_are_one_document" not in text
+
+
+async def test_no_assumptions_file_is_not_an_error(
+    connection: asyncpg.Connection, build: Build, agent_dir: Path, swept
+):
+    """A build that recorded none still produces a bundle."""
+    text = await rendered(connection, build, agents_root=agent_dir.parent)
+
+    assert "FAILING SIGNATURE" in text

@@ -41,10 +41,12 @@ REPAIR HISTORY FOR THIS SIGNATURE
   none
 ```
 
-**Read `assumptions.json` first.** The generator recorded every decision the
-spec did not determine, each with a `falsified_if` — a prediction about what
-failure would disprove it. Scan those against the failure in front of you before
-reading a line of code:
+**Read the assumptions first.** The generator recorded every decision the spec
+did not determine, each with a `falsified_if` — a prediction about what failure
+would disprove it. The bundle carries the ones that could apply here under
+`ASSUMPTIONS THAT COULD EXPLAIN THIS`: those anchored on the failing step, and
+those anchored nowhere at all. Scan them against the failure in front of you
+before reading a line of code:
 
 ```
 falsified_if: "a real pre-alert is missed"        ← and the sweep found 0 runs
@@ -55,6 +57,11 @@ falsified_if: "a document is declined that
 A match there is the answer, and it arrives in seconds rather than after reading
 a diff. An assumption whose `prompted_by` is `null` had no spec anchor at all,
 which makes it both the likeliest cause and a candidate spec gap.
+
+The bundle shows only what could apply to this signature. `assumptions.json` in
+the agent directory has the rest, and is worth opening when nothing in the
+bundle fits — a failure explained by no recorded assumption is either a plain
+defect or a decision nobody wrote down, and the second is worth fixing too.
 
 **Then read `DECLINED`.** Half of "found nothing" failures are a
 document that was skipped, not a document that was absent, and those have

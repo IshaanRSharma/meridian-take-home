@@ -195,6 +195,16 @@ class Assertion(DomainModel):
         return self.superseded_by is None
 
 
+DocKind = Literal["sop", "policy", "email", "other"]
+"""What a reference document is. Named because three surfaces spell it out.
+
+The database has the same four in a CHECK constraint, and a route or a CLI option
+that wrote them again is a fourth place to forget one. Typed here, the boundary
+rejects a bad value with the field name before any SQL runs, and the generated
+frontend types carry the enum rather than `string`.
+"""
+
+
 class ReferenceDoc(DomainModel):
     """A document that *describes* the process, rather than flowing through it.
 
@@ -205,7 +215,7 @@ class ReferenceDoc(DomainModel):
     """
 
     id: UUID | None = None
-    kind: Literal["sop", "policy", "email", "other"] = "sop"
+    kind: DocKind = "sop"
     filename: str
     text: str | None = None
 

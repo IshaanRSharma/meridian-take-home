@@ -69,13 +69,18 @@ class Build(DomainModel):
         return self.id
 
     def slug(self) -> str:
-        """The agent directory this build lives in.
+        """The agent's own directory name, without whatever holds it.
 
-        Read off `source_ref`, which is `agents/<slug>@<sha>` — one string
+        Read off `source_ref`, which is `<root>/<slug>@<sha>` — one string
         rather than a column, because the two halves are never useful apart:
         every use is either "where is the code" or "which version of it".
+
+        The **last** segment, not the part after `agents/`. The root is a
+        parameter — a candidate build is measured somewhere other than the shelf
+        — so stripping a fixed prefix would leave the root in the slug and every
+        path built from it would name `<root>/<root>/<slug>`.
         """
-        return self.source_ref.removeprefix("agents/").split("@")[0]
+        return self.source_ref.split("@")[0].rstrip("/").rsplit("/", 1)[-1]
 
     def commit(self) -> str:
         """The sha this build's code is at."""

@@ -448,3 +448,28 @@ async def test_builds_repo_orders_the_curve_by_iteration(
         )
 
     assert [b.iteration for b in await builds_repo.for_spec(connection, spec_id)] == [1, 2, 3]
+
+
+async def test_a_build_measured_outside_agents_still_knows_its_own_slug(
+    connection: asyncpg.Connection, spec_id: UUID, repo: Path, agent_dir: Path
+):
+    # The agents root is a parameter — a candidate build gets measured somewhere
+    # other than the shelf. Stripping a fixed `agents/` prefix would leave the
+    # root inside the slug, and every path built from it would double it.
+    moved = repo / "candidates"
+    moved.mkdir()
+    (agent_dir.parent.parent / "agents" / "toy_prealert").rename(moved / "toy_prealert")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "move the candidate")
+
+    build = await record.register(
+        connection,
+        spec=a_spec(),
+        spec_id=spec_id,
+        repo_root=repo,
+        cycle_id=uuid4(),
+        agents_dir="candidates",
+    )
+
+    assert build.source_ref.startswith("candidates/toy_prealert@")
+    assert build.slug() == "toy_prealert"

@@ -27,7 +27,9 @@ being nearly empty is the finding rather than a fault in the bundle.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -54,6 +56,7 @@ async def bundle(
     build: Build,
     spec: FrozenSpec,
     signature: str | None = None,
+    agents_root: Path | None = None,
 ) -> str:
     """Assemble the failure block for one signature of one build's last sweep.
 
@@ -79,7 +82,7 @@ async def bundle(
 
     bucket = [row for row in found if row["signature"] == found[0]["signature"]]
     chosen = str(found[0]["signature"])
-    lines += await _bucket(connection, bucket, chosen, results, spec, build)
+    lines += await _bucket(connection, bucket, chosen, results, spec, build, agents_root)
     return "\n".join(lines) + "\n"
 
 
@@ -90,6 +93,7 @@ async def _bucket(  # noqa: PLR0913, PLR0917 - one section, and it needs the who
     results: Sequence[RunResult],
     spec: FrozenSpec,
     build: Build,
+    agents_root: Path | None,
 ) -> list[str]:
     plural = "case" if len(bucket) == 1 else "cases"
     primitive = bucket[0]["primitive_key"]
@@ -113,7 +117,49 @@ async def _bucket(  # noqa: PLR0913, PLR0917 - one section, and it needs the who
         lines += [f"ALSO FAILING  {rest}", ""]
 
     lines += _context(spec, primitive)
+    lines += _assumptions(agents_root, build, primitive)
     lines += await _history(connection, signature, spec)
+    return lines
+
+
+def _assumptions(agents_root: Path | None, build: Build, primitive: str | None) -> list[str]:
+    """The guesses that could explain this failure, from the build that made them.
+
+    `file_map` resolves a failing column to a file. Nothing resolved it to the
+    *decision* behind that file, so "which assumption predicted this?" — the
+    first question both skills tell a repair agent to ask — could only be
+    answered by remembering to open a second file. This carries the answer.
+
+    Two are relevant and the rest are noise: those anchored on the failing step,
+    and those anchored nowhere at all. A null `prompted_by` means the generator
+    chose something the spec never mentioned, which is the likeliest gap on the
+    board and is worth seeing whatever failed.
+    """
+    if agents_root is None:
+        return []
+    try:
+        body = json.loads((agents_root / build.slug() / "assumptions.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        # A build that recorded none is a worse build, not a broken one.
+        return []
+
+    relevant = [
+        entry
+        for entry in body.get("assumptions") or []
+        if entry.get("prompted_by") is None
+        or (primitive and primitive in str(entry.get("prompted_by")))
+    ]
+    if not relevant:
+        return []
+
+    lines = ["ASSUMPTIONS THAT COULD EXPLAIN THIS"]
+    for entry in relevant:
+        anchor = entry.get("prompted_by") or "nothing in the spec"
+        lines.append(f"  [{entry.get('id')}] {entry.get('decision')}")
+        lines.append(f"       because   {entry.get('because')}")
+        lines.append(f"       prompted  {anchor}")
+        lines.append(f"       wrong if  {entry.get('falsified_if')}")
+    lines.append("")
     return lines
 
 

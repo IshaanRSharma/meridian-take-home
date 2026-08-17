@@ -60,9 +60,17 @@ def test_an_unbound_role_names_what_this_customer_does_define():
         Bindings({"receiving_supervisor": "ops@x.com"}).role("qa_manager")
 
 
-def test_composio_without_a_connection_says_which_command_fixes_it():
-    with pytest.raises(BindingError, match="connect check"):
+def test_composio_without_a_connection_names_the_state_not_an_invented_command():
+    # It used to say "run `mvp connect check`". Two things wrong with that: the
+    # CLI is `meridian`, and there is no `connect` group at all — so the error
+    # spent the one moment somebody was willing to follow an instruction sending
+    # them to a command that does not exist. Naming the state is worth more.
+    with pytest.raises(BindingError, match="not connected") as refused:
         ComposioProvider(client=None, user_id="u").execute("GMAIL_SEND_EMAIL", {})
+
+    assert "mvp" not in str(refused.value)
+    # And it says who needs it, because the fixture harness legitimately does not.
+    assert "live run" in str(refused.value)
 
 
 class _Envelope:
