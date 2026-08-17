@@ -18,6 +18,7 @@ about the one thing this system exists to measure.
 """
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -53,6 +54,40 @@ async def read_events(
 async def read_cycle(cycle_id: UUID, connection: Connection) -> list[dict[str, Any]]:
     """One run end to end, oldest first, which is the order it happened in."""
     return await events.for_cycle(connection, cycle_id)
+
+
+def _errored(row: Mapping[str, Any]) -> str | None:
+    """The message an errored run carried, derived rather than stored.
+
+    There is no `runs.errored` column and there should not be: the sweep writes
+    the message *into* `output` as `error`, so a column would be a second home
+    for a fact that already has one. `repositories.evals._result` is where this
+    rule lives; this mirrors it because that one is keyed on `build_id` and this
+    route wants the latest run per case.
+
+    **The `outcome` gate is the whole thing.** A process whose output
+    legitimately carries a field called `error` is not an errored run, and
+    reading it as one would score every column of a working case as failed.
+    """
+    if row.get("outcome") != "error":
+        return None
+    output = _parsed(row.get("output")) or {}
+    message = output.get("error")
+    return str(message) if message is not None else None
+
+
+def _declined(value: object) -> list[Any]:
+    """What the build refused to read, however the driver returned it.
+
+    `json.loads` on an already-decoded list raises rather than passing it
+    through, so guessing wrong here is a 500 rather than a wrong answer.
+    """
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+    return list(value) if isinstance(value, list) else []
 
 
 def _parsed(value: object) -> dict[str, Any] | None:
@@ -91,7 +126,7 @@ async def read_evals(
     # across specs that never met. Unscoped is the flat feed, and only that.
     recorded = await connection.fetch(
         """
-        select c.key, r.id as run_id, r.outcome, r.output, r.errored,
+        select c.key, r.id as run_id, r.outcome, r.output,
                r.declined, r.ended_at, r.build_id
           from eval_cases c
           left join lateral (
@@ -150,11 +185,9 @@ async def read_evals(
                 # Why, not just what. An errored case with no message is a dead
                 # end on screen; a failing case with no trace is a verdict
                 # nobody can act on.
-                "errored": by_key.get(shipment["shipment_no"], {}).get("errored"),
+                "errored": _errored(by_key.get(shipment["shipment_no"], {})),
                 "steps": steps.get(by_key.get(shipment["shipment_no"], {}).get("run_id"), []),
-                "declined": json.loads(
-                    by_key.get(shipment["shipment_no"], {}).get("declined") or "[]"
-                ),
+                "declined": _declined(by_key.get(shipment["shipment_no"], {}).get("declined")),
             }
             for shipment in shipments
         ],
