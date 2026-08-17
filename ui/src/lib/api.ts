@@ -370,8 +370,12 @@ export const api = {
   },
 
   observability: {
-    events: (limit = 200) => request<CycleEvent[]>(`/events?limit=${limit}`),
+    events: (limit = 200, boardId?: string) =>
+      request<CycleEvent[]>(
+        `/events?limit=${limit}${boardId ? `&board_id=${boardId}` : ''}`,
+      ),
     cycle: (cycleId: string) => request<CycleEvent[]>(`/events/${cycleId}`),
-    evals: () => request<Evals>('/evals'),
+    evals: (boardId?: string) =>
+      request<Evals>(`/evals${boardId ? `?board_id=${boardId}` : ''}`),
   },
 };

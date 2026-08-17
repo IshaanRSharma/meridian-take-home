@@ -34,14 +34,20 @@ router = APIRouter(tags=["observability"])
 async def read_events(
     connection: Connection,
     limit: int = Query(default=200, le=1000),
+    board_id: UUID | None = None,
 ) -> list[dict[str, Any]]:
     """The most recent events across every cycle, newest first.
 
     What an observability screen opens on before anybody has named a cycle. The
     caller groups by `cycle_id` — the rows carry it, and doing the grouping here
     would force a shape on a screen that also wants a flat feed.
+
+    `board_id` narrows it to one process. Without it a screen shows every board's
+    cycles pooled together, which is not wrong so much as unreadable: two
+    workflows' sweeps interleave by timestamp and nothing on a row says which is
+    which.
     """
-    return await events.recent(connection, limit)
+    return await events.recent(connection, limit, board_id)
 
 
 @router.get("/events/{cycle_id}")

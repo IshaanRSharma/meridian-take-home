@@ -21,13 +21,27 @@ import { Badge, Dot, Empty, Panel, PanelHeader, Problem, Spinner, cx } from '@/c
 
 export default function Runs() {
   const [cycle, setCycle] = useState<string | null>(null);
+  // Which process this screen is about. Pooling every board reads as one
+  // timeline of a system rather than the history of a workflow — two sweeps
+  // interleave by timestamp and nothing on a row says which is which.
+  const [board, setBoard] = useState<string | null>(null);
+
+  const boards = useQuery({ queryKey: ['boards'], queryFn: api.boards.list });
+
+  // The newest board that has been frozen, until somebody picks otherwise. A
+  // board with no spec has nothing to run, so opening on one shows an empty
+  // screen that looks broken.
+  const chosen = board ?? boards.data?.find((b) => b.spec_version !== null)?.id ?? null;
 
   const events = useQuery({
-    queryKey: ['events'],
-    queryFn: () => api.observability.events(300),
+    queryKey: ['events', chosen],
+    queryFn: () => api.observability.events(300, chosen ?? undefined),
     refetchInterval: 5_000,
   });
-  const evals = useQuery({ queryKey: ['evals'], queryFn: api.observability.evals });
+  const evals = useQuery({
+    queryKey: ['evals', chosen],
+    queryFn: () => api.observability.evals(chosen ?? undefined),
+  });
 
   // Grouped here rather than in SQL: the same rows also render as a flat feed,
   // and a shape forced on the server would rule that out.
@@ -36,10 +50,27 @@ export default function Runs() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
-      <h1 className="text-[19px] font-semibold tracking-[-0.015em]">Runs</h1>
-      <p className="mt-1 text-[13px] text-(--color-ink-dim)">
-        What the pipeline did, and how it scored against real shipments.
-      </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-[19px] font-semibold tracking-[-0.015em]">Runs</h1>
+          <p className="mt-1 text-[13px] text-(--color-ink-dim)">
+            What the pipeline did, and how it scored against real shipments.
+          </p>
+        </div>
+        <select
+          value={chosen ?? ''}
+          onChange={(event) => setBoard(event.target.value || null)}
+          className="h-9 rounded-md border border-(--color-line) bg-(--color-ground) px-2.5 text-[12.5px] text-(--color-ink)"
+        >
+          <option value="">Every process</option>
+          {(boards.data ?? []).map((one) => (
+            <option key={one.id} value={one.id}>
+              {one.name}
+              {one.spec_version ? ` · spec v${one.spec_version}` : ' · not frozen'}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[280px_1fr]">
         <Panel className="overflow-hidden">

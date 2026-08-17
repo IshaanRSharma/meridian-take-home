@@ -147,14 +147,37 @@ async def for_cycle(connection: asyncpg.Connection, cycle_id: UUID) -> list[dict
     return [_readable(row) for row in rows]
 
 
-async def recent(connection: asyncpg.Connection, limit: int = 200) -> list[dict[str, Any]]:
-    """The latest rows across every cycle, newest first.
+_BOARD = """
+select e.* from events e
+  left join agent_builds b on b.id = e.build_id
+ where $1::uuid is null
+    or (e.detail ->> 'board_id')::uuid = $1::uuid
+    or e.spec_id in (select id from specs where board_id = $1::uuid)
+    or b.spec_id in (select id from specs where board_id = $1::uuid)
+    or e.thread_id in (select id from threads where board_id = $1::uuid)
+ order by e.at desc, e.id desc
+ limit $2
+"""
 
-    What a screen opens on before anybody has named a cycle. Capped rather than
-    paginated: this is a feed somebody glances at, and a second page of events
-    is a question better asked by cycle.
+
+async def recent(
+    connection: asyncpg.Connection,
+    limit: int = 200,
+    board_id: UUID | None = None,
+) -> list[dict[str, Any]]:
+    """The latest rows, newest first, for one board or for all of them.
+
+    Capped rather than paginated: this is a feed somebody glances at, and a
+    second page of events is a question better asked by cycle.
+
+    **Four ways to reach a board, because the phases know different things.**
+    A review round carries `board_id` in its detail; codegen carries a
+    `spec_id`; eval and repair carry a `build_id` and reach the spec through it;
+    and a review question carries only a `thread_id`. Filtering on any one of
+    them would silently drop three quarters of the timeline, which reads as a
+    board that never did anything rather than as a query that missed.
     """
-    rows = await connection.fetch("select * from events order by at desc, id desc limit $1", limit)
+    rows = await connection.fetch(_BOARD, board_id, limit)
     return [_readable(row) for row in rows]
 
 
