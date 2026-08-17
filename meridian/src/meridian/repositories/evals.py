@@ -220,18 +220,18 @@ async def results_for(connection: asyncpg.Connection, build_id: UUID) -> tuple[R
 
 
 def _result(row: asyncpg.Record) -> RunResult:
-    output = _json(row["output"])
+    output = as_json(row["output"])
     return RunResult(
         run_id=row["run_id"],
         case_id=row["case_id"],
         case_key=row["case_key"],
         outcome=row["outcome"],
         output=output,
-        expected_output=_json(row["expected_output"]),
+        expected_output=as_json(row["expected_output"]),
         # Only when the run actually errored. A process whose output legitimately
         # carries a field called `error` is not an errored run, and reading it as
         # one would score every column of a working case as failed.
-        errored=output.get("error") if row["outcome"] == "error" else None,
+        errored=errored_from(row["outcome"], output),
     )
 
 
@@ -255,7 +255,7 @@ async def failures_for(
         build_id,
         signature,
     )
-    return tuple(dict(row) | {"detail": _json(row["detail"])} for row in rows)
+    return tuple(dict(row) | {"detail": as_json(row["detail"])} for row in rows)
 
 
 async def trajectories_for(
@@ -275,7 +275,7 @@ async def trajectories_for(
     trajectories: dict[UUID, list[dict[str, Any]]] = {}
     for row in rows:
         trajectories.setdefault(row["run_id"], []).append(
-            dict(row) | {"output": _json(row["output"]), "tool_calls": _list(row["tool_calls"])}
+            dict(row) | {"output": as_json(row["output"]), "tool_calls": as_list(row["tool_calls"])}
         )
     return trajectories
 
@@ -285,7 +285,7 @@ async def declines_for(
 ) -> dict[UUID, list[dict[str, Any]]]:
     """What each run skipped, keyed by run."""
     rows = await connection.fetch("select id, declined from runs where id = any($1)", list(run_ids))
-    return {row["id"]: _list(row["declined"]) for row in rows}
+    return {row["id"]: as_list(row["declined"]) for row in rows}
 
 
 def _case(row: asyncpg.Record) -> EvalCase:
@@ -296,19 +296,37 @@ def _case(row: asyncpg.Record) -> EvalCase:
         split=row["split"],
         origin=row["origin"],
         scenario_key=row["scenario_key"],
-        input=_json(row["input"]),
-        expected_output=_json(row["expected_output"]),
+        input=as_json(row["input"]),
+        expected_output=as_json(row["expected_output"]),
         tags=tuple(row["tags"] or ()),
     )
 
 
-def _json(value: object) -> dict[str, Any]:
+def errored_from(outcome: str | None, output: Mapping[str, Any]) -> str | None:
+    """The message an errored run carried, from the output it carried it in.
+
+    Public because the eval screen needs the same answer and a second copy is
+    exactly how this breaks. Add an outcome that should also report its message
+    and one copy changes while the other keeps returning None — nothing raises,
+    nothing fails, the number is just wrong, and the symptom is the bug the gate
+    below exists to prevent.
+
+    There is no `runs.errored` column on purpose: the sweep writes the message
+    into `output`, so a column would be a second home for a fact that has one.
+    """
+    if outcome != "error":
+        return None
+    message = output.get("error")
+    return str(message) if message is not None else None
+
+
+def as_json(value: object) -> dict[str, Any]:
     """Asyncpg hands jsonb back as text unless a codec is registered."""
     loaded = json.loads(value) if isinstance(value, str) else value
     return dict(loaded) if isinstance(loaded, dict) else {}
 
 
-def _list(value: object) -> list[dict[str, Any]]:
+def as_list(value: object) -> list[dict[str, Any]]:
     """The same, for the jsonb columns that hold an array."""
     loaded = json.loads(value) if isinstance(value, str) else value
     if not isinstance(loaded, list):

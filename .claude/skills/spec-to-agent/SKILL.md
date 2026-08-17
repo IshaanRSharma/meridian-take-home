@@ -661,16 +661,44 @@ person's.
 ## 10. Verify
 
 ```bash
-make check                                   # ruff · mypy --strict · tests
-meridian verify --agent <slug>               # imports · conformance
-meridian eval sweep --build <n> --split train
+make check                                        # ruff · mypy --strict · tests
+meridian build register <board> --from-git        # the code becomes a build
+meridian eval case <board> <KEY> --build <n>      # one case, end to end
+meridian eval sweep <board> --case <each>         # the working set
+meridian verify --agent <slug>                    # imports · conformance
 ```
 
+**Your entry point owns the Temporal execution, and that is the whole
+contract.** Nothing outside it starts a server, registers a worker or sends a
+signal — `run_case` does all of it and returns a `CaseOutcome`. So make sure
+that one function will run standing alone, called by something that knows only
+its name:
+
+```python
+async with await WorkflowEnvironment.start_time_skipping() as env:
+    async with Worker(env.client, task_queue=..., workflows=[...], activities=[...]):
+        handle = await env.client.start_workflow(...)
+        for arrival in arrivals:
+            await handle.signal(...)
+        return await asyncio.wait_for(handle.result(), timeout=...)
+```
+
+Three reasons it is shaped this way, each of which bites if you assume otherwise:
+
+- **Every interesting part of running an agent is specific to the process it
+  came from** — which signals it takes, how many inputs it waits for, which
+  providers it wires. A harness that knew those would be a harness for one agent.
+- **Time is skipped, not waited.** `start_time_skipping` runs a real server whose
+  clock jumps to the next timer, so a `PT48H` deadline resolves in milliseconds
+  and the suite stays fast enough to run after every patch.
+- **Wrap the result in `asyncio.wait_for`.** An exception in workflow code is a
+  workflow task failure, retried forever with no traceback — so without a
+  timeout a broken agent does not fail, it hangs, and the sweep waits with it.
+
 > **Which of these exist right now:** `meridian board · card · edge · review ·
-> thread · spec` are built. **`eval`, `bundle`, `verify`, `build` and `repair`
-> are not yet** — they arrive with `healing/`. If a command is missing, say so
-> and stop rather than inventing a substitute; a loop that invents its own
-> verification is not verifying anything.
+> thread · spec · eval · bundle · build · repair` are built. **`meridian verify`
+> is not.** If a command is missing, say so and stop rather than inventing a
+> substitute; a loop that invents its own verification is not verifying anything.
 
 
 Build 1 is **not** expected to pass every case. It must compile, run every case,

@@ -18,7 +18,6 @@ about the one thing this system exists to measure.
 """
 
 import json
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -27,6 +26,7 @@ from fastapi import APIRouter, Query
 
 from meridian import events
 from meridian.api.dependencies import Connection
+from meridian.repositories.evals import as_json, as_list, errored_from
 
 router = APIRouter(tags=["observability"])
 
@@ -54,50 +54,6 @@ async def read_events(
 async def read_cycle(cycle_id: UUID, connection: Connection) -> list[dict[str, Any]]:
     """One run end to end, oldest first, which is the order it happened in."""
     return await events.for_cycle(connection, cycle_id)
-
-
-def _errored(row: Mapping[str, Any]) -> str | None:
-    """The message an errored run carried, derived rather than stored.
-
-    There is no `runs.errored` column and there should not be: the sweep writes
-    the message *into* `output` as `error`, so a column would be a second home
-    for a fact that already has one. `repositories.evals._result` is where this
-    rule lives; this mirrors it because that one is keyed on `build_id` and this
-    route wants the latest run per case.
-
-    **The `outcome` gate is the whole thing.** A process whose output
-    legitimately carries a field called `error` is not an errored run, and
-    reading it as one would score every column of a working case as failed.
-    """
-    if row.get("outcome") != "error":
-        return None
-    output = _parsed(row.get("output")) or {}
-    message = output.get("error")
-    return str(message) if message is not None else None
-
-
-def _declined(value: object) -> list[Any]:
-    """What the build refused to read, however the driver returned it.
-
-    `json.loads` on an already-decoded list raises rather than passing it
-    through, so guessing wrong here is a 500 rather than a wrong answer.
-    """
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except json.JSONDecodeError:
-            return []
-    return list(value) if isinstance(value, list) else []
-
-
-def _parsed(value: object) -> dict[str, Any] | None:
-    """A jsonb column as an object, whichever way the driver returned it."""
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except json.JSONDecodeError:
-            return None
-    return value if isinstance(value, dict) else None
 
 
 @router.get("/evals")
@@ -164,7 +120,7 @@ async def read_evals(
                 "seq": step["seq"],
                 "step": step["primitive_key"],
                 "status": step["status"],
-                "output": _parsed(step["output"]),
+                "output": as_json(step["output"]) or None,
                 "error": step["error"],
             }
         )
@@ -180,14 +136,17 @@ async def read_evals(
                 # `runs.output` is jsonb, and asyncpg hands it back as text on a
                 # connection with no codec registered. A caller that has to
                 # know that is a caller reimplementing this route.
-                "actual": _parsed(by_key.get(shipment["shipment_no"], {}).get("output")),
+                "actual": as_json(by_key.get(shipment["shipment_no"], {}).get("output")) or None,
                 "outcome": by_key.get(shipment["shipment_no"], {}).get("outcome"),
                 # Why, not just what. An errored case with no message is a dead
                 # end on screen; a failing case with no trace is a verdict
                 # nobody can act on.
-                "errored": _errored(by_key.get(shipment["shipment_no"], {})),
+                "errored": errored_from(
+                    by_key.get(shipment["shipment_no"], {}).get("outcome"),
+                    as_json(by_key.get(shipment["shipment_no"], {}).get("output")),
+                ),
                 "steps": steps.get(by_key.get(shipment["shipment_no"], {}).get("run_id"), []),
-                "declined": _declined(by_key.get(shipment["shipment_no"], {}).get("declined")),
+                "declined": as_list(by_key.get(shipment["shipment_no"], {}).get("declined")),
             }
             for shipment in shipments
         ],

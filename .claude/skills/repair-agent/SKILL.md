@@ -358,17 +358,33 @@ Keep the diff small enough to read in one pass. A large diff hides the change
 that mattered and makes the next bundle harder to work from.
 
 ```bash
-make check                                      # ruff · mypy --strict · tests
-meridian eval case <KEY> --build <n>            # the target case
-meridian eval sweep --build <n> --split train   # nothing previously passing broke
-meridian verify --agent <slug>                  # imports · conformance
+make check                                             # ruff · mypy --strict · tests
+meridian eval case <board> <KEY> --build <n>           # the target case, on its own
+meridian eval sweep <board> --case <each> --build <n>  # the whole working set
+meridian verify --agent <slug>                         # imports · conformance
 ```
 
+**Re-running the workflow is just running the case again.** There is no server
+to start, no worker to leave polling, and nothing to restart after an edit. The
+agent's entry point starts its own environment, registers itself, sends its own
+signals and waits for the result — so `meridian eval case` is a complete
+Temporal execution, and the next one picks up your patch because the module is
+imported fresh each time.
+
+Two consequences worth knowing before you go looking for a control surface:
+
+- **A deadline does not cost you the wall-clock.** The environment skips time,
+  so a workflow that waits two days for a corrected document resolves in
+  milliseconds. If a case takes minutes it is doing work, not waiting.
+- **A hung case is an exception.** Temporal retries a failing workflow task
+  forever, with no traceback and no exit, so the timeout is what turns silence
+  into a reportable error. A case that times out is almost always raising
+  somewhere inside workflow code.
+
 > **Which of these exist right now:** `meridian board · card · edge · review ·
-> thread · spec` are built. **`eval`, `bundle`, `verify`, `build` and `repair`
-> are not yet** — they arrive with `healing/`. If a command is missing, say so
-> and stop rather than inventing a substitute; a loop that invents its own
-> verification is not verifying anything.
+> thread · spec · eval · bundle · build · repair` are built. **`meridian verify`
+> is not.** If a command is missing, say so and stop rather than inventing a
+> substitute; a loop that invents its own verification is not verifying anything.
 
 
 The gate is **target passes AND no regression**. It can only reject; a human
