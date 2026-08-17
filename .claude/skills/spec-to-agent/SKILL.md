@@ -525,7 +525,57 @@ than a cause.
    Comparing against `now` reads ctx.clock, which is a frozen value.
 ```
 
-## 9. Verify
+## 9. The code has to pass the same gate as the rest of the repo
+
+**Python 3.12.** Generated agents are Python because the repair loop then edits
+one language, and because `runtime/` is Python.
+
+`make check` runs ruff with 24 rule families plus `mypy --strict`, and it is not
+advisory — a build that does not pass has not been produced. Most of it is
+ordinary good practice; these are the ones that reliably trip generated code:
+
+```
+mypy --strict     EVERY function annotated, parameters and return. No bare
+                  `dict` or `list` — `dict[str, int]`, `Sequence[Row]`.
+                  No untyped call into a typed context: a lambda table needs
+                  `dict[str, Callable[[Any, Any], bool]]`, not inference.
+
+D  pydocstyle     Every public module, class and function carries a docstring,
+                  Google convention, summary on the first line. Say WHY it
+                  exists, not what the code plainly does.
+
+DTZ               No naive datetimes. This is not style — it is the determinism
+                  rule, and `ctx.clock` exists so you never need one.
+
+T20               No `print()`. Use `workflow.logger` in workflow code, which is
+                  replay-aware; a bare logger re-emits every line on replay.
+
+PTH               `pathlib`, never `os.path`.
+
+ERA               No commented-out code. Delete it; git remembers.
+
+S   bandit        No `assert` for control flow, no shell=True, no bare `except`.
+
+ARG               No unused arguments. If a protocol forces one, `# noqa: ARG002`
+                  with a reason.
+
+UP                Modern syntax: `X | None`, not `Optional[X]`. `list[str]`,
+                  not `List[str]`.
+```
+
+Two more that are conventions rather than rules, and both matter for what comes
+after you:
+
+- **Comments explain why, never what.** `# increment the counter` above `n += 1`
+  is noise; `# a coarser grain passes only when every finer one does` is the
+  reason someone needs six weeks later.
+- **Line length is 100.** Wrap deliberately rather than letting the formatter
+  choose a break that splits a thought.
+
+Run `make check` before you finish. If it fails, that is your work, not the next
+person's.
+
+## 10. Verify
 
 ```bash
 make check                                   # ruff · mypy --strict · tests
@@ -537,7 +587,7 @@ Build 1 is **not** expected to pass every case. It must compile, run every case,
 and produce a parseable result for each. A case that **errors** is a problem; a
 case that **fails** is the first point on the curve.
 
-## 10. Review your own output before you finish
+## 11. Review your own output before you finish
 
 You wrote this in one pass and it has not run. Read it back looking for the
 mistakes this pipeline actually produces — not style, not naming.
@@ -573,7 +623,7 @@ mistakes this pipeline actually produces — not style, not naming.
 first sweep fails on Y, that assumption is why"* is worth more than a confident
 summary, because it is the first thing to check when something fails.
 
-## 11. Your summary
+## 12. Your summary
 
 End with:
 

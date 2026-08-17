@@ -246,7 +246,14 @@ the signal or the input.
 
 ## 7. Verify, in this order
 
+A patch is held to the same gate as the code it edits: `make check` runs ruff
+with 24 rule families and `mypy --strict`. The ones a patch trips most often are
+a missing annotation on a helper you added, a missing docstring, a stray
+`print()` left in from debugging, and a naive `datetime` — that last one is the
+determinism rule, not style, and `ctx.clock` exists so you never need one.
+
 ```bash
+make check                                 # ruff · mypy --strict · tests
 mvp eval case <KEY> --build <n>            # the target case
 mvp eval sweep --build <n> --split train   # nothing previously passing broke
 mvp verify --agent <slug>                  # imports · conformance
