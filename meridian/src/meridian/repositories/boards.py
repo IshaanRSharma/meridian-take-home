@@ -98,6 +98,122 @@ async def save(connection: asyncpg.Connection, board: Board) -> UUID:
     return UUID(str(board_id))
 
 
+async def create(connection: asyncpg.Connection, name: str) -> UUID:
+    """An empty board, ready to be drawn on."""
+    board_id: UUID = await connection.fetchval(
+        "insert into boards (name) values ($1) returning id", name
+    )
+    return board_id
+
+
+async def lock_for_edit(connection: asyncpg.Connection, board_id: UUID) -> None:
+    """Serialise edits to one board, so read-modify-write is actually serial.
+
+    Every authoring call reads the board, decides, and writes — which is a race
+    by construction: two people adding a card at once both read six cards and
+    both write a seventh under the same key.
+
+    ``for update`` on the board row is the smallest thing that fixes it.
+    Readers never take it, so lint, review and freeze never queue behind a drag;
+    every writer takes the same single row, so there is no lock ordering to get
+    wrong and no deadlock to reason about. No revision column, no retry loop.
+
+    It guarantees the board stays *valid*, not that nobody's keystroke is lost —
+    two people editing one field still race, and that is a different feature.
+    """
+    await connection.execute("select 1 from boards where id = $1 for update", board_id)
+
+
+async def upsert_primitive(
+    connection: asyncpg.Connection, board_id: UUID, primitive: Primitive
+) -> None:
+    """Write one card, leaving every other row alone.
+
+    Pointedly not ``save()``, which deletes every row first: that would reset
+    ``created_at`` and wipe ``provenance`` — the column recording how each field
+    got its value — on every card each time somebody edited one of them.
+    """
+    await connection.execute(
+        "insert into primitives (board_id, key, primitive_type, group_key, config) "
+        "values ($1, $2, $3, $4, $5) "
+        "on conflict (board_id, key) do update set "
+        "primitive_type = excluded.primitive_type, group_key = excluded.group_key, "
+        "config = excluded.config",
+        board_id,
+        primitive.key,
+        primitive.primitive_type,
+        primitive.group_key,
+        json.dumps(primitive.config.model_dump(mode="json", exclude_none=True)),
+    )
+
+
+async def delete_primitive(connection: asyncpg.Connection, board_id: UUID, key: str) -> bool:
+    """Remove one card and say whether one went.
+
+    Edges are deliberately left alone. Deleting a card leaves its connections
+    dangling and lint reports each as blocking, because the process owner is the
+    one who knows whether the card or the connection was the mistake.
+    """
+    row = await connection.fetchrow(
+        "delete from primitives where board_id = $1 and key = $2 returning key", board_id, key
+    )
+    return row is not None
+
+
+async def upsert_edge(connection: asyncpg.Connection, board_id: UUID, edge: Edge) -> None:
+    """Write one connection, leaving every other row alone."""
+    await connection.execute(
+        "insert into edges (board_id, key, from_key, to_key, relation, on_outcomes, condition) "
+        "values ($1, $2, $3, $4, $5, $6, $7) "
+        "on conflict (board_id, key) do update set "
+        "from_key = excluded.from_key, to_key = excluded.to_key, "
+        "relation = excluded.relation, on_outcomes = excluded.on_outcomes, "
+        "condition = excluded.condition",
+        board_id,
+        edge.key,
+        edge.from_key,
+        edge.to_key,
+        edge.relation,
+        list(edge.on_outcomes),
+        edge.condition,
+    )
+
+
+async def delete_edge(connection: asyncpg.Connection, board_id: UUID, key: str) -> bool:
+    """Remove one connection and say whether one went."""
+    row = await connection.fetchrow(
+        "delete from edges where board_id = $1 and key = $2 returning key", board_id, key
+    )
+    return row is not None
+
+
+async def set_position(
+    connection: asyncpg.Connection, board_id: UUID, key: str, x: float, y: float
+) -> None:
+    """One card's position, without reading or rewriting the rest of the layout.
+
+    ``jsonb_set`` rather than a read-modify-write, so two people dragging two
+    different cards never touch the same value — the one edit on the board with
+    no conflict to resolve.
+    """
+    await connection.execute(
+        "update boards set layout = jsonb_set(layout, array[$2], $3::jsonb, true) where id = $1",
+        board_id,
+        key,
+        json.dumps({"x": x, "y": y}),
+    )
+
+
+async def clear_position(connection: asyncpg.Connection, board_id: UUID, key: str) -> None:
+    """Forget where a card was. The one orphan with no finding behind it.
+
+    Everything else a deleted card leaves — its edges, the cards still naming it
+    — is reported by lint and is the owner's to resolve. A stale position is
+    invisible, so nothing would ever prompt anyone to clear it.
+    """
+    await connection.execute("update boards set layout = layout - $2 where id = $1", board_id, key)
+
+
 async def save_layout(
     connection: asyncpg.Connection, board_id: UUID, layout: dict[str, dict[str, float]]
 ) -> None:
