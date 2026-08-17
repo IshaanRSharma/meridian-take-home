@@ -82,6 +82,17 @@ class Build(DomainModel):
         """
         return self.source_ref.split("@")[0].rstrip("/").rsplit("/", 1)[-1]
 
+    def directory(self) -> str:
+        """Where this build's code lives, relative to the repository root.
+
+        The bundle's `FILE` line is built from this rather than from the spec's
+        slug, because the spec knows what the agent is called and only the build
+        knows where it was measured. A candidate swept out of `demo/` whose
+        bundle says `agents/…` sends the reader to a different program with the
+        same file names, which is worse than saying nothing.
+        """
+        return self.source_ref.split("@")[0].rstrip("/")
+
     def commit(self) -> str:
         """The sha this build's code is at."""
         _, _, sha = self.source_ref.partition("@")

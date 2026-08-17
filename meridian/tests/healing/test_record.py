@@ -21,12 +21,15 @@ import asyncpg
 import pytest
 
 from meridian import events
-from meridian.domain.build import Build, EvalCase
+from meridian.domain.build import Build, EvalCase, Repair
+from meridian.domain.review import Anchor
 from meridian.healing import bundle as bundle_
 from meridian.healing import record
 from meridian.healing import sweep as sweep_
 from meridian.repositories import builds as builds_repo
 from meridian.repositories import evals as evals_repo
+from meridian.repositories import repairs as repairs_repo
+from meridian.repositories import threads as threads_repo
 
 from .conftest import EXPECTED, a_spec
 
@@ -329,12 +332,51 @@ async def test_a_patch_that_breaks_another_column_is_recorded_as_regressed(
     assert repair.regressed_case_ids != ()
 
 
-async def test_a_spec_gap_is_escalated_and_the_table_insists_on_a_thread(
+async def test_a_spec_gap_with_no_thread_raises_one_on_the_board(
     connection: asyncpg.Connection, spec_id: UUID, repo: Path, agent_dir: Path
 ):
-    # A decision nobody can settle in code goes back to the process owner. The
-    # constraint is on the table so it holds for every caller, not only for the
-    # ones that came through here.
+    # The constraint exists to send the question back to the process owner.
+    # Requiring somebody to go and create a thread first is friction on the one
+    # path that must never be skipped — so the escalation raises its own.
+    _, after = await two_builds(
+        connection,
+        spec_id,
+        repo,
+        agent_dir,
+        {"coa_total": 5, "coa_success": 3, "failed_coa": 2},
+        {"coa_total": 5, "coa_success": 3, "failed_coa": 2},
+    )
+    board_id = await connection.fetchval("select board_id from specs where id = $1", spec_id)
+
+    repair, verdict = await record.record_repair(
+        connection,
+        build=after,
+        signature=TARGET,
+        classification="spec_gap",
+        summary="a certificate whose batch is on no invoice: ignore or flag?",
+        cycle_id=uuid4(),
+        repo_root=repo,
+        spec=a_spec().model_copy(update={"board_id": board_id}),
+    )
+
+    assert repair.status == "escalated"
+    assert verdict is None
+    (thread,) = await threads_repo.for_board(connection, board_id)
+    assert thread.id == repair.raised_thread_id
+    # Anchored on the card whose behaviour is in doubt, and marked as coming
+    # from the loop — a question with a failing eval case behind it is stronger
+    # evidence than anything the reviewer had before the freeze.
+    assert thread.origin == "repair"
+    assert thread.primary_anchor() == Anchor(kind="primitive", key="coas_valid")
+    assert thread.severity == "blocking"
+
+
+async def test_a_spec_gap_with_no_thread_and_no_spec_refuses_rather_than_dropping_it(
+    connection: asyncpg.Connection, spec_id: UUID, repo: Path, agent_dir: Path
+):
+    # The one thing that must not happen quietly. Without a board to raise it
+    # on, the escalation has nowhere to go, and the table would refuse the row
+    # with a constraint error that names none of this.
     _, after = await two_builds(
         connection,
         spec_id,
@@ -344,15 +386,40 @@ async def test_a_spec_gap_is_escalated_and_the_table_insists_on_a_thread(
         {"coa_total": 5, "coa_success": 3, "failed_coa": 2},
     )
 
-    with pytest.raises(asyncpg.PostgresError):
+    with pytest.raises(record.NotRegisterableError, match="back to a board"):
         await record.record_repair(
             connection,
             build=after,
             signature=TARGET,
             classification="spec_gap",
-            summary="a certificate whose batch is on no invoice: ignore or flag?",
+            summary="ignore or flag?",
             cycle_id=uuid4(),
             repo_root=repo,
+        )
+
+
+async def test_the_table_refuses_a_spec_gap_with_no_thread_whoever_writes_it(
+    connection: asyncpg.Connection, spec_id: UUID, repo: Path
+):
+    # Asserted against the repository rather than through `record_repair`,
+    # because that path now raises its own thread and can no longer reach this.
+    # The constraint still has to hold: it is what makes "a decision nobody can
+    # settle in code goes back to the process owner" true for the API, for psql,
+    # and for whatever writes this table next.
+    build = await record.register(
+        connection, spec=a_spec(), spec_id=spec_id, repo_root=repo, cycle_id=uuid4()
+    )
+
+    with pytest.raises(asyncpg.PostgresError):
+        await repairs_repo.save(
+            connection,
+            Repair(
+                build_id=build.identity,
+                classification="spec_gap",
+                failure_signature=TARGET,
+                summary="a certificate whose batch is on no invoice: ignore or flag?",
+                status="escalated",
+            ),
         )
 
 
@@ -473,3 +540,50 @@ async def test_a_build_measured_outside_agents_still_knows_its_own_slug(
 
     assert build.source_ref.startswith("candidates/toy_prealert@")
     assert build.slug() == "toy_prealert"
+
+
+async def test_files_touched_is_scoped_to_the_agent_that_was_repaired(
+    connection: asyncpg.Connection, spec_id: UUID, repo: Path, agent_dir: Path
+):
+    # Two builds are two commits, and anything else committed between them sits
+    # in the same range. Unscoped, a one-file repair reported ninety files —
+    # everything every concurrent change had touched — which is useless for the
+    # one thing `files_touched` exists to say.
+    first = await record.register(
+        connection, spec=a_spec(), spec_id=spec_id, repo_root=repo, cycle_id=uuid4()
+    )
+    await swept(
+        connection,
+        first,
+        spec_id,
+        agent_dir,
+        "CAAU4056270",
+        {"coa_total": 5, "coa_success": 3, "failed_coa": 2},
+    )
+
+    (agent_dir / "src" / "checks" / "coas_valid.py").write_text("# patched\n")
+    (repo / "unrelated.py").write_text("# somebody else's commit, same range\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "a repair, and a change that has nothing to do with it")
+
+    second = await record.register(
+        connection,
+        spec=a_spec(),
+        spec_id=spec_id,
+        repo_root=repo,
+        cycle_id=uuid4(),
+        created_by="repair",
+    )
+    await swept(connection, second, spec_id, agent_dir, "CAAU4056270", EXPECTED)
+
+    repair, _ = await record.record_repair(
+        connection,
+        build=second,
+        signature=TARGET,
+        classification="implementation_defect",
+        summary="normalised batch numbers",
+        cycle_id=uuid4(),
+        repo_root=repo,
+    )
+
+    assert repair.files_touched == ("agents/toy_prealert/src/checks/coas_valid.py",)

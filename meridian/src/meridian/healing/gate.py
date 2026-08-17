@@ -59,10 +59,7 @@ async def gate(
     # measured on one case would clear a baseline of nine. Refuse rather than
     # rely on whoever ran it having remembered.
     dropped = tuple(
-        sorted(
-            {case for (case, _), agreed in was.items() if agreed}
-            - {case for case, _ in now}
-        )
+        sorted({case for (case, _), agreed in was.items() if agreed} - {case for case, _ in now})
     )
     if dropped:
         return Verdict(

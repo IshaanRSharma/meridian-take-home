@@ -224,7 +224,9 @@ async def test_the_trace_crosses_the_workflow_boundary_and_lands_in_run_steps(
 
     rows = await connection.fetch(
         "select s.primitive_key, s.output from run_steps s join runs r on r.id = s.run_id "
-        "join eval_cases c on c.id = r.case_id where c.key = 'TTNU8982561'"
+        "join eval_cases c on c.id = r.case_id "
+        "where r.build_id = $1 and c.key = 'TTNU8982561'",
+        temporal_build.identity,
     )
     (row,) = rows
     assert row["primitive_key"] == "coas_valid"

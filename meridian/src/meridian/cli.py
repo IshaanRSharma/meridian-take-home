@@ -825,11 +825,12 @@ def repair_record(  # noqa: PLR0913, PLR0917 - what, where, why, and against wha
     """
 
     async def work(connection: asyncpg.Connection) -> tuple[Repair, Verdict | None]:
-        _, spec_id = await _spec(connection, board_id)
+        spec, spec_id = await _spec(connection, board_id)
         built = await _build(connection, spec_id, iteration)
         return await record.record_repair(
             connection,
             build=built,
+            spec=spec,
             signature=signature,
             classification=classification,  # type: ignore[arg-type]
             summary=summary,
@@ -840,6 +841,8 @@ def repair_record(  # noqa: PLR0913, PLR0917 - what, where, why, and against wha
 
     repair, verdict = _run(work)
     typer.echo(f"repair {repair.id}  ·  {repair.status}")
+    if repair.raised_thread_id:
+        typer.echo(f"  thread   {repair.raised_thread_id}  — back to the process owner")
     typer.echo(f"  {verdict.reason if verdict else 'spec gap — not gated, a person decides'}")
     if repair.files_touched:
         typer.echo(f"  touched  {', '.join(repair.files_touched)}")

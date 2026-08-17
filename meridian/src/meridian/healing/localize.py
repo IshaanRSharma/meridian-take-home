@@ -69,7 +69,9 @@ def owners_from_spec(spec: FrozenSpec) -> dict[str, tuple[str, ...]]:
     return {column: tuple(keys) for column, keys in owners.items()}
 
 
-def locate(mismatch: Mismatch, spec: FrozenSpec, file_map: Mapping[str, str]) -> Located:
+def locate(
+    mismatch: Mismatch, spec: FrozenSpec, file_map: Mapping[str, str], directory: str = ""
+) -> Located:
     """Address one disagreeing column."""
     owners = owners_from_spec(spec).get(mismatch.column, ())
     detail: dict[str, Any] = {
@@ -94,7 +96,7 @@ def locate(mismatch: Mismatch, spec: FrozenSpec, file_map: Mapping[str, str]) ->
         signature=f"{owner} :: output_diff :: {mismatch.column}",
         detector="output_diff",
         primitive_key=owner,
-        file=_path(spec, file_map, owner),
+        file=_path(spec, file_map, owner, directory),
         detail=detail | _stale(file_map, owner),
     )
 
@@ -104,6 +106,7 @@ def locate_error(
     steps: Sequence[Step],
     spec: FrozenSpec,
     file_map: Mapping[str, str],
+    directory: str = "",
 ) -> Located:
     """Address a case that raised rather than disagreeing.
 
@@ -127,14 +130,23 @@ def locate_error(
         # primitive behind it, and writing it into `failures.primitive_key`
         # would put a non-existent key in a column everything else joins on.
         primitive_key=locator if known else None,
-        file=_path(spec, file_map, locator) if known else None,
+        file=_path(spec, file_map, locator, directory) if known else None,
         detail={"error": errored, "reached": [s.name for s in steps]},
     )
 
 
-def _path(spec: FrozenSpec, file_map: Mapping[str, str], key: str) -> str | None:
+def _path(
+    spec: FrozenSpec, file_map: Mapping[str, str], key: str, directory: str = ""
+) -> str | None:
+    """The file to open, under the directory this build was measured in.
+
+    Falls back to `agents/<slug>` when the caller does not say, which is where a
+    build lives unless somebody moved it.
+    """
     relative = file_map.get(key)
-    return f"agents/{spec.slug}/{relative}" if relative else None
+    if not relative:
+        return None
+    return f"{directory or f'agents/{spec.slug}'}/{relative}"
 
 
 def _stale(file_map: Mapping[str, str], key: str) -> dict[str, Any]:

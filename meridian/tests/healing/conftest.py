@@ -39,6 +39,17 @@ from meridian.runtime.trace import RunTrace
 async def run_case(case):
     if case.get("raise"):
         raise RuntimeError(case["raise"])
+    if case.get("hang"):
+        # What a workflow task failure looks like from outside: Temporal logs the
+        # traceback and retries forever, so the coroutine simply never returns.
+        import asyncio
+        import logging
+
+        try:
+            raise KeyError(case["hang"])
+        except KeyError:
+            logging.getLogger("temporalio.worker").exception("Failed activation")
+        await asyncio.sleep(3600)
 
     trace = RunTrace(spec_version=1, spec_checksum="abc123")
     with trace.step("extract") as step:

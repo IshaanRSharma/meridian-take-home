@@ -35,10 +35,12 @@ from meridian import events
 from meridian.domain.build import Build, Classification, CreatedBy, Repair
 from meridian.domain.errors import ConflictingStateError, NotFoundError
 from meridian.domain.frozen import FrozenSpec
+from meridian.domain.review import Anchor, Thread
 from meridian.healing.gate import Verdict, gate
 from meridian.repositories import builds as builds_repo
 from meridian.repositories import evals as evals_repo
 from meridian.repositories import repairs as repairs_repo
+from meridian.repositories import threads as threads_repo
 
 
 def _status(verdict: Verdict) -> str:
@@ -171,6 +173,7 @@ async def record_repair(  # noqa: PLR0913 - a repair names what, where, why and 
     summary: str,
     cycle_id: UUID,
     repo_root: Path,
+    spec: FrozenSpec | None = None,
     thread_id: UUID | None = None,
     diff: str | None = None,
 ) -> tuple[Repair, Verdict | None]:
@@ -183,14 +186,19 @@ async def record_repair(  # noqa: PLR0913 - a repair names what, where, why and 
 
     A `spec_gap` is not gated at all. No patch is correct because no rule
     decides the answer, so there is nothing to measure — it is escalated, and
-    the table refuses it without a thread.
+    the table refuses it without a thread. **If no thread exists yet, one is
+    raised here**: the constraint exists to send the question back to the
+    process owner, and requiring somebody to go and create a thread first is
+    friction on the one path that must never be skipped.
     """
     parent = await _parent(connection, build)
     verdict = None
     status = "escalated"
     regressed: tuple[UUID, ...] = ()
 
-    if classification != "spec_gap":
+    if classification == "spec_gap":
+        thread_id = thread_id or await _raise_thread(connection, spec, signature, summary)
+    else:
         verdict = await gate(connection, before=parent, after=build, signature=signature)
         status = _status(verdict)
         regressed = await _case_ids(connection, parent, {case for case, _ in verdict.regressed})
@@ -203,7 +211,7 @@ async def record_repair(  # noqa: PLR0913 - a repair names what, where, why and 
             classification=classification,
             failure_signature=signature,
             failing_case_ids=failing,
-            files_touched=changed(repo_root, parent.commit(), build.commit()),
+            files_touched=changed(repo_root, parent.commit(), build.commit(), build.directory()),
             summary=summary,
             diff=diff,
             status=status,  # type: ignore[arg-type]
@@ -228,6 +236,43 @@ async def record_repair(  # noqa: PLR0913 - a repair names what, where, why and 
         },
     )
     return repair, verdict
+
+
+async def _raise_thread(
+    connection: asyncpg.Connection, spec: FrozenSpec | None, signature: str, summary: str
+) -> UUID:
+    """Put the question back on the board it came from.
+
+    Anchored on the primitive the signature names, so it lands on the card whose
+    behaviour is in doubt rather than on the board at large. `origin='repair'`
+    is what separates it in a later round from a question the reviewer asked —
+    this one has a failing eval case behind it, which is stronger evidence than
+    anything the reviewer had before the freeze.
+    """
+    if spec is None or spec.board_id is None:
+        raise NotRegisterableError(
+            "a spec gap has to go back to a board, and this repair names no spec — "
+            "pass one, or raise the thread yourself and give it with --thread"
+        )
+
+    primitive = signature.split(" :: ", 1)[0] if " :: " in signature else None
+    anchors = (
+        (Anchor(kind="primitive", key=primitive),)
+        if primitive and primitive in spec.primitives
+        else ()
+    )
+    return await threads_repo.save(
+        connection,
+        spec.board_id,
+        Thread(
+            category="spec_gap",
+            severity="blocking",
+            origin="repair",
+            question=summary,
+            reason=f"raised by the repair loop against {signature}",
+            anchors=anchors,
+        ),
+    )
 
 
 async def _parent(connection: asyncpg.Connection, build: Build) -> Build:
@@ -291,8 +336,15 @@ def tracked(repo_root: Path, path: Path) -> bool:
     return bool(_git(repo_root, "ls-files", "--", str(path)))
 
 
-def changed(repo_root: Path, before: str, after: str) -> tuple[str, ...]:
-    """Which files moved between two builds.
+def changed(repo_root: Path, before: str, after: str, within: str = "") -> tuple[str, ...]:
+    """Which of the agent's files moved between two builds.
+
+    **Scoped to the agent's own directory**, and that scope is not cosmetic.
+    Two builds are two commits, and anything else committed between them — a
+    change to the platform, another agent, the UI — sits in the same range. An
+    unscoped diff reported ninety files for a repair that touched one, which
+    makes `files_touched` useless for the thing it exists for: telling the next
+    reader what this patch actually did.
 
     Empty when either sha is unknown — a shallow clone, a rebased branch, a
     build registered before the commit existed. An empty list of files is
@@ -300,7 +352,8 @@ def changed(repo_root: Path, before: str, after: str) -> tuple[str, ...]:
     """
     if not before or not after or before == after:
         return ()
-    diff = _git(repo_root, "diff", "--name-only", f"{before}..{after}")
+    scope = ["--", within] if within else []
+    diff = _git(repo_root, "diff", "--name-only", f"{before}..{after}", *scope)
     return tuple(line for line in diff.splitlines() if line)
 
 

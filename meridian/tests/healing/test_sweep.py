@@ -8,6 +8,7 @@ the step that failed, which is the line the whole bundle is built around.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from uuid import uuid4
 
@@ -67,10 +68,14 @@ async def test_the_trace_reaches_run_steps_with_the_step_names_as_primitive_keys
 ):
     await run(connection, build, cases, agent_dir)
 
+    # Scoped to THIS build. Without it the query answers "every step anything
+    # ever recorded for a case with this key", which is a different question
+    # that happens to give the same answer on an empty database.
     rows = await connection.fetch(
         "select s.seq, s.primitive_key, s.status from run_steps s "
         "join runs r on r.id = s.run_id join eval_cases c on c.id = r.case_id "
-        "where c.key = 'CAAU4056270' order by s.seq"
+        "where r.build_id = $1 and c.key = 'CAAU4056270' order by s.seq",
+        build.identity,
     )
     assert [(r["primitive_key"], r["status"]) for r in rows] == [
         ("extract", "ok"),
@@ -182,7 +187,13 @@ async def test_a_step_name_that_is_not_a_card_key_is_dropped_and_reported(
     swept = await run(connection, build, [case], agent_dir)
 
     assert swept.rejected_steps == ("Check COAs",)
-    assert await connection.fetchval("select count(*) from run_steps") == 1
+    assert (
+        await connection.fetchval(
+            "select count(*) from run_steps s join runs r on r.id = s.run_id where r.build_id = $1",
+            build.identity,
+        )
+        == 1
+    )
 
 
 async def test_an_agent_whose_entry_point_will_not_import_fails_the_sweep_by_name(
@@ -205,3 +216,43 @@ async def test_a_build_with_no_entry_point_says_so_rather_than_guessing(
 
     with pytest.raises(sweep_.AgentNotRunnableError, match="entry point"):
         await run(connection, build, cases, agent_dir)
+
+
+async def test_a_hanging_case_carries_the_cause_temporal_logged(
+    connection: asyncpg.Connection, build: Build, spec_id, agent_dir: Path
+):
+    # The failure a broken agent produces most, and the one a bare TimeoutError
+    # says nothing about. An exception inside workflow code is a workflow task
+    # failure, which Temporal retries forever — so nothing raises, `wait_for`
+    # gives up, and asyncio reports a timeout that knows nothing about the
+    # KeyError behind it. Temporal logged that traceback; this is where the
+    # bundle's only diagnosis comes from.
+    case = await evals_repo.save_case(
+        connection,
+        spec_id,
+        EvalCase(key="HUNG", input={"hang": "batch_no"}, expected_output=EXPECTED),
+    )
+
+    swept = await run(connection, build, [case], agent_dir, case_timeout=2)
+
+    (errored,) = swept.results
+    assert "TimeoutError" in (errored.errored or "")
+    assert "KeyError" in (errored.errored or "")
+    assert "batch_no" in (errored.errored or "")
+
+
+async def test_the_listener_is_removed_once_the_case_is_over(
+    connection: asyncpg.Connection, build: Build, spec_id, agent_dir: Path
+):
+    # Scoped to the case, so a long sweep does not accumulate a handler per case
+    # and hold every traceback from all of them.
+    before = len(logging.getLogger("temporalio").handlers)
+    case = await evals_repo.save_case(
+        connection,
+        spec_id,
+        EvalCase(key="ONE", input={"produce": EXPECTED}, expected_output=EXPECTED),
+    )
+
+    await run(connection, build, [case], agent_dir)
+
+    assert len(logging.getLogger("temporalio").handlers) == before

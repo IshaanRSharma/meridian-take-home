@@ -119,7 +119,7 @@ async def _bucket(  # noqa: PLR0913, PLR0917 - one section, and it needs the who
     lines += _context(spec, primitive)
     lines += _hints(agents_root, build, primitive)
     lines += _assumptions(agents_root, build, primitive)
-    lines += await _history(connection, signature, spec)
+    lines += await _history(connection, signature, build.spec_id)
     return lines
 
 
@@ -297,8 +297,15 @@ def _context(spec: FrozenSpec, primitive: str | None) -> list[str]:
     return [*lines, ""]
 
 
-async def _history(connection: asyncpg.Connection, signature: str, spec: FrozenSpec) -> list[str]:
-    tried = await repairs_repo.history_for(connection, signature)
+async def _history(connection: asyncpg.Connection, signature: str, spec_id: UUID) -> list[str]:
+    """Everything tried against this signature, for THIS spec.
+
+    Across builds, because a signature that survived three builds has three
+    attempts behind it. Not across specs: the same string on another board is a
+    different question about different code, and answering it here would tell a
+    reader that something has been tried when nothing has.
+    """
+    tried = await repairs_repo.history_for(connection, signature, spec_id=spec_id)
     lines = ["REPAIR HISTORY FOR THIS SIGNATURE"]
     if not tried:
         return [*lines, "  none"]
@@ -307,7 +314,6 @@ async def _history(connection: asyncpg.Connection, signature: str, spec: FrozenS
         lines.append(f"  [{repair.status}] {repair.summary}")
         if repair.files_touched:
             lines.append(f"           touched {', '.join(repair.files_touched)}")
-    _ = spec
     return lines
 
 

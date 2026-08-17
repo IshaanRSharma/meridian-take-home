@@ -27,8 +27,10 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import logging
 import re
 import sys
+import traceback
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -194,7 +196,7 @@ async def _one(  # noqa: PLR0913 - one case needs everything the sweep was given
         declined=[gone.model_dump(mode="json") for gone in outcome.declined],
         errored=errored,
     )
-    for found in _detections(result, outcome, spec, build.file_map):
+    for found in _detections(result, outcome, spec, build.file_map, build.directory()):
         await evals_repo.save_failure(
             connection,
             run_id,
@@ -226,15 +228,75 @@ async def _execute(
     Every exception is a result rather than an escape. The one that raised is
     frequently the least interesting of five, and letting it propagate would
     throw away the four that ran.
+
+    A timeout is caught **with its cause attached**, which is the whole reason
+    `overheard` exists — see it for why a bare `TimeoutError` is nearly useless.
     """
+    with overheard() as failures:
+        try:
+            return await asyncio.wait_for(run_case(case.input), timeout=case_timeout), None
+        except TimeoutError:
+            gave_up = f"TimeoutError: no result within {case_timeout:.0f}s"
+            cause = failures.last()
+            return CaseOutcome(), f"{gave_up}\n{cause}" if cause else gave_up
+        except Exception as error:
+            # An errored case is a result. Letting it escape would discard every
+            # case after it, and the one that raised is often the least
+            # interesting.
+            return CaseOutcome(), f"{type(error).__name__}: {error}"
+
+
+class _Overheard(logging.Handler):
+    """Whatever Temporal said while a case was running.
+
+    Only the most recent failure is kept. A workflow task that fails is retried
+    forever, so the same traceback arrives every few seconds and all of them say
+    the same thing — a list would be one diagnosis repeated forty times.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self._last: str | None = None
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Keep the message, and the traceback if there was one."""
+        try:
+            said = record.getMessage()
+            if record.exc_info:
+                said = f"{said}\n{''.join(traceback.format_exception(*record.exc_info))}"
+            self._last = said.strip()
+        except Exception:
+            # A broken log record must never be the thing that fails a sweep.
+            self._last = "a log record could not be formatted"
+
+    def last(self) -> str | None:
+        """The most recent thing Temporal complained about, if anything."""
+        return self._last
+
+
+@contextmanager
+def overheard() -> Iterator[_Overheard]:
+    """Listen to Temporal's own logger for the length of one case.
+
+    **A bare `TimeoutError` is nearly useless, and it is the failure a broken
+    agent produces most.** An exception inside workflow code is a workflow task
+    failure, which Temporal retries forever — so the coroutine never returns,
+    `wait_for` gives up, and `asyncio` raises a timeout that knows nothing about
+    the `KeyError` that caused it. The traceback is not lost, though: Temporal
+    logs it on every retry. This is where the bundle's diagnosis comes from in
+    the one case it would otherwise have none.
+
+    Scoped to the case and removed afterwards, because the handler is the only
+    reader — attaching it globally would make a long sweep hold every traceback
+    from every case.
+    """
+    handler = _Overheard()
+    logger = logging.getLogger("temporalio")
+    logger.addHandler(handler)
     try:
-        return await asyncio.wait_for(run_case(case.input), timeout=case_timeout), None
-    except TimeoutError:
-        return CaseOutcome(), f"TimeoutError: no result within {case_timeout:.0f}s"
-    except Exception as error:
-        # An errored case is a result. Letting it escape would discard every case
-        # after it, and the one that raised is often the least interesting.
-        return CaseOutcome(), f"{type(error).__name__}: {error}"
+        yield handler
+    finally:
+        logger.removeHandler(handler)
 
 
 def _detections(
@@ -242,6 +304,7 @@ def _detections(
     outcome: CaseOutcome,
     spec: FrozenSpec,
     file_map: Mapping[str, str],
+    directory: str = "",
 ) -> list[Located]:
     """What to record about one case's failure.
 
@@ -250,8 +313,8 @@ def _detections(
     reason and inflate every count the loop ranks work by.
     """
     if result.errored:
-        return [locate_error(result.errored, outcome.steps, spec, file_map)]
-    return [locate(m, spec, file_map) for m in result.mismatched]
+        return [locate_error(result.errored, outcome.steps, spec, file_map, directory)]
+    return [locate(m, spec, file_map, directory) for m in result.mismatched]
 
 
 def _steps(outcome: CaseOutcome, rejected: list[str]) -> list[dict[str, Any]]:
