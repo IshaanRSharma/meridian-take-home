@@ -144,6 +144,95 @@ name. And **a capability list is what decides whether a card becomes a Temporal
 activity**: the determinism rule as data rather than a convention codegen has to
 remember.
 
+### A finding is a fact, not a prompt
+
+`findings()` produces facts about a board. Nothing here decides that a human
+should be interrupted — three consumers read the same list and only one of them
+ever speaks to the process owner.
+
+| consumer | uses them for | felt as |
+|---|---|---|
+| the reviewer | one of four generators; it picks, ranks and phrases | 3–6 questions per round |
+| the freeze gate | blocking → 422 | one refusal, at Submit |
+| the canvas | a dashed card, a footer count | ambient |
+
+Nothing blocks while someone is still drawing. That is why the completeness
+contract is `findings()` and not Pydantic validators — a half-filled card must
+stay saveable, because the owner is mid-thought.
+
+### The funnel: what is allowed to reach a person
+
+The board is authored from a natural-language description, so **every extraction
+miss would otherwise become a question for a human** — being asked about
+something you already said is what makes someone stop answering. So a finding
+passes through four stages, each a *filter* rather than a label. Nothing is
+tagged in advance; everything is attempted in order, and only what survives
+moves down.
+
+```
+prose ──fill──▶ board.json
+                    │
+      ① auto-fix ───┤  derivable from the board alone. Nobody is asked.
+                    │
+      ② re-read ────┤  the same prose, one finding at a time, asked specifically
+                    │
+      ③ structure ──┤  BLOCKING. The drawing is not yet a workable process, and a
+                    │  person fixes it on the canvas before review begins.
+                    │
+      ④ review ─────┘  every missing value, every decision. CAP 6 per round.
+```
+
+**`blocking` is reserved for a drawing that does not work as a process** — a
+reference that does not resolve, an outcome with no line out of it, a step the
+process stops at without saying so. Those are provable, they are visible on the
+canvas, and nobody needs to know the business to close one.
+
+**A missing value is never blocking**, however badly it is needed. Who receives a
+report, which system a log goes to, what to do while a document has not arrived —
+only the person who runs the process can answer, so it is the reviewer's question
+and never a refusal handed to someone who came to draw a diagram. Enforced rather
+than intended: no finding a *card* reports about itself may be blocking, and a
+test over every config asserts it.
+
+Two gates fall out of that, with different owners:
+
+```
+enter review   no blocking findings              the drawing works as a process
+freeze         no blocking findings              …and every question is settled
+               + no unsettled threads
+```
+
+On the seed board: **3 blocking** — `mismatched_coa` leads nowhere, and both
+report steps stop without being marked as endings. Then **6 value findings and 7
+decisions** go to the review, including the two real SOP silences. The refusal is
+ten seconds of canvas work; the interesting part is the conversation after it.
+
+Two constraints on ②, and they matter as much as the stage itself. Fill only
+what the prose **states**, never what it implies — a model that infers
+`recipients` from a SOP naming nobody has fabricated a business decision and
+hidden the one question worth asking. And **when uncertain, promote rather than
+resolve**: the SOP's *"report any missing **or mismatched** COA"* looks like it
+wires both outcomes to one action, but chasing a typo'd batch and escalating an
+absent document may warrant different handling — two competent people could
+disagree, which makes it the owner's call.
+
+A value finding becomes a thread like any other question (`origin = 'lint'`), so
+a fact settled in one exchange still has a conversation behind it and still
+appears in provenance. Both loops run, and for a lint thread the revision loop's
+proof is free: re-running the check *is* re-running lint, so the finding either
+disappears or it does not.
+
+### Nothing derived may borrow one customer's vocabulary
+
+A sweep that says *"the shipment comes back once the problem is fixed"* on a
+credentialing board is a pattern matcher wearing a sweep's clothes. Every noun in
+a claim comes from a card name the owner typed, and the closed enums in
+`primitives.py` are domain-free for the same reason — `Scope` reaches the frozen
+spec, so `per_shipment` would have put pharma logistics in the type system.
+
+Both are held by tests rather than by care: one scans every claim on a board that
+has no shipments, the other scans every `Literal` in the domain.
+
 ### Tool resolution is deliberately not a rule
 
 A process owner cannot fix an unbound channel. Surfacing it on the canvas would

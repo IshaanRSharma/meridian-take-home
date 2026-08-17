@@ -39,3 +39,5 @@ docs/take-home-brief.md
 
 # Agent worktrees — transient, never committed.
 .claude/worktrees/
+
+/handoffs
