@@ -25,6 +25,7 @@ import { api, ApiError, type Finding } from "@/lib/api";
 import Canvas from "@/features/canvas/Canvas";
 import LintPanel from "@/features/canvas/LintPanel";
 import ThreadPanel from "@/features/threads/ThreadPanel";
+import Documents from "@/features/threads/Documents";
 import CardModal from "@/features/inspector/CardModal";
 import { Button, Problem, Spinner, cx } from "@/components/ui";
 
@@ -192,7 +193,9 @@ export default function Whiteboard({ boardId }: { boardId: string }) {
             )}
           </div>
 
-          <div className="flex shrink-0 border-b border-(--color-line)">
+          <Documents boardId={boardId} />
+
+        <div className="flex shrink-0 border-b border-(--color-line)">
             {(
               [
                 ["missing", "Missing", findings.length],

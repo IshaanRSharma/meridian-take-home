@@ -162,6 +162,20 @@ export interface FrozenSpec {
   capabilities: string[];
 }
 
+/** A written procedure attached to a board.
+ *
+ * It *describes* the process rather than flowing through it, which is why it is
+ * not a card and never reaches the frozen spec. `text` is what was read out of
+ * it — null means extraction produced nothing, and showing that matters: a scan
+ * that transcribed badly is otherwise invisible and looks like the reviewer
+ * ignoring a procedure it could never read. */
+export interface ReferenceDoc {
+  id: string | null;
+  kind: 'sop' | 'policy' | 'email' | 'other';
+  filename: string;
+  text: string | null;
+}
+
 export interface CycleEvent {
   id: number;
   at: string;
@@ -290,6 +304,31 @@ export const api = {
     /** Cosmetic, debounced, and deliberately touches no card row. */
     moveCards: (id: string, positions: Record<string, [number, number]>) =>
       send<void>('PATCH', `/boards/${id}/layout`, { positions }),
+  },
+
+  documents: {
+    list: (boardId: string) => request<ReferenceDoc[]>(`/boards/${boardId}/documents`),
+    /** Multipart, and deliberately not through `send` — that sets a JSON
+     *  content type, and a browser has to set its own multipart boundary. */
+    upload: async (boardId: string, file: File, kind = 'sop') => {
+      const body = new FormData();
+      body.append('file', file);
+      const response = await fetch(`${BASE}/boards/${boardId}/documents?kind=${kind}`, {
+        method: 'POST',
+        body,
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const detail = (payload ?? {}) as { detail?: unknown };
+        throw new ApiError(
+          response.status,
+          typeof detail.detail === 'string' ? detail.detail : describe(response.status),
+        );
+      }
+      return payload as ReferenceDoc;
+    },
+    remove: (boardId: string, documentId: string) =>
+      send<void>('DELETE', `/boards/${boardId}/documents/${documentId}`),
   },
 
   review: {
