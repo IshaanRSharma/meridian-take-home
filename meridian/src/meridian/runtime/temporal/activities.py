@@ -75,7 +75,12 @@ class Capabilities:
 
         if self._mode == "shadow":
             self._remember(call)
-            return CapabilityResult(ok=True, shadowed=True, output=dict(call.args))
+            # Empty, never the arguments. Echoing them made a `lookup` compare a
+            # value against itself — a fabricated container number matched the
+            # record "returned" for it, and the sweep went GREEN. Shadowing is
+            # meaningful for a write and corrupting for a read, so the read gets
+            # nothing and the Check that wanted it fails honestly.
+            return CapabilityResult(ok=True, shadowed=True, output={})
 
         try:
             output = self._tools.call(call.capability, call.args)

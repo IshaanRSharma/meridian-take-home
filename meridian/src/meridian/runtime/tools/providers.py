@@ -9,7 +9,9 @@ invoked once, with these batch numbers* is a test expectation.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import csv
+from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from meridian.runtime.errors import BindingError, RetryableError
@@ -81,3 +83,80 @@ class ComposioProvider:
             msg = f"{action} failed: {envelope.get('error') or 'no reason given'}"
             raise RetryableError(msg)
         return dict(envelope.get("data") or {})
+
+
+class TableProvider:
+    """Answers reads from a table held in memory.
+
+    The read-shaped counterpart to :class:`RecordingProvider`. Both shipped
+    providers were write-shaped, which meant a ``lookup`` had nothing that could
+    return a record and the whole third direction of data movement was
+    untestable.
+
+    Matching is by filter: every key in the arguments must equal the same key on
+    a row. That is deliberately the dumbest thing that works — a fixture table
+    is not a query engine, and anything cleverer would be a second
+    implementation of a system we do not own.
+    """
+
+    def __init__(self, rows: Sequence[Mapping[str, Any]]) -> None:
+        """Take the table this environment answers from."""
+        self._rows = [dict(row) for row in rows]
+
+    def execute(self, action: str, args: Mapping[str, Any]) -> Mapping[str, Any]:  # noqa: ARG002
+        """The first row matching every supplied argument, or nothing.
+
+        Nothing rather than an error: a licence the registry has never heard of
+        is a real answer, and the Check that reads the result is what decides
+        whether that is a failure.
+        """
+        for row in self._rows:
+            if all(row.get(key) == value for key, value in args.items()):
+                return dict(row)
+        return {}
+
+
+class CsvProvider:
+    """Writes records to a CSV, standing in for a customer's own system.
+
+    An Action with ``effect: record`` names a system in the process owner's own
+    words — *"the receiving log"* — and in production that binds to their WMS.
+    Here it binds to a file, which is enough to compare a run against the
+    evaluation set and costs no integration.
+
+    Entirely schema-free: the header comes from the first record's keys and
+    later records fill the columns they have. Teaching this class what a
+    shipment row looks like would make one customer's process part of the
+    runtime.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Take the file to append to. Created on first write."""
+        self._path = Path(path)
+
+    def execute(self, action: str, args: Mapping[str, Any]) -> Mapping[str, Any]:  # noqa: ARG002
+        """Append one record, writing a header if the file is new.
+
+        ``action`` is unused: the protocol carries it, and a file has one
+        behaviour whichever action name resolved here.
+        """
+        record = dict(args.get("record") or args)
+        if not record:
+            return {"written": 0}
+
+        existing = self._header()
+        columns = existing or list(record)
+        new_file = existing is None
+
+        with self._path.open("a", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+            if new_file:
+                writer.writeheader()
+            writer.writerow(record)
+        return {"written": 1, "path": str(self._path)}
+
+    def _header(self) -> list[str] | None:
+        if not self._path.exists() or self._path.stat().st_size == 0:
+            return None
+        with self._path.open(newline="") as handle:
+            return next(csv.reader(handle), None)

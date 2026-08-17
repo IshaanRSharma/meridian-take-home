@@ -12,13 +12,20 @@ what keeps it in workflow code.
 
 from meridian.runtime.tools.bindings import Bindings
 from meridian.runtime.tools.dispatch import Provider, Tool, Tools
-from meridian.runtime.tools.providers import ComposioProvider, RecordingProvider
+from meridian.runtime.tools.providers import (
+    ComposioProvider,
+    CsvProvider,
+    RecordingProvider,
+    TableProvider,
+)
 
 __all__ = [
     "Bindings",
     "ComposioProvider",
+    "CsvProvider",
     "Provider",
     "RecordingProvider",
+    "TableProvider",
     "Tool",
     "Tools",
 ]

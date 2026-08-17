@@ -1,12 +1,18 @@
 """Reaching outside the process, and refusing to guess about it."""
 
+import asyncio
+
 import pytest
 
+from meridian.runtime.context import UnboundTools
 from meridian.runtime.errors import BindingError, RetryableError
+from meridian.runtime.temporal.activities import Capabilities, CapabilityCall
 from meridian.runtime.tools import (
     Bindings,
     ComposioProvider,
+    CsvProvider,
     RecordingProvider,
+    TableProvider,
     Tool,
     Tools,
 )
@@ -108,3 +114,52 @@ def test_generated_code_never_learns_the_provider_action():
     provider = RecordingProvider()
     Tools(outlook, {"composio": provider}).call("email.send", {"to": "x"})
     assert provider.calls[0][0] == "OUTLOOK_SEND_MAIL"
+
+
+# --- reading, and writing somewhere a person can look ------------------------
+
+
+def test_a_lookup_can_finally_get_an_answer():
+    # Both shipped providers were write-shaped, so `effect: lookup` had nothing
+    # that could return a record and the third direction of data movement was
+    # untestable.
+    registry = TableProvider([{"container_no": "CAAU4056270", "vessel": "APL Chicago"}])
+    assert registry.execute("READ", {"container_no": "CAAU4056270"})["vessel"] == "APL Chicago"
+
+
+def test_a_lookup_that_finds_nothing_returns_nothing_rather_than_raising():
+    # A container the terminal has never heard of is a real answer. The Check
+    # reading the result is what decides whether that is a failure.
+    assert TableProvider([]).execute("READ", {"container_no": "MADE-UP"}) == {}
+
+
+def test_shadow_mode_no_longer_fabricates_a_read():
+    # It used to echo the arguments back, so a check comparing a container
+    # number against the record "returned" for it compared the value against
+    # ITSELF — a fabricated container passed and the sweep went green.
+    result = asyncio.run(
+        Capabilities(UnboundTools()).invoke(
+            CapabilityCall(capability="system.read", args={"container_no": "MADE-UP"})
+        )
+    )
+    assert result.output == {}
+
+
+def test_a_record_lands_somewhere_a_person_can_compare(tmp_path):
+    out = tmp_path / "log.csv"
+    provider = CsvProvider(out)
+    provider.execute("WRITE", {"record": {"shipment_no": "CAAU4056270", "failed": 1}})
+    provider.execute("WRITE", {"record": {"shipment_no": "MNBU3974949", "failed": 0}})
+
+    rows = out.read_text().splitlines()
+    assert rows[0] == "shipment_no,failed"
+    assert rows[1] == "CAAU4056270,1"
+    assert len(rows) == 3
+
+
+def test_the_csv_learns_its_columns_and_never_knows_the_process(tmp_path):
+    # Header from the first record's keys. Teaching this class what a shipment
+    # row looks like would put one customer's process in the runtime.
+    out = tmp_path / "anything.csv"
+    CsvProvider(out).execute("WRITE", {"record": {"licence": "RN9921", "expires": "2027-01"}})
+    assert out.read_text().splitlines()[0] == "licence,expires"
