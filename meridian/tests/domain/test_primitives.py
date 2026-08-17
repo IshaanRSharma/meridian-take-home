@@ -9,9 +9,12 @@ Two properties are easy to lose and asserted throughout: a half-filled card must
 still be constructible, and a finished card must report nothing.
 """
 
+from typing import get_args
+
 import pytest
 from pydantic import ValidationError
 
+from meridian.domain import primitives as p
 from meridian.domain.primitives import (
     ActionConfig,
     Cardinality,
@@ -77,6 +80,13 @@ def test_role_and_event_recipients_discriminate_on_kind():
     assert (role.kind, event.kind) == ("role", "event")
 
 
+def test_a_role_with_no_name_is_rejected():
+    # The bindings file keys on this string to find a person. An empty one is a
+    # blank that reports nothing and binds to nobody.
+    with pytest.raises(ValidationError):
+        RoleRef(role="")
+
+
 # --- cardinality -----------------------------------------------------------
 
 
@@ -85,8 +95,8 @@ def test_cardinality_defaults_to_one():
     assert Cardinality().findings() == []
 
 
-def test_one_per_without_a_reference_is_blocking():
-    assert by_field(Cardinality(kind="one_per").findings())["per"].severity == "blocking"
+def test_one_per_without_a_reference_is_reported():
+    assert by_field(Cardinality(kind="one_per").findings())["per"].severity == "important"
 
 
 def test_one_per_names_the_field_that_enumerates_the_instances():
@@ -100,9 +110,9 @@ def test_one_per_names_the_field_that_enumerates_the_instances():
 # --- timing ----------------------------------------------------------------
 
 
-def test_sla_without_a_deadline_is_blocking():
+def test_sla_without_a_deadline_is_reported():
     found = Timing(kind="sla").findings()
-    assert by_field(found)["deadline"].severity == "blocking"
+    assert by_field(found)["deadline"].severity == "important"
 
 
 def test_await_without_a_deadline_is_allowed():
@@ -111,9 +121,9 @@ def test_await_without_a_deadline_is_allowed():
     assert Timing(kind="await").findings() == []
 
 
-def test_scheduled_mode_without_a_schedule_is_blocking():
+def test_scheduled_mode_without_a_schedule_is_reported():
     found = Timing(kind="await", mode="scheduled").findings()
-    assert by_field(found)["schedule"].severity == "blocking"
+    assert by_field(found)["schedule"].severity == "important"
 
 
 @pytest.mark.parametrize("duration", ["PT48H", "P30D", "PT30S", "P1Y2M3DT4H5M6S"])
@@ -134,9 +144,9 @@ def test_empty_event_reports_its_blocking_fields():
     assert {"name", "correlation_key", "timing"} <= fields(EventConfig().findings())
 
 
-def test_event_with_a_deadline_and_no_outcomes_is_blocking():
+def test_event_with_a_deadline_and_no_outcomes_is_reported():
     config = EventConfig(timing=Timing(kind="await", deadline="PT48H"))
-    assert by_field(config.findings())["outcomes"].severity == "blocking"
+    assert by_field(config.findings())["outcomes"].severity == "important"
 
 
 def test_event_without_a_deadline_needs_no_outcomes():
@@ -161,18 +171,18 @@ def test_event_without_captures_is_important_not_blocking():
 # --- action ----------------------------------------------------------------
 
 
-def test_action_without_an_effect_is_blocking():
-    assert by_field(ActionConfig().findings())["effect"].severity == "blocking"
+def test_action_without_an_effect_is_reported():
+    assert by_field(ActionConfig().findings())["effect"].severity == "important"
 
 
-def test_notify_without_recipients_is_blocking():
+def test_notify_without_recipients_is_reported():
     found = ActionConfig(effect="notify", channel="email").findings()
-    assert by_field(found)["recipients"].severity == "blocking"
+    assert by_field(found)["recipients"].severity == "important"
 
 
-def test_notify_without_a_channel_is_blocking():
+def test_notify_without_a_channel_is_reported():
     found = ActionConfig(effect="notify", recipients=[RoleRef(role="supervisor")]).findings()
-    assert by_field(found)["channel"].severity == "blocking"
+    assert by_field(found)["channel"].severity == "important"
 
 
 def test_notify_without_payload_fields_is_important():
@@ -191,8 +201,8 @@ def test_notify_without_an_idempotency_key_is_important():
     assert by_field(found)["idempotency_key"].severity == "important"
 
 
-def test_record_without_a_system_is_blocking():
-    assert by_field(ActionConfig(effect="record").findings())["system"].severity == "blocking"
+def test_record_without_a_system_is_reported():
+    assert by_field(ActionConfig(effect="record").findings())["system"].severity == "important"
 
 
 def test_record_without_an_idempotency_key_is_important():
@@ -200,14 +210,14 @@ def test_record_without_an_idempotency_key_is_important():
     assert by_field(found)["idempotency_key"].severity == "important"
 
 
-def test_lookup_without_produces_is_blocking():
+def test_lookup_without_produces_is_reported():
     found = ActionConfig(effect="lookup", system="state medical board").findings()
-    assert by_field(found)["produces"].severity == "blocking"
+    assert by_field(found)["produces"].severity == "important"
 
 
-def test_lookup_without_a_system_is_blocking():
+def test_lookup_without_a_system_is_reported():
     found = ActionConfig(effect="lookup", produces="board_record").findings()
-    assert by_field(found)["system"].severity == "blocking"
+    assert by_field(found)["system"].severity == "important"
 
 
 def test_lookup_without_on_failure_is_important():
@@ -233,13 +243,13 @@ def test_produces_must_be_a_board_key():
         ActionConfig(effect="lookup", produces="Board Record")
 
 
-def test_decide_without_outcomes_is_blocking():
-    assert by_field(ActionConfig(effect="decide").findings())["outcomes"].severity == "blocking"
+def test_decide_without_outcomes_is_reported():
+    assert by_field(ActionConfig(effect="decide").findings())["outcomes"].severity == "important"
 
 
 def test_decide_with_one_outcome_is_still_blocking():
     found = ActionConfig(effect="decide", outcomes=[Outcome(name="approved")]).findings()
-    assert by_field(found)["outcomes"].severity == "blocking"
+    assert by_field(found)["outcomes"].severity == "important"
 
 
 def test_decide_without_a_deadline_is_important():
@@ -256,6 +266,92 @@ def test_decide_with_a_deadline_needs_an_on_timeout_outcome():
     assert by_field(found)["on_timeout"].severity == "important"
 
 
+def test_decide_without_recipients_is_reported():
+    # A human approval task with a three-day SLA and no way to reach anybody is
+    # a timer counting down against a request nobody received.
+    decider = RoleRef(role="cost_centre_manager")
+    found = ActionConfig(effect="decide", performed_by=decider).findings()
+    assert by_field(found)["recipients"].severity == "important"
+
+
+def test_decide_without_a_channel_is_reported():
+    found = ActionConfig(effect="decide", recipients=[RoleRef(role="manager")]).findings()
+    assert by_field(found)["channel"].severity == "important"
+
+
+def test_a_channel_on_a_decision_is_not_reported_as_spare():
+    # A decision asks a person, so it needs a channel exactly as a notification
+    # does. Reporting it as spare would contradict the finding that asks for it.
+    found = ActionConfig(effect="decide", channel="email").findings()
+    assert "channel" not in fields(found)
+
+
+def test_who_decides_is_a_role_rather_than_a_name():
+    # Identities live in the bindings file. A person's name in the config would
+    # reach the checksummed spec, so a leaver would force a new spec version.
+    with pytest.raises(ValidationError):
+        ActionConfig(effect="decide", performed_by="Alfonso")
+
+
+def test_a_complete_decision_reports_nothing():
+    config = ActionConfig(
+        name="Approve the write-off",
+        effect="decide",
+        performed_by=RoleRef(role="cost_centre_manager"),
+        recipients=[RoleRef(role="cost_centre_manager")],
+        channel="email",
+        outcomes=[Outcome(name="approved"), Outcome(name="rejected"), Outcome(name="timed_out")],
+        timing=Timing(kind="sla", deadline="P3D"),
+        on_timeout="the finance director decides instead",
+    )
+    assert config.findings() == []
+
+
+def test_an_action_that_can_time_out_without_outcomes_is_reported():
+    # The deadline passing is a way out of the step. With no outcome named
+    # there is no edge to draw, so the board-level wiring rule cannot see the
+    # branch either and the generated timer fires into nothing.
+    found = ActionConfig(
+        name="Report the discrepancy",
+        effect="notify",
+        channel="email",
+        recipients=[RoleRef(role="supervisor")],
+        payload_fields=[INVOICE_NO],
+        idempotency_key="invoice_no",
+        timing=Timing(kind="sla", deadline="P1D"),
+    ).findings()
+    assert fields(found) == {"outcomes"}
+    assert by_field(found)["outcomes"].severity == "important"
+
+
+def test_action_timing_findings_are_reported_under_a_timing_prefix():
+    # Timing was read only inside a decision, so an SLA promised on any other
+    # kind of step went unreported.
+    found = ActionConfig(
+        effect="record", system="WMS", idempotency_key="ref", timing=Timing(kind="sla")
+    ).findings()
+    assert "timing.deadline" in fields(found)
+
+
+def test_every_effect_reports_what_that_effect_needs():
+    # `findings()` dispatches on `effect` with no fallback, so an effect added
+    # later — `compute`, `escalate` — would let a blank card through the freeze
+    # gate reporting nothing but its name. This is where that fails loudly.
+    # `noop` is the one effect that legitimately asks for nothing: it is a
+    # named ending, and saying so is the whole of it.
+    demanded: dict[p.Effect, set[str]] = {
+        "notify": {"recipients", "channel", "payload_fields", "idempotency_key"},
+        "record": {"system", "idempotency_key"},
+        "lookup": {"system", "produces", "on_failure", "timeout"},
+        "decide": {"performed_by", "recipients", "channel", "outcomes", "timing"},
+        "noop": set(),
+    }
+    assert set(demanded) == set(get_args(p.Effect))
+    for effect, expected in demanded.items():
+        blank = fields(ActionConfig(effect=effect).findings()) - {"name"}
+        assert blank == expected, effect
+
+
 def test_a_terminal_noop_action_is_complete():
     config = ActionConfig(
         name="Documentation validated",
@@ -265,7 +361,7 @@ def test_a_terminal_noop_action_is_complete():
     assert config.findings() == []
 
 
-def test_a_channel_on_a_step_that_notifies_nobody_is_minor():
+def test_a_channel_on_a_step_that_reaches_nobody_is_minor():
     found = ActionConfig(effect="record", system="WMS", channel="email").findings()
     assert by_field(found)["channel"].severity == "minor"
 
@@ -280,17 +376,17 @@ def test_action_config_has_no_capabilities_field():
 # --- check -----------------------------------------------------------------
 
 
-def test_check_with_one_outcome_is_blocking():
+def test_check_with_one_outcome_is_reported():
     found = CheckConfig(outcomes=[Outcome(name="pass")]).findings()
-    assert by_field(found)["outcomes"].severity == "blocking"
+    assert by_field(found)["outcomes"].severity == "important"
 
 
-def test_check_without_criteria_is_blocking():
-    assert by_field(CheckConfig().findings())["criteria"].severity == "blocking"
+def test_check_without_criteria_is_reported():
+    assert by_field(CheckConfig().findings())["criteria"].severity == "important"
 
 
-def test_check_without_inputs_is_blocking():
-    assert by_field(CheckConfig().findings())["inputs"].severity == "blocking"
+def test_check_without_inputs_is_reported():
+    assert by_field(CheckConfig().findings())["inputs"].severity == "important"
 
 
 def test_check_without_on_missing_input_is_important():
@@ -350,25 +446,25 @@ def test_criterion_findings_are_reported_under_an_indexed_prefix():
 # --- criteria --------------------------------------------------------------
 
 
-def test_a_criterion_without_a_field_is_blocking():
-    assert by_field(Criterion(op="present").findings())["left"].severity == "blocking"
+def test_a_criterion_without_a_field_is_reported():
+    assert by_field(Criterion(op="present").findings())["left"].severity == "important"
 
 
 def test_compare_requires_an_operator():
     found = Criterion(op="compare", left=INVOICE_NO, right=Operand(kind="value", value=0.18))
-    assert by_field(found.findings())["operator"].severity == "blocking"
+    assert by_field(found.findings())["operator"].severity == "important"
 
 
 def test_compare_requires_something_to_compare_against():
     found = Criterion(op="compare", left=INVOICE_NO, operator="gt").findings()
-    assert by_field(found)["right"].severity == "blocking"
+    assert by_field(found)["right"].severity == "important"
 
 
-def test_a_value_operand_without_a_value_is_blocking():
+def test_a_value_operand_without_a_value_is_reported():
     found = Criterion(
         op="compare", left=INVOICE_NO, operator="gt", right=Operand(kind="value")
     ).findings()
-    assert by_field(found)["right.value"].severity == "blocking"
+    assert by_field(found)["right.value"].severity == "important"
 
 
 def test_compare_covers_pattern_matching():
@@ -410,14 +506,14 @@ def test_compare_covers_a_window_around_another_field():
 
 def test_each_has_matching_requires_a_right_hand_reference():
     found = Criterion(op="each_has_matching", left=BATCH_NO).findings()
-    assert by_field(found)["right"].severity == "blocking"
+    assert by_field(found)["right"].severity == "important"
 
 
 def test_each_has_matching_cannot_match_against_a_literal():
     found = Criterion(
         op="each_has_matching", left=BATCH_NO, right=Operand(kind="value", value="UAC25022")
     ).findings()
-    assert by_field(found)["right"].severity == "blocking"
+    assert by_field(found)["right"].severity == "important"
 
 
 def test_present_requires_nothing_beyond_a_field():
@@ -426,7 +522,7 @@ def test_present_requires_nothing_beyond_a_field():
 
 def test_custom_requires_a_statement():
     found = Criterion(op="custom", reads=[BATCH_NO]).findings()
-    assert by_field(found)["statement"].severity == "blocking"
+    assert by_field(found)["statement"].severity == "important"
 
 
 def test_custom_without_named_fields_is_important():
@@ -548,3 +644,52 @@ def test_completed_prealert_actions_report_nothing(
     assert report_invoice_discrepancy.findings() == []
     assert report_coa_discrepancy.findings() == []
     assert documentation_validated.findings() == []
+
+
+def test_no_closed_set_names_one_customers_process():
+    # Every one of these reaches the frozen spec and the generated code, so a
+    # value borrowed from the running example would put pharma logistics in the
+    # type system — `per_shipment` did, and meant a credentialing board had no
+    # honest grain to pick. Free-text fields carry the customer's nouns;
+    # enumerations carry ours, and ours have to be domain-free.
+    borrowed = ("shipment", "invoice", "batch", "coa", "container", "pharma")
+    enums = (
+        p.Severity,
+        p.Channel,
+        p.Effect,
+        p.Operator,
+        p.OnFailure,
+        p.Scope,
+        p.Measure,
+    )
+    values = [str(v) for enum in enums for v in get_args(enum)]
+    assert not [v for v in values if any(word in v.lower() for word in borrowed)]
+
+
+def test_every_table_keyed_by_an_enum_covers_all_of_it():
+    # A dict beside a Literal has to be maintained in step with it, and nothing
+    # makes that happen — the first value someone adds raises a KeyError deep in
+    # a finding message, on a board that linted clean. Where a table cannot be
+    # derived away (an ordering, a phrase a person reads), this is what stands
+    # in for deriving it.
+    scopes = set(get_args(p.Scope))
+    assert set(p._GRAIN) == scopes
+    assert set(p._PLAIN_SCOPE) == scopes
+
+
+def test_a_missing_value_never_blocks_a_freeze():
+    # The line that gives the gate one meaning. A blank field is something only
+    # the person who runs the process can fill, so it is the reviewer's question
+    # to ask — never a refusal handed to someone who came to draw a diagram.
+    # Blocking is reserved for a drawing that is not a valid workflow, and that
+    # is decided by the board, not by a card looking at itself.
+    for config in (
+        EntityConfig(),
+        EventConfig(),
+        ActionConfig(effect="notify"),
+        ActionConfig(effect="lookup"),
+        ActionConfig(effect="decide"),
+        CheckConfig(),
+    ):
+        blocking = [f.field for f in config.findings() if f.severity == "blocking"]
+        assert blocking == [], f"{type(config).__name__} still blocks on {blocking}"

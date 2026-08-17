@@ -5,15 +5,24 @@
     "round 1 has to find, and they are the holes a careful reader of that SOP",
     "would actually leave.",
     "",
+    "Three of these stop the board entering review, and they are all the drawing",
+    "not yet being a workable process: an outcome with no line out of it, and two",
+    "steps it stops at without ever saying so. A person fixes those on the canvas.",
+    "Everything else is a value only the process owner can supply, so it is the",
+    "reviewer's question rather than a refusal.",
+    "",
     "Left out on purpose:",
     "  · no recipients on the COA report     the SOP never says who receives it",
     "  · no system on the invoice report     the SOP says 'log an error', not where",
+    "  · neither report marked as an ending  the SOP stops; nobody said the process does",
     "  · no idempotency_key on either        a resumed shipment would report twice",
     "  · no on_missing_input on either check nothing says what to do while waiting",
     "  · no deadline on the event            nothing bounds the wait",
     "  · mismatched_coa has no edge          the SOP names the outcome, not the path",
     "  · no sample_extracted yet             populated by `mvp fixtures pull`",
     "  · no output entity                    the SOP describes no result row at all",
+    "  · nothing reads prealert_email.sender the report has to go somewhere, and",
+    "                                        'whoever sent it' is a guess until asked",
     "",
     "One problem is logged and the other emailed, because the SOP genuinely says",
     "'log an error' for invoices and 'reported via email' for COAs. Whether that",
@@ -31,6 +40,22 @@
   },
 
   "primitives": [
+    {
+      "key": "prealert_email",
+      "primitive_type": "entity",
+      "config": {
+        "name": "Pre-alert email",
+        "identified_by": "it arrives in the pre-alert group mailbox the bot has access to",
+        "cardinality": { "kind": "many" },
+        "fields": {
+          "sender": { "type": "string" },
+          "subject": { "type": "string" },
+          "received_at": { "type": "string" },
+          "attachment_names": { "type": "array", "items": { "type": "string" } }
+        },
+        "instructions": "The SOP says documentation must be reported by email but never says to whom. The sender is the obvious candidate and is deliberately not assumed here."
+      }
+    },
     {
       "key": "commercial_invoice",
       "primitive_type": "entity",
@@ -88,7 +113,7 @@
         "channel": "email",
         "correlation_key": { "entity": "commercial_invoice", "path": "container_no" },
         "match_condition": "subject contains \"Pre-Alert Documents\" or \"APL USA // PRE-ALERT DOCUMENTATION\"",
-        "captures": ["commercial_invoice", "certificate_of_analysis"],
+        "captures": ["prealert_email", "commercial_invoice", "certificate_of_analysis"],
         "timing": { "kind": "await", "mode": "on_arrival" },
         "instructions": "Sent by the exporter's clearing agent. Documents arrive in pieces — a shipment may get several emails, and corrected COAs come days later."
       }
@@ -171,7 +196,7 @@
         "name": "Report the COA discrepancy",
         "effect": "notify",
         "channel": "email",
-        "inputs": ["certificate_of_analysis"],
+        "inputs": ["commercial_invoice", "certificate_of_analysis"],
         "payload_fields": [
           { "entity": "commercial_invoice", "path": "invoice_no" },
           { "entity": "commercial_invoice", "path": "line_items[].batch_no" }

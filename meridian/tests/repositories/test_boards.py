@@ -104,5 +104,5 @@ async def test_entities_are_stored_beside_the_steps(
     )
 
     counts = {r["primitive_type"]: r["n"] for r in rows}
-    assert counts["entity"] == 2
+    assert counts["entity"] == 3
     assert counts["check"] == 2

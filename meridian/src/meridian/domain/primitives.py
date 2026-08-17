@@ -29,11 +29,17 @@ Duration = Annotated[str, Field(pattern=ISO_8601_DURATION)]
 
 MIN_OUTCOMES = 2
 
-# Coarse to fine. A check that looks at whole invoices cannot report a line-item
-# count, but one that looks at line items can roll up to either coarser grain.
-_GRAIN: dict[str, int] = {"per_shipment": 0, "per_document": 1, "per_line_item": 2}
+# Coarse to fine. A check that looks at whole documents cannot report a
+# line-item count, but one that looks at line items can roll up to either
+# coarser grain.
+#
+# `per_case` is the unit the correlation key identifies — one shipment here, one
+# application in credentialing. "Case" is what process modelling has always
+# called an instance, and it is a word a process owner says; `per_shipment`
+# would have put one customer's noun in the type system and in the frozen spec.
+_GRAIN: dict[str, int] = {"per_case": 0, "per_document": 1, "per_line_item": 2}
 _PLAIN_SCOPE: dict[str, str] = {
-    "per_shipment": "the whole shipment",
+    "per_case": "the case as a whole",
     "per_document": "whole documents",
     "per_line_item": "line items",
 }
@@ -43,8 +49,13 @@ Channel = Literal["email", "sms", "phone", "queue"]
 Effect = Literal["notify", "record", "lookup", "decide", "noop"]
 Operator = Literal["eq", "ne", "gt", "gte", "lt", "lte", "matches", "in"]
 OnFailure = Literal["fail", "wait", "skip"]
-Scope = Literal["per_shipment", "per_document", "per_line_item"]
+Scope = Literal["per_case", "per_document", "per_line_item"]
 Measure = Literal["checked", "passed", "failed"]
+
+# The effects that put a person on the other end, and so the only ones a
+# `channel` carries anything for. A decision is delivered exactly as a
+# notification is — somebody has to be asked before they can answer.
+_REACHES_A_PERSON: tuple[Effect, ...] = ("notify", "decide")
 
 
 class DomainModel(BaseModel):
@@ -66,10 +77,17 @@ class Finding(DomainModel):
 
     field: str
     reason: str
-    severity: Severity = "blocking"
+    severity: Severity
 
 
-def _finding(field: str, reason: str, severity: Severity = "blocking") -> Finding:
+def _finding(field: str, reason: str, severity: Severity) -> Finding:
+    """One unsupplied field.
+
+    ``severity`` is required rather than defaulted, because a default makes
+    every field added later a freeze gate that nobody chose. Blocking has to
+    mean "no correct agent can be generated without this" — grep the literal
+    to see every gate in the system at once.
+    """
     return Finding(field=field, reason=reason, severity=severity)
 
 
@@ -114,7 +132,9 @@ class RoleRef(DomainModel):
     """A named role. The person filling it lives in the bindings file."""
 
     kind: Literal["role"] = "role"
-    role: str
+    # The bindings file keys on this to find a person, so an empty one binds to
+    # nobody while looking like an answer.
+    role: str = Field(min_length=1)
 
 
 class EventRef(DomainModel):
@@ -153,7 +173,7 @@ class Cardinality(DomainModel):
     def findings(self) -> list[Finding]:
         """Configuration this cardinality needs that is not set."""
         if self.kind == "one_per" and self.per is None:
-            return [_finding("per", "Nothing says what these are counted against.")]
+            return [_finding("per", "Nothing says what these are counted against.", "important")]
         return []
 
 
@@ -176,9 +196,15 @@ class Timing(DomainModel):
         """Configuration this timing needs that is not set."""
         found: list[Finding] = []
         if self.kind == "sla" and not self.deadline:
-            found.append(_finding("deadline", "A time limit is promised but never stated."))
+            found.append(
+                _finding("deadline", "A time limit is promised but never stated.", "important")
+            )
         if self.mode == "scheduled" and not self.schedule:
-            found.append(_finding("schedule", "This runs on a schedule, but no schedule is set."))
+            found.append(
+                _finding(
+                    "schedule", "This runs on a schedule, but no schedule is set.", "important"
+                )
+            )
         return found
 
 
@@ -204,9 +230,11 @@ class Operand(DomainModel):
     def findings(self) -> list[Finding]:
         """Configuration this operand kind needs that is not set."""
         if self.kind == "value" and self.value is None:
-            return [_finding("value", "Nothing says what this is compared against.")]
+            return [_finding("value", "Nothing says what this is compared against.", "important")]
         if self.kind == "field" and self.field is None:
-            return [_finding("field", "Nothing says which field this is compared against.")]
+            return [
+                _finding("field", "Nothing says which field this is compared against.", "important")
+            ]
         return []
 
 
@@ -251,7 +279,7 @@ class Criterion(DomainModel):
 
         found: list[Finding] = []
         if self.left is None:
-            found.append(_finding("left", "Nothing says which field this tests."))
+            found.append(_finding("left", "Nothing says which field this tests.", "important"))
         if self.op == "compare":
             found += self._compare_findings()
         if self.op == "each_has_matching":
@@ -261,18 +289,24 @@ class Criterion(DomainModel):
     def _compare_findings(self) -> list[Finding]:
         found: list[Finding] = []
         if not self.operator:
-            found.append(_finding("operator", "Nothing says how the two values are compared."))
+            found.append(
+                _finding("operator", "Nothing says how the two values are compared.", "important")
+            )
         if self.right is None:
-            found.append(_finding("right", "Nothing says what this is compared against."))
+            found.append(
+                _finding("right", "Nothing says what this is compared against.", "important")
+            )
         else:
             found += _under("right", self.right.findings())
         return found
 
     def _matching_findings(self) -> list[Finding]:
         if self.right is None:
-            found = [_finding("right", "Nothing says which field this is matched to.")]
+            found = [_finding("right", "Nothing says which field this is matched to.", "important")]
         elif self.right.kind != "field":
-            found = [_finding("right", "These can only be matched against another field.")]
+            found = [
+                _finding("right", "These can only be matched against another field.", "important")
+            ]
         else:
             found = _under("right", self.right.findings())
         return found
@@ -280,7 +314,7 @@ class Criterion(DomainModel):
     def _custom_findings(self) -> list[Finding]:
         found: list[Finding] = []
         if not self.statement:
-            found.append(_finding("statement", "Nothing says what this test is."))
+            found.append(_finding("statement", "Nothing says what this test is.", "important"))
         if not self.reads:
             found.append(
                 _finding("reads", "Nothing says which fields this test uses.", "important")
@@ -337,9 +371,9 @@ class EntityConfig(DomainModel):
         """Configuration a process owner still has to supply."""
         found: list[Finding] = []
         if not self.name:
-            found.append(_finding("name", "This has no name."))
+            found.append(_finding("name", "This has no name.", "important"))
         if not self.fields:
-            found.append(_finding("fields", "Nothing says what to read off this."))
+            found.append(_finding("fields", "Nothing says what to read off this.", "important"))
         # `identified_by` is deliberately not reported here. Only an entity that
         # ARRIVES needs recognising, and a card cannot know how it gets here —
         # an entity a lookup returns, or one the checks fill in, has nothing to
@@ -375,9 +409,11 @@ class EventConfig(DomainModel):
         """Configuration a process owner still has to supply."""
         found: list[Finding] = []
         if not self.name:
-            found.append(_finding("name", "This has no name."))
+            found.append(_finding("name", "This has no name.", "important"))
         if not self.correlation_key:
-            found.append(_finding("correlation_key", "Nothing says what to file this under."))
+            found.append(
+                _finding("correlation_key", "Nothing says what to file this under.", "important")
+            )
         if not self.match_condition:
             found.append(
                 _finding("match_condition", "Nothing says how to recognise this.", "important")
@@ -386,12 +422,14 @@ class EventConfig(DomainModel):
             found.append(_finding("captures", "Nothing arrives with this event.", "important"))
 
         if self.timing is None:
-            found.append(_finding("timing", "Nothing says when or how this arrives."))
+            found.append(_finding("timing", "Nothing says when or how this arrives.", "important"))
             return found
 
         found += _under("timing", self.timing.findings())
         if self.timing.deadline and not self.outcomes:
-            found.append(_finding("outcomes", "This can time out, but no outcomes are named."))
+            found.append(
+                _finding("outcomes", "This can time out, but no outcomes are named.", "important")
+            )
         return found
 
 
@@ -408,7 +446,10 @@ class ActionConfig(DomainModel):
     """
 
     name: str | None = None
-    performed_by: str | None = None
+    # A role rather than free text, because a person is a `RoleRef` everywhere
+    # else in this system: identities live in the bindings file and never in the
+    # checksummed spec, so a leaver cannot force a new spec version.
+    performed_by: RoleRef | None = None
     effect: Effect | None = None
     channel: Channel | None = None
     system: str | None = None
@@ -429,14 +470,14 @@ class ActionConfig(DomainModel):
         """Configuration a process owner still has to supply."""
         found: list[Finding] = []
         if not self.name:
-            found.append(_finding("name", "This has no name."))
+            found.append(_finding("name", "This has no name.", "important"))
 
         if self.effect is None:
-            found.append(_finding("effect", "Nothing says what this step does."))
+            found.append(_finding("effect", "Nothing says what this step does.", "important"))
             return found
 
-        if self.channel and self.effect != "notify":
-            found.append(_finding("channel", "This has a channel but notifies nobody.", "minor"))
+        if self.channel and self.effect not in _REACHES_A_PERSON:
+            found.append(_finding("channel", "This has a channel but reaches nobody.", "minor"))
 
         match self.effect:
             case "notify":
@@ -449,14 +490,14 @@ class ActionConfig(DomainModel):
                 found += self._decide_findings()
             case "noop":
                 pass
-        return found
+        return found + self._timing_findings()
 
     def _notify_findings(self) -> list[Finding]:
         found: list[Finding] = []
         if not self.recipients:
-            found.append(_finding("recipients", "Nobody is named as receiving this."))
+            found.append(_finding("recipients", "Nobody is named as receiving this.", "important"))
         if not self.channel:
-            found.append(_finding("channel", "Nothing says how this reaches them."))
+            found.append(_finding("channel", "Nothing says how this reaches them.", "important"))
         if not self.payload_fields:
             found.append(
                 _finding("payload_fields", "Nothing says what the message says.", "important")
@@ -472,7 +513,7 @@ class ActionConfig(DomainModel):
     def _record_findings(self) -> list[Finding]:
         found: list[Finding] = []
         if not self.system:
-            found.append(_finding("system", "Nothing says where this gets written."))
+            found.append(_finding("system", "Nothing says where this gets written.", "important"))
         if not self.idempotency_key:
             found.append(
                 _finding("idempotency_key", "Nothing stops this being written twice.", "important")
@@ -482,10 +523,14 @@ class ActionConfig(DomainModel):
     def _lookup_findings(self) -> list[Finding]:
         found: list[Finding] = []
         if not self.system:
-            found.append(_finding("system", "Nothing says where this is looked up."))
+            found.append(_finding("system", "Nothing says where this is looked up.", "important"))
         if not self.produces:
             found.append(
-                _finding("produces", "The answer has nowhere to land, so nothing can use it.")
+                _finding(
+                    "produces",
+                    "The answer has nowhere to land, so nothing can use it.",
+                    "important",
+                )
             )
         if not self.on_failure:
             found.append(
@@ -500,22 +545,54 @@ class ActionConfig(DomainModel):
         return found
 
     def _decide_findings(self) -> list[Finding]:
+        """What a human decision needs beyond the answers it can come back with.
+
+        Authority and delivery are two questions. ``performed_by`` is whose call
+        it is — the role that owns the outcome, and the one an audit asks about.
+        ``recipients`` and ``channel`` are how the request actually reaches
+        somebody, which may be a shared queue or include a deputy. Without the
+        second pair, codegen has a task with a deadline and no way to ask
+        anybody, so the timer is the only thing that ever fires.
+        """
         found: list[Finding] = []
-        if not self.performed_by:
+        if self.performed_by is None:
             # Who decides is load-bearing for a human task and documentation
             # everywhere else, so it is only required here.
-            found.append(_finding("performed_by", "Nobody is named as deciding this."))
+            found.append(_finding("performed_by", "Nobody is named as deciding this.", "important"))
+        if not self.recipients:
+            found.append(_finding("recipients", "Nothing says who to ask.", "important"))
+        if not self.channel:
+            found.append(_finding("channel", "Nothing says how to ask them.", "important"))
         if len(self.outcomes) < MIN_OUTCOMES:
-            found.append(_finding("outcomes", "A decision needs at least two possible answers."))
+            found.append(
+                _finding("outcomes", "A decision needs at least two possible answers.", "important")
+            )
 
         if self.timing is None:
             found.append(_finding("timing", "Nothing says how long this may take.", "important"))
-            return found
-
-        found += _under("timing", self.timing.findings())
-        if self.timing.deadline and not self.on_timeout:
+        elif self.timing.deadline and not self.on_timeout:
             found.append(
                 _finding("on_timeout", "Nothing says what happens if nobody decides.", "important")
+            )
+        return found
+
+    def _timing_findings(self) -> list[Finding]:
+        """Deadlines, on every kind of step rather than only on a decision.
+
+        A deadline is a way out of the step, so the branch it takes needs a name
+        for an edge to leave from — the same guard an Event carries. Without one
+        the board-level wiring rule has no outcome to find unwired, and the
+        generated timer fires into nothing.
+
+        Timing is optional here, unlike on an Event: only a decision is owed
+        within a time, and that requirement belongs to the decision.
+        """
+        if self.timing is None:
+            return []
+        found = _under("timing", self.timing.findings())
+        if self.timing.deadline and not self.outcomes:
+            found.append(
+                _finding("outcomes", "This can time out, but no outcomes are named.", "important")
             )
         return found
 
@@ -533,7 +610,7 @@ class CheckConfig(DomainModel):
 
     name: str | None = None
     criteria: tuple[Criterion, ...] = ()
-    scope: Scope = "per_shipment"
+    scope: Scope = "per_case"
     quantifier: Literal["all", "any", "none", "count"] = "all"
     inputs: tuple[BoardKey, ...] = ()
     outcomes: tuple[Outcome, ...] = ()
@@ -546,13 +623,15 @@ class CheckConfig(DomainModel):
         """Configuration a process owner still has to supply."""
         found: list[Finding] = []
         if not self.name:
-            found.append(_finding("name", "This has no name."))
+            found.append(_finding("name", "This has no name.", "important"))
         if not self.criteria:
-            found.append(_finding("criteria", "Nothing says what this check tests."))
+            found.append(_finding("criteria", "Nothing says what this check tests.", "important"))
         if len(self.outcomes) < MIN_OUTCOMES:
-            found.append(_finding("outcomes", "A check needs at least two possible answers."))
+            found.append(
+                _finding("outcomes", "A check needs at least two possible answers.", "important")
+            )
         if not self.inputs:
-            found.append(_finding("inputs", "Nothing says what this check reads."))
+            found.append(_finding("inputs", "Nothing says what this check reads.", "important"))
         if not self.on_missing_input:
             found.append(
                 _finding(
@@ -583,6 +662,7 @@ class CheckConfig(DomainModel):
                 "fills",
                 f"This looks at {_PLAIN_SCOPE[self.scope]}, "
                 f"so it cannot count {_PLAIN_SCOPE[fill.per]}.",
+                "important",
             )
             for fill in self.fills
             if fill.per is not None and _GRAIN[fill.per] > _GRAIN[self.scope]

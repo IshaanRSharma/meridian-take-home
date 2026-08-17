@@ -74,6 +74,7 @@ def sound() -> Board:
                     effect="notify",
                     channel="email",
                     recipients=[RoleRef(role="supervisor")],
+                    inputs=["invoice"],
                     payload_fields=[FieldRef(entity="invoice", path="no")],
                     idempotency_key="no",
                     is_terminal=True,

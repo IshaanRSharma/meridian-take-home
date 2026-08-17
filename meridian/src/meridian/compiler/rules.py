@@ -25,7 +25,6 @@ from meridian.domain.graph import (
     ActionPrimitive,
     Board,
     BoardFinding,
-    FlowNode,
 )
 from meridian.domain.primitives import Severity
 
@@ -64,6 +63,7 @@ def edge_endpoints_exist(board: Board) -> list[BoardFinding]:
             field=role,
             reason=f"This connects to {key!r}, which is not on the board.",
             kind="structure",
+            severity="blocking",
         )
         for edge in board.edges
         for role, key in (("from_key", edge.from_key), ("to_key", edge.to_key))
@@ -80,6 +80,7 @@ def edge_endpoints_are_steps(board: Board) -> list[BoardFinding]:
             field=role,
             reason=f"{key!r} is something the process reads, not a step.",
             kind="structure",
+            severity="blocking",
         )
         for edge in board.edges
         for role, key in (("from_key", edge.from_key), ("to_key", edge.to_key))
@@ -100,6 +101,7 @@ def edge_outcomes_are_declared(board: Board) -> list[BoardFinding]:
                 field="on_outcomes",
                 reason=f"This carries {outcome!r}, which the card before it never declares.",
                 kind="structure",
+                severity="blocking",
             )
             for outcome in edge.on_outcomes
             if outcome not in declared
@@ -120,6 +122,7 @@ def outcomes_are_wired(board: Board) -> list[BoardFinding]:
             field="outcomes",
             reason=f"Nothing says what happens on {wiring.name!r}.",
             kind="structure",
+            severity="blocking",
         )
         for card in board.nodes()
         for wiring in board.outcomes(card.key)
@@ -153,6 +156,7 @@ def inputs_exist(board: Board) -> list[BoardFinding]:
             field="inputs",
             reason=f"This reads {key!r}, which is not on the board.",
             kind="structure",
+            severity="blocking",
         )
         for card in board.nodes()
         for key in card.declared_inputs()
@@ -167,12 +171,43 @@ def field_references_resolve(board: Board) -> list[BoardFinding]:
             anchor=f"primitive:{card.key}",
             field=field_name,
             reason=f"This reads {ref}, which that card does not have.",
+            severity="blocking",
         )
         for card in board.nodes()
         for field_name, refs in board.field_references(card).items()
         for ref in refs
         if not board.entity_has_field(ref.entity, ref.path)
     ]
+
+
+def references_are_declared(board: Board) -> list[BoardFinding]:
+    """Cards reading a field off something they were never given.
+
+    Every other reference rule asks whether a field exists. This asks whether
+    the step receives the card it reads from, which is a different failure and
+    invisible to the others: the field is real, the entity is on the board, and
+    the step still never gets it. It reaches codegen as an email quoting an
+    invoice number nobody passed in, and it silently cuts that card out of the
+    scope chain, so a statement about the entity never arrives either.
+    """
+    found: list[BoardFinding] = []
+    for card in board.nodes():
+        held = {*card.reads(), *card.produces()}
+        missing = sorted(
+            {ref.entity for refs in board.field_references(card).values() for ref in refs} - held
+        )
+        if not missing:
+            continue
+        named = " and ".join(_name_of(board, key) for key in missing)
+        found.append(
+            BoardFinding(
+                anchor=f"primitive:{card.key}",
+                field="inputs",
+                reason=f"This reads from {named}, which this step is not given.",
+                severity="blocking",
+            )
+        )
+    return found
 
 
 def cardinality_resolves(board: Board) -> list[BoardFinding]:
@@ -191,6 +226,7 @@ def cardinality_resolves(board: Board) -> list[BoardFinding]:
                     anchor=f"primitive:{entity.key}",
                     field="cardinality.per",
                     reason=f"These are counted against {per}, which that card does not have.",
+                    severity="blocking",
                 )
             )
     return found
@@ -210,6 +246,7 @@ def entities_are_recognisable(board: Board) -> list[BoardFinding]:
             anchor=f"primitive:{entity.key}",
             field="identified_by",
             reason="Nothing says how to recognise this among the things that arrive.",
+            severity="important",
         )
         for entity in board.entities()
         if not entity.config.identified_by and _arrives(board, entity.key)
@@ -235,6 +272,7 @@ def fills_resolve(board: Board) -> list[BoardFinding]:
                         field="fills",
                         reason=f"This writes into {fill.field.entity!r}, which arrives from "
                         "outside. Only something the process produces can be written to.",
+                        severity="blocking",
                     )
                 )
             elif not board.entity_has_field(fill.field.entity, fill.field.path):
@@ -243,6 +281,7 @@ def fills_resolve(board: Board) -> list[BoardFinding]:
                         anchor=anchor,
                         field="fills",
                         reason=f"This fills in {fill.field}, which that card does not have.",
+                        severity="blocking",
                     )
                 )
     return found
@@ -291,35 +330,71 @@ def events_lead_somewhere(board: Board) -> list[BoardFinding]:
             field="outgoing",
             reason="Nothing happens after this arrives.",
             kind="structure",
+            severity="blocking",
         )
         for event in board.events()
         if not board.outgoing(event.key)
     ]
 
 
+def something_starts_the_process(board: Board) -> list[BoardFinding]:
+    """A board with steps but no way into them.
+
+    Reachability is measured from the events, so a board with none reports every
+    step as unreachable — one problem wearing N findings, not one of which names
+    the cause. This says the thing that is actually wrong, once.
+    """
+    if board.events() or not board.nodes():
+        return []
+    return [
+        BoardFinding(
+            anchor="board",
+            field="events",
+            reason="Nothing starts this process.",
+            severity="blocking",
+            kind="structure",
+        )
+    ]
+
+
 def dead_ends_are_endings(board: Board) -> list[BoardFinding]:
-    """Cards where the process stops without saying it has ended."""
+    """Actions where the process stops without saying it has ended.
+
+    Only an Action carries ``is_terminal``, so only an Action can fail to set it.
+    Reporting this on a Check would name a field that does not exist — an
+    unclearable finding, and a blocking one, which is the single combination
+    that leaves someone stuck on the canvas with no move available. A Check that
+    stops has outcomes leading nowhere, and `outcomes_are_wired` already says so
+    in a sentence with something to do about it.
+    """
     return [
         BoardFinding(
             anchor=f"primitive:{card.key}",
             field="outgoing",
             reason="The process stops here, but this is not marked as an ending.",
-            severity="important",
+            severity="blocking",
             kind="structure",
         )
         for card in board.terminals()
-        if not _is_an_ending(card)
+        if isinstance(card, ActionPrimitive) and not card.config.is_terminal
     ]
 
 
 def steps_are_reachable(board: Board) -> list[BoardFinding]:
-    """Cards nothing leads to."""
+    """Cards nothing leads to.
+
+    Silent when the board has no events at all: reachability is measured from
+    them, so every step would be reported and none of the reports would name the
+    cause. `something_starts_the_process` says that once instead.
+    """
+    if not board.events():
+        return []
     return [
         BoardFinding(
             anchor=f"primitive:{card.key}",
             field="incoming",
             reason="Nothing leads here.",
-            severity="important",
+            severity="blocking",
             kind="structure",
         )
         for card in board.unreachable()
@@ -333,7 +408,9 @@ RULES: tuple[Rule, ...] = (
     edge_outcomes_are_declared,
     outcomes_are_wired,
     entities_are_read,
+    something_starts_the_process,
     inputs_exist,
+    references_are_declared,
     field_references_resolve,
     cardinality_resolves,
     entities_are_recognisable,
@@ -372,8 +449,9 @@ def _outranks(candidate: Severity, current: Severity) -> bool:
     return SEVERITY_RANK[candidate] > SEVERITY_RANK[current]
 
 
-def _is_an_ending(card: FlowNode) -> bool:
-    return isinstance(card, ActionPrimitive) and card.config.is_terminal
+def _name_of(board: Board, key: str) -> str:
+    """What the process owner called a card, for a message they have to read."""
+    return (board.p(key).config.name or key) if board.has(key) else key
 
 
 def _arrives(board: Board, entity_key: str) -> bool:

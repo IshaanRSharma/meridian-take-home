@@ -180,6 +180,46 @@ def test_an_arriving_entity_with_no_recognition_rule_is_blocking(sound: Board):
     assert "primitive:invoice:identified_by" in fired(rules.entities_are_recognisable, board)
 
 
+def test_a_card_reading_a_field_from_something_it_was_never_given_is_a_finding(sound: Board):
+    # Every other reference rule asks whether the field exists. This one asks
+    # whether the step was handed the card it reads from — a step can name a
+    # real field on a real entity and still never receive it, which reaches
+    # codegen as an email quoting an invoice number nobody passed in.
+    complain = ActionPrimitive(
+        key="complain", config=sound.p("complain").config.model_copy(update={"inputs": ()})
+    )
+    board = sound.model_copy(update={"primitives": (*sound.primitives[:4], complain)})
+    assert "primitive:complain:inputs" in fired(rules.references_are_declared, board)
+
+
+def test_an_event_may_reference_what_it_captures(sound: Board):
+    # An Event declares no inputs at all — what it captures is what it reads. A
+    # rule that only looked at `inputs` would fire on every correlation key.
+    assert "primitive:arrived:correlation_key" not in fired(rules.references_are_declared, sound)
+
+
+def test_a_lookup_may_reference_what_it_brings_back():
+    board = Board(
+        name="b",
+        primitives=[
+            EntityPrimitive(
+                key="record", config=EntityConfig(name="Record", fields={"status": {}})
+            ),
+            ActionPrimitive(
+                key="verify",
+                config=ActionConfig(
+                    name="Verify",
+                    effect="lookup",
+                    system="board",
+                    produces="record",
+                    payload_fields=[FieldRef(entity="record", path="status")],
+                ),
+            ),
+        ],
+    )
+    assert fired(rules.references_are_declared, board) == set()
+
+
 def test_an_entity_a_lookup_produces_needs_no_recognition_rule():
     # Nothing arrives to be recognised — the answer is whatever came back.
     board = Board(
@@ -403,10 +443,14 @@ def test_tool_resolution_is_not_part_of_this_gate(sound: Board):
 
 
 def test_the_seed_board_reports_exactly_its_documented_gaps(seed: Board):
+    # All three are the drawing being an invalid workflow, which is the only
+    # thing allowed to block. The SOP's real silences — who receives the report,
+    # where the log goes — are `important`, because nobody but the process owner
+    # can answer them and that is a conversation, not a refusal.
     assert {f"{f.anchor}:{f.field}" for f in rules.blocking(seed)} == {
-        "primitive:report_coa_discrepancy:recipients",  # the SOP names nobody
-        "primitive:report_invoice_discrepancy:system",  # "log an error" — where?
         "primitive:coas_valid:outcomes",  # mismatched_coa goes nowhere
+        "primitive:report_coa_discrepancy:outgoing",  # stops here, never says so
+        "primitive:report_invoice_discrepancy:outgoing",  # same
     }
 
 
@@ -417,4 +461,66 @@ def test_the_seed_boards_softer_gaps_do_not_block_a_freeze(seed: Board):
         "primitive:coas_valid:on_missing_input",
         "primitive:report_coa_discrepancy:idempotency_key",
         "primitive:report_invoice_discrepancy:idempotency_key",
+        "primitive:report_coa_discrepancy:recipients",
+        "primitive:report_invoice_discrepancy:system",
     } <= important
+
+
+def test_the_thing_that_arrives_is_itself_modelled(seed: Board):
+    # The email is not just a filter on a mailbox — it is parsed. Its sender is
+    # who a report replies to, and its attachments are what get classified.
+    # Left as a match_condition string, none of that is addressable, and
+    # "whoever sent the pre-alert" cannot be expressed as a recipient at all.
+    email = seed.p("prealert_email")
+    assert email.key in seed.p("prealert_received").config.captures
+    assert "sender" in email.config.fields
+
+
+def test_every_rule_written_is_a_rule_that_runs():
+    # A rule missing from RULES is dead code that still passes its own test, and
+    # the failure is silent — findings() simply stops reporting that class. An
+    # earlier draft kept a registry.py so that "complete" was readable; a tuple
+    # does the same job only if something holds it against the module.
+    written = {
+        name
+        for name, value in vars(rules).items()
+        if callable(value)
+        and not name.startswith("_")
+        and getattr(value, "__module__", None) == rules.__name__
+        and name not in {"findings", "blocking"}
+    }
+    assert written == {rule.__name__ for rule in rules.RULES}
+
+
+def test_a_check_is_never_told_to_mark_itself_an_ending(sound: Board):
+    # `is_terminal` exists on ActionConfig alone, so this finding on a Check
+    # names a field that cannot be set — unclearable, and blocking, which is the
+    # one combination that traps someone on the canvas with no move. A Check
+    # that stops has unwired outcomes and `outcomes_are_wired` already says so,
+    # in a sentence with something to do about it.
+    board = sound.model_copy(update={"edges": (sound.edges[0],)})
+    assert "primitive:looks_ok:outgoing" not in fired(rules.dead_ends_are_endings, board)
+    assert "primitive:looks_ok:outcomes" in fired(rules.outcomes_are_wired, board)
+
+
+def test_a_process_with_no_way_in_says_so_once():
+    # Reachability is measured from the events, so a board with none reports
+    # every step as unreachable — one problem wearing N blocking findings, none
+    # of which names the actual cause.
+    board = Board(
+        name="batch",
+        primitives=[
+            ActionPrimitive(
+                key="sweep",
+                config=ActionConfig(
+                    name="Sweep",
+                    effect="record",
+                    system="wms",
+                    idempotency_key="d",
+                    is_terminal=True,
+                ),
+            )
+        ],
+    )
+    assert fired(rules.steps_are_reachable, board) == set()
+    assert "board:events" in fired(rules.something_starts_the_process, board)

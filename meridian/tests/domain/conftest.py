@@ -134,7 +134,7 @@ def coas_valid() -> CheckConfig:
                 ),
             )
         ],
-        scope="per_shipment",
+        scope="per_case",
         quantifier="all",
         inputs=["commercial_invoice", "certificate_of_analysis"],
         outcomes=[
