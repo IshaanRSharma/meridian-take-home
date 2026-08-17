@@ -5,12 +5,71 @@ argument-hint: <board_id> [max-patches]
 
 # Heal
 
-Run the repair loop on the agent built from board `$1`, stopping at `$2` accepted
-patches (default 8).
+`$ARGUMENTS` — the **first token is the board id**, and an optional second is how
+many accepted patches to stop at (default 8).
+
+**Bind it once, before anything else, and use `$BOARD` from then on:**
+
+```bash
+cd meridian
+set -a; . ./.env; set +a          # NOT optional — see below
+BOARD=<the first token of $ARGUMENTS>
+```
+
+Read the id out of `$ARGUMENTS` yourself rather than trusting positional
+substitution: `$1` has been observed to interpolate the *second* argument, which
+would silently run this loop against a board that is not the one asked for.
+If `$ARGUMENTS` is empty, **stop and ask** — there is no default board.
+
+## Before the first sweep, check two things
+
+Both fail immediately and neither is your fault, so recognise them rather than
+debugging them:
+
+```bash
+meridian build list $BOARD
+```
+
+- **`nothing registered yet`** → run `meridian run $BOARD --from ../eval/cases.json`
+  first. That registers, sweeps and bundles in one, and there is nothing to heal
+  until a build exists.
+- **`build.json was generated from spec <a>, and this spec is <b>`** → the agent
+  on disk implements a different contract from this board's latest freeze. Do
+  **not** work around it. Either heal the board whose spec is `<a>`, or
+  re-export and regenerate. Scoring an agent against a contract it was not built
+  from measures nothing.
+
+**`set -a; . ./.env; set +a` is not optional.** The CLI reads `.env` itself, but
+a sweep runs the generated agent in this process reading `os.environ`. Without
+the export every case dies on `KeyError: 'COMPOSIO_API_KEY'` and the sweep reports
+an EMPTY SWEEP — which is the warning working, not a bug in the agent.
 
 You have an oracle. Unlike the review loop, nothing here needs a human to say
 whether an answer is right — the eval suite already knows, so keep going until it
 passes or until you hit something the suite cannot settle.
+
+## Who does what
+
+This command is the **driver**. It decides which case to work on, when to sweep,
+when to register, and when to stop. It does not decide what a patch should be.
+
+**`repair-agent` is the fixer, and step 4 invokes it as a skill** — not as a
+style to write in. It owns the three judgements this file deliberately does not
+repeat: whether the failure is a defect you may patch, a `spec_gap` that belongs
+to the process owner, or a `skeleton_defect` in `runtime/` that must not be
+worked around; whether the named file is the cause or merely where the failure
+was detected; and whether the diff fixes the cause or hardcodes the symptom.
+
+Keeping them apart is the point. A driver that also decided what to change would
+have no independent reading of its own patch, and the two questions — *what is
+worth fixing next* and *what is the right fix* — get different answers from
+different evidence.
+
+```
+/heal            sweep · rank · register · gate · stop        ← this file
+repair-agent     classify · localise · patch · self-review    ← .claude/skills/
+meridian ...     the only thing that touches the database
+```
 
 ## One case at a time, over a set that only grows
 
@@ -41,11 +100,11 @@ refusal costs you the iteration.
 ## The loop
 
 ```
-1  meridian eval sweep $1 --case <each case in the working set>
+1  meridian eval sweep $BOARD --case <each case in the working set>
    Every column passes → add the next case to the set and repeat.
    No cases left → STOP and report the score.
 
-2  meridian bundle $1
+2  meridian bundle $BOARD
    No --signature: the largest failing bucket is chosen for you, because
    "which file next" is a ranking question and the biggest bucket is the answer.
 
@@ -58,14 +117,15 @@ refusal costs you the iteration.
                                           nothing reached a check. Fix the
                                           reading, not the check.
 
-4  Use the repair-agent skill on the bundle. ONE file, the one FILE names.
+4  INVOKE THE repair-agent SKILL on the bundle. ONE file, the one FILE names.
+   Not "repair it yourself in the spirit of" — load the skill. See below.
 
-5  meridian build register $1
+5  meridian build register $BOARD
    Prints the new iteration. Use it below.
 
-6  meridian eval sweep $1 --case <the whole working set> --build <new>
+6  meridian eval sweep $BOARD --case <the whole working set> --build <new>
 
-7  meridian repair record $1 --build <new> --signature <the one you fixed> \
+7  meridian repair record $BOARD --build <new> --signature <the one you fixed> \
        --class implementation_defect --summary "<what changed and why>"
    The gate compares the two sweeps per column and answers accepted or
    regressed. It can only reject; you may not override it.
@@ -83,16 +143,19 @@ can do here.
 | stop | say |
 |---|---|
 | every case in the suite passes | the score, and which columns had no source to begin with |
-| `$2` patches accepted | the score, the curve, and what you would open next |
+| the patch budget is spent | the score, the curve, and what you would open next |
 | a decision that is not yours | *what decision*, and who has to make it |
 
 The third is the one that matters. Two shapes:
 
 - **`spec_gap`** — no patch is correct because no rule decides the answer. Two
   competent people could disagree and the customer would care which you picked.
-  Record it with `--class spec_gap --thread <id>`; the table refuses it without
-  a thread, because a decision nobody can settle in code has to go back to the
-  person who owns the process.
+  Record it with `--class spec_gap` and **no `--thread`**: the escalation raises
+  the thread itself, on this board, anchored on the card the signature names.
+  The table refuses the row without one, because a decision nobody can settle in
+  code has to go back to the person who owns the process — and making you find a
+  thread first would put friction on the one path that must never be skipped.
+  Pass `--thread <id>` only when the question is already open.
 - **`skeleton_defect`** — the fix belongs in `meridian/runtime/`, outside the
   agent directory. Patching it into two leaf files instead is how a shared
   scaffold quietly stops being shared. Stop and report it; do not work around it.
@@ -108,9 +171,10 @@ agents/<slug>/hints.json      IMPLEMENTATION context. Yours to write. Outside
                               the checksum, so it never drifts the build from
                               the contract. The next bundle carries it.
 
-meridian thread ...           a BUSINESS answer. Belongs to whoever owns the
-                              process. Becomes an assertion, needs a re-freeze,
-                              and codegen then implements approved knowledge.
+meridian repair record        a BUSINESS answer nobody has given yet. Belongs to
+  --class spec_gap            whoever owns the process. Raises a thread on the
+                              board, which becomes an assertion, needs a
+                              re-freeze, and only then reaches generated code.
 ```
 
 The test is the one you already use to classify: **could two competent people
@@ -148,6 +212,13 @@ it is measured against has stopped measuring anything.
 
 **If a command does not exist, stop and say so.** Do not substitute another one:
 a loop that invents its own verification is not verifying anything.
+
+**A case hangs rather than failing.** An exception inside Temporal workflow code
+is a workflow task failure, which retries forever — so a broken agent returns
+nothing at all. `--timeout <seconds>` on `eval sweep` is what turns that silence
+back into a result, and the sweep attaches whatever Temporal logged on the way
+down, which is the only diagnosis such a failure has. Drop it to 30 or 60 while
+iterating; the default suits a real run.
 
 ## Not yet built
 
