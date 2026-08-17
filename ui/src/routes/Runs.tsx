@@ -15,7 +15,7 @@
  */
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, type CycleEvent, type Evals } from '@/lib/api';
+import { api, type CycleEvent, type EvalRow, type Evals } from '@/lib/api';
 import { Badge, Dot, Empty, Panel, PanelHeader, Problem, Spinner, cx } from '@/components/ui';
 
 export default function Runs() {
@@ -221,8 +221,8 @@ function EvalTable({ evals }: { evals: Evals }) {
     <div className="overflow-x-auto">
       {evals.runs_recorded === 0 && (
         <p className="border-b border-(--color-line) px-4 py-2.5 text-[11.5px] leading-relaxed text-(--color-ink-faint)">
-          Ground truth only. No agent has been generated or swept yet, so there is nothing to
-          compare against — the actual column fills in once a build runs.
+          Ground truth only. Nothing has been swept against this spec yet — the actual row
+          fills in once a build runs.
         </p>
       )}
       <table className="w-full text-left">
@@ -246,27 +246,55 @@ function EvalTable({ evals }: { evals: Evals }) {
         </thead>
         <tbody className="divide-y divide-(--color-line-soft)">
           {evals.shipments.map((row) => (
-            <tr key={String(row.expected.shipment_no)}>
-              <td className="px-4 py-2 font-mono text-[11.5px] text-(--color-ink)">
-                {String(row.expected.shipment_no)}
-              </td>
-              {COLUMNS.map(([key]) => (
-                <td key={key} className="px-3 py-2 font-mono text-[11.5px] text-(--color-ink-dim)">
-                  {String(row.expected[key] ?? '—')}
-                </td>
-              ))}
-              <td className="px-3 py-2">
-                {row.outcome ? (
-                  <Badge tone={row.outcome === 'passed' ? 'ok' : 'warn'}>{row.outcome}</Badge>
-                ) : (
-                  <span className="font-mono text-[11px] text-(--color-ink-faint)">not run</span>
-                )}
-              </td>
-            </tr>
+            <Row key={String(row.expected.shipment_no)} row={row} />
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Expected on top, what the agent produced underneath.
+ *
+ * Only where they differ, and only when there is something to compare — a
+ * second row of identical numbers on every line makes the mismatches harder to
+ * find, which is the one thing this table exists for. An absent value is shown
+ * as `—` rather than left blank, because "the agent produced nothing here" and
+ * "the agent produced zero" are different failures and the eval set contains
+ * both. */
+function Row({ row }: { row: EvalRow }) {
+  const actual = row.actual ?? null;
+  return (
+    <tr className="align-top">
+      <td className="px-4 py-2 font-mono text-[11.5px] text-(--color-ink)">
+        {String(row.expected.shipment_no)}
+      </td>
+      {COLUMNS.map(([key]) => {
+        const want = row.expected[key];
+        const got = actual ? (actual as Record<string, unknown>)[key] : undefined;
+        const compared = actual !== null;
+        const differs = compared && String(got ?? '—') !== String(want ?? '—');
+        return (
+          <td key={key} className="px-3 py-2 font-mono text-[11.5px]">
+            <span className={cx(differs ? 'text-(--color-ink-faint)' : 'text-(--color-ink-dim)')}>
+              {String(want ?? '—')}
+            </span>
+            {differs && (
+              <span className="mt-0.5 block font-semibold text-(--color-ink)">
+                {got === undefined || got === null ? '—' : String(got)}
+              </span>
+            )}
+          </td>
+        );
+      })}
+      <td className="px-3 py-2">
+        {row.outcome ? (
+          <Badge tone={row.outcome === 'passed' ? 'ok' : 'warn'}>{row.outcome}</Badge>
+        ) : (
+          <span className="font-mono text-[11px] text-(--color-ink-faint)">not run</span>
+        )}
+      </td>
+    </tr>
   );
 }
 

@@ -4,14 +4,13 @@
  * product — Whiteboard, then Spec — and a menu implies the steps are
  * independent.
  *
- * Runs is deliberately absent. Nothing writes a run yet, so the screen could
- * only ever say "nothing has run"; it returns with codegen and the sweep. The
- * route still resolves, so a bookmark keeps working.
+ * Runs is back. It was pulled when nothing wrote a run; the sweep now writes
+ * runs, failures, run_steps and events, so the screen has something to say.
  */
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { FileLock2, LayoutGrid, LogOut, PenLine } from 'lucide-react';
+import { Activity, FileLock2, LayoutGrid, LogOut, PenLine } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/features/auth/session';
 import { Badge, cx } from '@/components/ui';
@@ -42,8 +41,9 @@ export default function Shell({ children, boardId }: { children: ReactNode; boar
           on: true,
           badge: spec ? `v${spec.version}` : undefined,
         },
+        { to: '/runs', label: 'Runs', icon: Activity, on: true },
       ]
-    : [];
+    : [{ to: '/runs', label: 'Runs', icon: Activity, on: true }];
 
   return (
     <div className="flex h-full flex-col">

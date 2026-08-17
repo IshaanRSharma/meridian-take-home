@@ -55,6 +55,16 @@ async def read_cycle(cycle_id: UUID, connection: Connection) -> list[dict[str, A
     return await events.for_cycle(connection, cycle_id)
 
 
+def _parsed(value: object) -> dict[str, Any] | None:
+    """A jsonb column as an object, whichever way the driver returned it."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    return value if isinstance(value, dict) else None
+
+
 @router.get("/evals")
 async def read_evals(connection: Connection) -> dict[str, Any]:
     """Ground truth per shipment, beside whatever has actually been run.
@@ -92,7 +102,10 @@ async def read_evals(connection: Connection) -> dict[str, Any]:
         "shipments": [
             {
                 "expected": shipment,
-                "actual": by_key.get(shipment["shipment_no"], {}).get("output"),
+                # `runs.output` is jsonb, and asyncpg hands it back as text on a
+                # connection with no codec registered. A caller that has to
+                # know that is a caller reimplementing this route.
+                "actual": _parsed(by_key.get(shipment["shipment_no"], {}).get("output")),
                 "outcome": by_key.get(shipment["shipment_no"], {}).get("outcome"),
             }
             for shipment in shipments
