@@ -191,7 +191,7 @@ function Inner({ board, findings, threads, selected, onSelect, highlight }: Prop
         maxZoom={1.6}
         selectNodesOnDrag={false}
       >
-        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#1e1e21" />
+        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#1a1a1d" />
         <Controls
           showInteractive={false}
           className="!bottom-4 !left-4 overflow-hidden !rounded-md !border !border-(--color-line) !shadow-none"

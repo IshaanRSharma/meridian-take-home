@@ -37,9 +37,12 @@ export default function Login() {
 
   return (
     <div className="grid min-h-full lg:grid-cols-[1fr_1.15fr]">
-      {/* Left: what this is. A login screen for an internal tool should say
-          what the tool does, because the person opening it may have been sent
-          a link and nothing else. */}
+      {/* Left: what this is, in one sentence.
+          Deliberately not a walkthrough of the four screens. That belongs on
+          the board, next to the thing it explains, where somebody can read it
+          while looking at a card — a numbered list on a login screen is read
+          once, by somebody who has not seen the product, and remembered by
+          nobody. */}
       <div className="hidden flex-col justify-between border-r border-(--color-line) bg-(--color-surface) p-12 lg:flex">
         <Wordmark />
         <div className="max-w-md">
@@ -50,22 +53,6 @@ export default function Login() {
             Draw the process. The reviewer asks what the drawing does not say. Answer, freeze
             the spec, and generate an agent that repairs itself against real cases.
           </p>
-          <ol className="mt-8 space-y-2.5">
-            {[
-              ['Whiteboard', 'cards, connections, and what is still blank'],
-              ['Review', 'questions only the process owner can answer'],
-              ['Spec', 'frozen, checksummed, the hand-off to codegen'],
-              ['Runs', 'what the agent produced against ground truth'],
-            ].map(([name, what], index) => (
-              <li key={name} className="flex gap-3 text-[12.5px]">
-                <span className="font-mono text-(--color-ink-faint)">
-                  {String(index + 1).padStart(2, '0')}
-                </span>
-                <span className="text-(--color-ink)">{name}</span>
-                <span className="text-(--color-ink-faint)">{what}</span>
-              </li>
-            ))}
-          </ol>
         </div>
         <p className="font-mono text-[11px] text-(--color-ink-faint)">
           Inbound pre-alert validation · pharma distribution

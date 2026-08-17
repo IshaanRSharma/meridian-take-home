@@ -130,14 +130,18 @@ export default function Runs() {
   );
 }
 
+/* Phase by brightness, same rule as severity. The two that exist today are the
+   two that stand out: review is the accent, compile is white because the freeze
+   is the moment that matters most on any timeline. The rest are dim until they
+   are built. */
 const PHASE_TONE: Record<string, string> = {
-  review: 'text-[#8fa9ff]',
-  compile: 'text-(--color-ok)',
-  codegen: 'text-[#c9a0ff]',
-  eval: 'text-(--color-important)',
-  repair: 'text-[#ff9d6b]',
-  deploy: 'text-(--color-ink-dim)',
-  prod: 'text-(--color-ink-dim)',
+  review: 'text-(--color-accent)',
+  compile: 'text-(--color-ink)',
+  codegen: 'text-(--color-ink-dim)',
+  eval: 'text-(--color-ink-dim)',
+  repair: 'text-(--color-ink-dim)',
+  deploy: 'text-(--color-ink-faint)',
+  prod: 'text-(--color-ink-faint)',
 };
 
 function TimelineRow({ event }: { event: CycleEvent }) {

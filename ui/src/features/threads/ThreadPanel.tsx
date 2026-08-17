@@ -22,10 +22,10 @@ import { api, type Thread } from '@/lib/api';
 import { Badge, Button, Empty, SeverityBadge, cx } from '@/components/ui';
 
 const STATUS_TONE: Record<Thread['status'], string> = {
-  open: 'border-(--color-accent-dim) bg-(--color-accent-wash) text-[#8fa9ff]',
-  answered: 'border-[#1f5138] bg-[#3dd68c14] text-(--color-ok)',
+  open: 'border-(--color-accent-dim) bg-(--color-accent-wash) text-[#5ee3d6]',
+  answered: 'border-[#10857b] bg-[#2ad4c414] text-(--color-ok)',
   rejected: 'border-(--color-line-strong) text-(--color-ink-faint)',
-  resolved: 'border-[#1f5138] bg-[#3dd68c14] text-(--color-ok)',
+  resolved: 'border-[#10857b] bg-[#2ad4c414] text-(--color-ok)',
 };
 
 export default function ThreadPanel({
@@ -133,7 +133,7 @@ function ThreadCard({
             <button
               key={`${anchor.kind}:${anchor.key}`}
               onClick={() => onGoTo(anchor.key!)}
-              className="rounded border border-(--color-line) px-1.5 py-0.5 font-mono text-[10px] text-(--color-ink-faint) transition-colors hover:border-(--color-accent-dim) hover:text-[#8fa9ff]"
+              className="rounded border border-(--color-line) px-1.5 py-0.5 font-mono text-[10px] text-(--color-ink-faint) transition-colors hover:border-(--color-accent-dim) hover:text-[#5ee3d6]"
             >
               {anchor.key}
             </button>

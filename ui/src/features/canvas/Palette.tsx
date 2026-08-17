@@ -26,28 +26,28 @@ const ITEMS: {
     label: 'Something happens',
     question: 'what starts or resumes this',
     icon: Zap,
-    tone: 'text-[#7ba0ff]',
+    tone: 'text-[#2ad4c4]',
   },
   {
     type: 'action',
     label: 'Something gets done',
     question: 'a step somebody or something performs',
     icon: CircleDot,
-    tone: 'text-[#c9c9d1]',
+    tone: 'text-[#ffffff]',
   },
   {
     type: 'check',
     label: 'Something is decided',
     question: 'a rule, and the ways it can come out',
     icon: GitBranch,
-    tone: 'text-[#e0b45c]',
+    tone: 'text-[#8a8a94]',
   },
   {
     type: 'entity',
     label: 'A thing you look at',
     question: 'a document, a record, a row',
     icon: Boxes,
-    tone: 'text-[#9d8cd4]',
+    tone: 'text-[#5a5a64]',
   },
 ];
 

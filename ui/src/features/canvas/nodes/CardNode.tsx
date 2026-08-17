@@ -34,10 +34,10 @@ export interface CardData extends Record<string, unknown> {
 }
 
 const KIND = {
-  event: { icon: Zap, tone: 'text-[#7ba0ff]', edge: 'before:bg-[#4d7cfe]', label: 'Event' },
-  action: { icon: CircleDot, tone: 'text-[#c9c9d1]', edge: 'before:bg-[#7c7c88]', label: 'Action' },
-  check: { icon: GitBranch, tone: 'text-[#e0b45c]', edge: 'before:bg-[#d9a441]', label: 'Check' },
-  entity: { icon: Boxes, tone: 'text-[#9d8cd4]', edge: 'before:bg-[#8b7ac4]', label: 'Thing' },
+  event: { icon: Zap, tone: 'text-[#2ad4c4]', edge: 'before:bg-[#2ad4c4]', label: 'Event' },
+  action: { icon: CircleDot, tone: 'text-[#ffffff]', edge: 'before:bg-[#ffffff]', label: 'Action' },
+  check: { icon: GitBranch, tone: 'text-[#8a8a94]', edge: 'before:bg-[#a1a1aa]', label: 'Check' },
+  entity: { icon: Boxes, tone: 'text-[#5a5a64]', edge: 'before:bg-[#3d3d44]', label: 'Thing' },
 } as const;
 
 function CardNodeImpl({ data, selected }: NodeProps) {
@@ -57,12 +57,12 @@ function CardNodeImpl({ data, selected }: NodeProps) {
         'before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:content-[""]',
         kind.edge,
         isEntity
-          ? 'border-dashed border-[#3a3547] bg-[#141218]'
+          ? 'border-dashed border-[#2e2e34] bg-[#0e0e10]'
           : 'border-(--color-line) bg-(--color-surface)',
         selected
           ? 'border-(--color-accent) ring-1 ring-(--color-accent)'
           : 'hover:border-(--color-line-strong)',
-        card.worst === 'blocking' && !selected && 'border-[#5a2326]',
+        card.worst === 'blocking' && !selected && 'border-[#3d3d44]',
       )}
     >
       {/* Steps take an incoming transition; a thing never does. */}
@@ -136,7 +136,7 @@ function CardNodeImpl({ data, selected }: NodeProps) {
       {/* One row per outcome, one handle each, positioned to line up with it.
           A person reads the ways this can come out and sees which have a line. */}
       {card.outcomes.length > 0 && (
-        <div className="border-t border-(--color-line) bg-[#0d0d0e]">
+        <div className="border-t border-(--color-line) bg-[#08080a]">
           {card.outcomes.map((outcome) => (
             <div
               key={outcome.name}

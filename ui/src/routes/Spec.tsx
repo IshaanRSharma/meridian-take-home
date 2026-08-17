@@ -84,7 +84,7 @@ export default function Spec({ boardId }: { boardId: string }) {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2.5">
-            <FileLock2 size={17} className="text-[#8fa9ff]" />
+            <FileLock2 size={17} className="text-[#5ee3d6]" />
             <h1 className="text-[19px] font-semibold tracking-[-0.015em]">{sealed.name}</h1>
             <Badge tone="accent" mono>
               v{sealed.version}
