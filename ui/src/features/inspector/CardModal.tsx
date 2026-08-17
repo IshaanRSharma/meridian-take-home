@@ -23,7 +23,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Sparkles, Trash2, X } from 'lucide-react';
-import { api, type Board, type Finding, type Primitive } from '@/lib/api';
+import { api, type Board, type Finding, type Primitive, type Thread } from '@/lib/api';
 import { Badge, Button, Problem, SeverityBadge, cx } from '@/components/ui';
 
 /** What the fill stage may draft, per card type. Mirrors `authoring.ALLOWED`;
@@ -39,11 +39,19 @@ export default function CardModal({
   board,
   card,
   findings,
+  questions,
+  onOpenThread,
   onClose,
 }: {
   board: Board;
   card: Primitive;
   findings: Finding[];
+  /** Threads anchored on this card. An anchor is the link between a
+   *  conversation and a place on the drawing, and this is the direction that
+   *  was missing: a card could show it *had* a question and gave no way to
+   *  read it. */
+  questions: Thread[];
+  onOpenThread: (threadId: string) => void;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -228,6 +236,46 @@ export default function CardModal({
                       <p className="font-mono text-[11px] text-(--color-ink-dim)">{finding.field}</p>
                       <p className="text-[12px] leading-snug text-(--color-ink)">{finding.reason}</p>
                     </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {questions.length > 0 && (
+            <section className="border-t border-(--color-line) px-5 py-4">
+              <p className="font-mono text-[10px] tracking-wide text-(--color-ink-faint) uppercase">
+                Asked about this card
+              </p>
+              <ul className="mt-2 space-y-2">
+                {questions.map((thread) => (
+                  <li key={thread.id}>
+                    <button
+                      onClick={() => onOpenThread(thread.id)}
+                      className="w-full rounded-md border border-(--color-line-soft) px-3 py-2 text-left transition-colors hover:border-(--color-ink-faint) hover:bg-(--color-raised)"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={cx(
+                            'rounded border px-1.5 py-0.5 font-mono text-[9.5px] uppercase',
+                            thread.status === 'open'
+                              ? 'border-(--color-accent-dim) bg-(--color-accent-wash) text-(--color-accent)'
+                              : 'border-(--color-line-soft) text-(--color-ink-faint)',
+                          )}
+                        >
+                          {thread.status}
+                        </span>
+                        <span className="font-mono text-[10px] text-(--color-ink-faint)">
+                          {thread.category.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[12.5px] leading-snug text-(--color-ink)">
+                        {thread.question}
+                      </p>
+                      <p className="mt-1 text-[10.5px] text-(--color-ink-faint)">
+                        Answer it in the panel →
+                      </p>
+                    </button>
                   </li>
                 ))}
               </ul>

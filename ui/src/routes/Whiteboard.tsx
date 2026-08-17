@@ -37,6 +37,10 @@ export default function Whiteboard({ boardId }: { boardId: string }) {
   const [opened, setOpened] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("missing");
   const [panelOpen, setPanelOpen] = useState(true);
+  // Which thread the panel should scroll to and ring. Set when somebody
+  // arrives from a card rather than from the list, so the conversation they
+  // asked for is the one in front of them.
+  const [focusThread, setFocusThread] = useState<string | null>(null);
 
   const board = useQuery({
     queryKey: ["board", boardId],
@@ -87,6 +91,14 @@ export default function Whiteboard({ boardId }: { boardId: string }) {
       (finding) =>
         finding.anchor === `primitive:${key}` || finding.anchor === key,
     );
+
+  /** Every conversation anchored on this card, open ones first. An anchor is
+   *  many-to-one by design — a question can span a card, a line and a thing — so
+   *  the same thread legitimately appears on more than one card. */
+  const questionsOn = (key: string) =>
+    (threads.data ?? [])
+      .filter((thread) => thread.anchors.some((anchor) => anchor.key === key))
+      .sort((a, b) => Number(b.status === "open") - Number(a.status === "open"));
 
   const openedCard = opened
     ? (board.data.primitives.find((card) => card.key === opened) ?? null)
@@ -224,6 +236,7 @@ export default function Whiteboard({ boardId }: { boardId: string }) {
                 boardId={boardId}
                 threads={threads.data ?? []}
                 selected={selected}
+                focus={focusThread}
                 onGoTo={(key) => setSelected(key)}
               />
             )}
@@ -236,6 +249,13 @@ export default function Whiteboard({ boardId }: { boardId: string }) {
           board={board.data}
           card={openedCard}
           findings={byCard(openedCard.key)}
+          questions={questionsOn(openedCard.key)}
+          onOpenThread={(threadId) => {
+            setOpened(null);
+            setPanelOpen(true);
+            setTab('questions');
+            setFocusThread(threadId);
+          }}
           onClose={() => setOpened(null)}
         />
       )}

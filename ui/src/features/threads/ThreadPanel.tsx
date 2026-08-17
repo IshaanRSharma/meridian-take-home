@@ -15,7 +15,7 @@
  * the walk that raised the question. Nobody gets to declare their own answer
  * resolved — that is what makes resolution provable rather than asserted.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CornerDownRight, MessageSquare } from 'lucide-react';
 import { api, type Thread } from '@/lib/api';
@@ -33,11 +33,14 @@ export default function ThreadPanel({
   threads,
   onGoTo,
   selected,
+  focus,
 }: {
   boardId: string;
   threads: Thread[];
   onGoTo: (key: string) => void;
   selected: string | null;
+  /** Arrived here from a card rather than from the list. */
+  focus?: string | null;
 }) {
   if (threads.length === 0) {
     return (
@@ -60,6 +63,7 @@ export default function ThreadPanel({
           thread={thread}
           onGoTo={onGoTo}
           selected={selected}
+          focused={focus === thread.id}
         />
       ))}
     </div>
@@ -71,14 +75,21 @@ function ThreadCard({
   thread,
   onGoTo,
   selected,
+  focused,
 }: {
   boardId: string;
   thread: Thread;
   onGoTo: (key: string) => void;
   selected: string | null;
+  focused?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const here = useRef<HTMLDivElement>(null);
   const [answer, setAnswer] = useState('');
+
+  useEffect(() => {
+    if (focused) here.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [focused]);
   const [replying, setReplying] = useState(thread.status === 'open');
 
   const refresh = () => {
@@ -102,7 +113,14 @@ function ThreadCard({
   const isHere = anchors.some((anchor) => anchor.key === selected);
 
   return (
-    <div className={cx('px-4 py-3.5 transition-colors', isHere && 'bg-(--color-raised)')}>
+    <div
+      ref={here}
+      className={cx(
+        'px-4 py-3.5 transition-colors',
+        isHere && 'bg-(--color-raised)',
+        focused && 'bg-(--color-accent-wash) ring-1 ring-(--color-accent-dim) ring-inset',
+      )}
+    >
       <div className="flex items-center gap-2">
         <span
           className={cx(
