@@ -272,11 +272,18 @@ Keep the diff small enough to read in one pass. A large diff hides the change
 that mattered and makes the next bundle harder to work from.
 
 ```bash
-make check                                 # ruff · mypy --strict · tests
-mvp eval case <KEY> --build <n>            # the target case
-mvp eval sweep --build <n> --split train   # nothing previously passing broke
-mvp verify --agent <slug>                  # imports · conformance
+make check                                      # ruff · mypy --strict · tests
+meridian eval case <KEY> --build <n>            # the target case
+meridian eval sweep --build <n> --split train   # nothing previously passing broke
+meridian verify --agent <slug>                  # imports · conformance
 ```
+
+> **Which of these exist right now:** `meridian board · card · edge · review ·
+> thread · spec` are built. **`eval`, `bundle`, `verify`, `build` and `repair`
+> are not yet** — they arrive with `healing/`. If a command is missing, say so
+> and stop rather than inventing a substitute; a loop that invents its own
+> verification is not verifying anything.
+
 
 The gate is **target passes AND no regression**. It can only reject; a human
 overrides, never approves.
@@ -350,7 +357,7 @@ stopped     spec gap, skeleton defect, or three attempts with no progress
 that keeps the next session from spending its budget re-deriving what you
 already found. Say what you concluded and what would change the answer.
 
-`mvp repair record` reads this directory into the `repairs` table; git carries it
+`meridian repair record` reads this directory into the `repairs` table; git carries it
 either way, since `agents/` is committed. Write the file even if you fixed
 nothing — an attempt that failed is history, and history is what stops the loop
 going in circles.

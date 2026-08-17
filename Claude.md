@@ -857,7 +857,7 @@ many COAs to expect; nothing configures a count.
       describes a channel and the implementation team binds it, rather than the PO
       selecting integrations on the canvas. If POs pick tools, the whiteboard is
       more technical than assumed.
-- [ ] **`mvp connect check`** — verify the Composio entity has a live connection
+- [ ] **`meridian connect check`** — verify the Composio entity has a live connection
       for every capability the spec uses, before deploy. One entity for the
       take-home, so nice-to-have; in production it is the real onboarding gate.
 - [ ] **Four schema changes from the E2E trace** — `Criterion.produces`,
@@ -1042,16 +1042,16 @@ build 3 · 24/28
 CLI is the control surface; every UI button calls the same command.
 
 ```bash
-mvp spec freeze --board <id>
-mvp spec check --spec 1              # sufficiency: hand it to a fresh agent cold
-mvp codegen run --spec 1
-mvp eval sweep --build 2 --split train
-mvp repair once --build 2            # ONE bucket, propose, gate, print diff, STOP
-mvp repair loop --build 2 --budget 6
-mvp repair show --repair <id>
-mvp repair accept --repair <id>      # manual override of the gate
-mvp deploy --build 5 --stage shadow
-mvp deploy stop --build 5            # emergency stop
+meridian spec freeze --board <id>
+meridian spec check --spec 1              # sufficiency: hand it to a fresh agent cold
+meridian codegen run --spec 1
+meridian eval sweep --build 2 --split train
+meridian repair once --build 2            # ONE bucket, propose, gate, print diff, STOP
+meridian repair loop --build 2 --budget 6
+meridian repair show --repair <id>
+meridian repair accept --repair <id>      # manual override of the gate
+meridian deploy --build 5 --stage shadow
+meridian deploy stop --build 5            # emergency stop
 ```
 
 `repair once` is the demo mode and the honest one: it stops at
@@ -1327,8 +1327,8 @@ outputs per shipment. Then the repair loop runs against fixtures. Live Composio
 stays wired for the demo video.
 
 ```bash
-mvp fixtures pull --inbox ishaan@usemeridian.io   # once
-mvp eval sweep --build 2                          # fixtures, offline, fast
+meridian fixtures pull --inbox ishaan@usemeridian.io   # once
+meridian eval sweep --build 2                          # fixtures, offline, fast
 ```
 
 Deterministic, and a failing case fails for a logic reason rather than because
@@ -1591,12 +1591,12 @@ directory, and the platform's job is to make the failure legible enough to paste
 ### The loop
 
 ```
-1.  mvp eval sweep --build 3
+1.  meridian eval sweep --build 3
 2.  Observability panel shows the failure bundle, copy-ready
 3.  Engineer pastes into Codex / Claude Code with the repair skill loaded
 4.  Agent edits agents/<slug>/ directly
-5.  mvp build register --from-git          → build 4
-6.  mvp eval sweep --build 4               → new row on the curve
+5.  meridian build register --from-git          → build 4
+6.  meridian eval sweep --build 4               → new row on the curve
 7.  repeat, or stop
 ```
 
@@ -1656,7 +1656,7 @@ perspective**, it is a spec gap. Otherwise it is a defect.
 The agent edits files and commits. The platform notices:
 
 ```bash
-mvp build register --from-git --spec 1
+meridian build register --from-git --spec 1
 # reads HEAD, creates agent_builds row with parent = current build,
 # created_by = 'repair', source_ref = 'agents/<slug>@<sha>'
 ```
@@ -1950,11 +1950,11 @@ prose, because the consumer is an LLM, not a parser.**
 ### Resolving an unknown system
 
 ```bash
-$ mvp bind check --spec 3
+$ meridian bind check --spec 3
 ⚠ 1 unbound
    system:"state medical board" · effect=lookup · used by verify_license
 
-$ mvp bind resolve --spec 3
+$ meridian bind resolve --spec 3
 system:"state medical board" · lookup
   inputs: license_number, state   produces: board_record
 
@@ -2029,9 +2029,9 @@ problem. Same path as a repair-time spec gap — raise a thread, re-freeze.
 ### Two gates, two questions
 
 ```bash
-mvp spec freeze --board 1     # "is the process fully specified?"     PO owns
-mvp bind check  --spec 1      # "can we actually build it?"           FDE owns
-mvp codegen run --spec 1      # blocked until bindings resolve
+meridian spec freeze --board 1     # "is the process fully specified?"     PO owns
+meridian bind check  --spec 1      # "can we actually build it?"           FDE owns
+meridian codegen run --spec 1      # blocked until bindings resolve
 ```
 
 The binding check is **not** a board lint rule. The PO cannot fix an unbound
@@ -2300,7 +2300,7 @@ BINDINGS
   role:receiving_supervisor → ops-sup@…                        ✓
 ```
 
-The loop is: see the gap on screen → edit the file → re-run `mvp bind check`.
+The loop is: see the gap on screen → edit the file → re-run `meridian bind check`.
 Same shape as the repair loop — the interface makes the problem legible, the fix
 happens in a terminal.
 

@@ -23,10 +23,10 @@ are run by a person with a coding agent, using checked-in skills:
 ```bash
 codex                                     # or claude
 > /spec-to-agent                          # reads spec.lock.json, writes agents/<slug>/
-$ mvp eval sweep --build 1
-$ mvp bundle --build 1 | pbcopy           # the copy-ready failure bundle
+$ meridian eval sweep --build 1
+$ meridian bundle --build 1 | pbcopy           # the copy-ready failure bundle
 > /repair-agent                           # paste, fix one file
-$ mvp build register --from-git
+$ meridian build register --from-git
 ```
 
 The brief says not to force every step to be autonomous, and this is where that
@@ -118,7 +118,7 @@ Consciously cut, with the reason. `SCOPE.md` carries the full list.
   plus PDF→text, so it is nearly free once that exists. Deferred so the demo's
   seed board stays hand-verified and deterministic rather than varying per run.
 - **Drop a sample document on the canvas to propose an entity's fields.**
-  `mvp fixtures pull` does this from the real inbox today.
+  `meridian fixtures pull` does this from the real inbox today.
 
 **Where the vocabulary strains** — all three are named limitations, none needed
 for pre-alert:

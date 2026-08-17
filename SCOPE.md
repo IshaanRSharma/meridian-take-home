@@ -32,7 +32,7 @@ Every requirement in the brief, and where it lives. Nothing here is optional.
 | 2a | Reusable, **process-agnostic** skeleton | `meridian/runtime/` — `AgentContext`, named step execution, outcome/error types, tool dispatch. Generated agents import only this. |
 | 2b | Codegen: spec + skeleton → agent | deterministic scaffold (the workflow shell is **templated, never generated**) + per-primitive LLM leaf logic |
 | 2c | Eval suite | `eval_cases`, one row per shipment, expected output authored from the provisioned inbox |
-| 2d | Close the loop | `mvp eval sweep` → failure bundle → Codex repair skill → `mvp build register` → re-sweep. Human-triggered, which the brief explicitly blesses. |
+| 2d | Close the loop | `meridian eval sweep` → failure bundle → Codex repair skill → `meridian build register` → re-sweep. Human-triggered, which the brief explicitly blesses. |
 | 3 | E2E, **≥2 review rounds** | intentionally incomplete seed board → round 1 (SOP-grounded) → round 2 (corpus-grounded) → freeze → generate → sweep → repair |
 | — | React · Temporal · Composio · Supabase | all four on the real path |
 | — | Deployed | Railway, three services from one repo — `api`, `worker`, `ui`. Deployed thin and early (§3), not as a final step. |
@@ -101,7 +101,7 @@ marginal, and the CLI covers it in the video.
 | 11 | `events.py` + realtime + background jobs | 1.5 | `cycle_id` streams to the browser |
 | 12 | `ui/` — canvas, threads, submit, spec viewer, cycle panel | 6.5 | the demo |
 | 12a | **notation key** — palette carries each card's question; a `?` panel explains edge relations, severities and thread statuses | 0.5 | a stranger can read the board |
-| 12b | **text → cards** — `mvp board add --text`, route, UI panel | 1.5 | a paragraph becomes cards |
+| 12b | **text → cards** — `meridian board add --text`, route, UI panel | 1.5 | a paragraph becomes cards |
 | 13 | Temporal + Composio on the real path | 2.5 | one live shipment |
 | 14 | README, PDF, Loom, final deploy | 4.0 | shipped |
 
@@ -121,7 +121,7 @@ while nothing depends on it. Every unit after 5 ships to a live URL.
 *The API is not a unit.* `meridian/api` is a thin trigger layer: the app, CORS,
 exception handlers and a health check ship at unit 5, and **every later unit adds
 its own routes** as the module behind them lands. The CLI and the API call the
-same plain functions — `mvp spec freeze --board 1` and `POST /pipeline/freeze`
+same plain functions — `meridian spec freeze --board 1` and `POST /pipeline/freeze`
 both call `compiler.freeze()` — so the CLI is not throwaway scaffolding. It is
 how the pipeline stays provable from a terminal, which is what makes a UI slip
 cost polish rather than evidence.

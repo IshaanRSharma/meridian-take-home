@@ -308,7 +308,7 @@ agents/<slug>/
   build.json        file_map: {primitive_key: path}   ← the repair loop reads this
                     plus model · prompt_version · temperature · spec_checksum
   assumptions.json  every decision the spec did not determine       ← see below
-  <an entry point>  runnable, and named in build.json. `mvp eval sweep` runs it.
+  <an entry point>  runnable, and named in build.json. `meridian eval sweep` runs it.
   one file per primitive, and its path in file_map
 ```
 
@@ -579,9 +579,16 @@ person's.
 
 ```bash
 make check                                   # ruff · mypy --strict · tests
-mvp verify --agent <slug>                    # imports · conformance
-mvp eval sweep --build <n> --split train
+meridian verify --agent <slug>               # imports · conformance
+meridian eval sweep --build <n> --split train
 ```
+
+> **Which of these exist right now:** `meridian board · card · edge · review ·
+> thread · spec` are built. **`eval`, `bundle`, `verify`, `build` and `repair`
+> are not yet** — they arrive with `healing/`. If a command is missing, say so
+> and stop rather than inventing a substitute; a loop that invents its own
+> verification is not verifying anything.
+
 
 Build 1 is **not** expected to pass every case. It must compile, run every case,
 and produce a parseable result for each. A case that **errors** is a problem; a
