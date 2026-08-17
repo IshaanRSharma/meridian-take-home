@@ -129,14 +129,40 @@ h3 {
   --xy-resize-background-color-default: var(--color-accent);
   --xy-attribution-background-color-default: transparent;
 }
+/* Big enough to hit. 7px was the visible dot and also the whole grab target,
+   which on a trackpad is a coin toss — the pseudo-element widens the hit area
+   to 18px without changing what is drawn. */
 .react-flow__handle {
-  width: 7px;
-  height: 7px;
-  background: var(--color-line-strong);
+  width: 8px;
+  height: 8px;
+  background: var(--color-ink-faint);
   border: 1px solid var(--color-ground);
+  transition:
+    background 0.1s,
+    transform 0.1s;
+}
+.react-flow__handle::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 9999px;
 }
 .react-flow__handle:hover {
   background: var(--color-accent);
+  transform: translate(50%, -50%) scale(1.35);
+}
+.react-flow__handle-left:hover {
+  transform: translate(-50%, -50%) scale(1.35);
+}
+/* While a connection is being dragged, every legal target lights up. Without
+   this you are aiming at an 8px dot you cannot see until you are on it. */
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectingto {
+  background: var(--color-accent);
+}
+.react-flow.connecting .react-flow__handle-left {
+  background: var(--color-accent);
+  transform: translate(-50%, -50%) scale(1.3);
 }
 .react-flow__node {
   cursor: default;

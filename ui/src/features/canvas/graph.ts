@@ -76,7 +76,12 @@ export function build(
   board: Board,
   findings: Finding[],
   threads: Thread[],
-  options: { showDataLinks: boolean; highlight: string | null; landed: string | null },
+  options: {
+    showDataLinks: boolean;
+    highlight: string | null;
+    landed: string | null;
+    onRemove: (key: string) => void;
+  },
 ): Built {
   const byAnchor = new Map<string, Finding[]>();
   for (const finding of findings) {
@@ -136,6 +141,7 @@ export function build(
         // the process; one with an incoming edge is what resumes it.
         isTrigger: card.primitive_type === 'event' && !hasAnyIn.has(card.key),
         isTerminal: card.config.is_terminal === true || (!hasAnyOut.has(card.key) && names.length === 0 && card.primitive_type === 'action'),
+        onRemove: options.onRemove,
       } satisfies CardData,
       className: nodeClass(card.key, options),
     });
@@ -166,6 +172,7 @@ export function build(
         hasOpenThread: openAnchors.has(card.key),
         isTrigger: false,
         isTerminal: false,
+        onRemove: options.onRemove,
       } satisfies CardData,
       className: nodeClass(card.key, options),
     });

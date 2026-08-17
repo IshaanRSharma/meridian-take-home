@@ -69,7 +69,16 @@ function Inner({ board, findings, threads, selected, onSelect, onOpen, highlight
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const built = useMemo(
-    () => build(board, findings, threads, { showDataLinks, highlight, landed }),
+    () =>
+      build(board, findings, threads, {
+        showDataLinks,
+        highlight,
+        landed,
+        onRemove: (key) => removeCard.mutate(key),
+      }),
+    // `removeCard.mutate` is stable across renders, so the nodes are not
+    // rebuilt every time the mutation's status changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [board, findings, threads, showDataLinks, highlight, landed],
   );
 
@@ -99,6 +108,14 @@ function Inner({ board, findings, threads, selected, onSelect, onOpen, highlight
       onSelect(made.key);
       setLanded(made.key);
       setTimeout(() => setLanded(null), 700);
+    },
+  });
+
+  const removeCard = useMutation({
+    mutationFn: (key: string) => api.boards.removeCard(board.id, key),
+    onSuccess: (removed) => {
+      refresh();
+      if (selected === removed.key) onSelect(null);
     },
   });
 

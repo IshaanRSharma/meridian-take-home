@@ -11,7 +11,8 @@
  * document, so `document` would have been a lie in the spec — but nobody draws
  * a box and calls it an entity either.
  */
-import { Boxes, CircleDot, GitBranch, Zap } from 'lucide-react';
+import { useState } from 'react';
+import { Boxes, ChevronDown, CircleDot, GitBranch, Plus, Zap } from 'lucide-react';
 import type { PrimitiveType } from '@/lib/api';
 
 const ITEMS: {
@@ -52,12 +53,27 @@ const ITEMS: {
 ];
 
 export default function Palette({ pending }: { pending: boolean }) {
+  // Collapsible because it sits on top of the board, and the entity lane is
+  // laid out exactly where it covers. A palette you cannot move out of the way
+  // is a palette that hides the drawing.
+  const [open, setOpen] = useState(true);
+
   return (
     <div className="absolute top-4 left-4 w-[210px] overflow-hidden rounded-lg border border-(--color-line) bg-(--color-surface)/95 backdrop-blur">
-      <div className="border-b border-(--color-line) px-3 py-2">
-        <p className="text-[11.5px] font-semibold text-(--color-ink-dim)">Drag onto the board</p>
-      </div>
-      <div className="p-1.5">
+      <button
+        onClick={() => setOpen((was) => !was)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-(--color-raised)"
+      >
+        <Plus size={12} className="text-(--color-ink-faint)" />
+        <span className="text-[11.5px] font-semibold text-(--color-ink-dim)">
+          Drag onto the board
+        </span>
+        <ChevronDown
+          size={13}
+          className={`ml-auto text-(--color-ink-faint) transition-transform ${open ? '' : '-rotate-90'}`}
+        />
+      </button>
+      <div className={open ? 'border-t border-(--color-line) p-1.5' : 'hidden'}>
         {ITEMS.map(({ type, label, question, icon: Icon, tone }) => (
           <div
             key={type}
