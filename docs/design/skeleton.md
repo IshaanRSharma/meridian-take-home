@@ -345,20 +345,31 @@ trace answers whether it was actually called. Cheap — the data is already in
   reads 'Commercial Invoice'"* — page. So one file yields several entity
   instances of different kinds, and `extract` must return a list per file with
   classification per page-range.
-- **The serial gate on the seed board is contradicted by the corpus, and a toy
-  agent proved it.** Hand-writing an agent against a real frozen spec and running
+- **RESOLVED — the invoice report was drawn as an ending and is not one.** The
+  toy agent showed `coas_valid` never running: `invoice_complete` came out
+  `missing_information`, routed to the report, and the report was terminal. Both
+  the SOP and the corpus disagree — page 2 logs the error and then continues
+  straight into certificate verification, and `CAAU4056270` failed its invoice
+  check while still having all five certificates counted. The fix is that the
+  report is a **step**, not an ending: `report_invoice_discrepancy → coas_valid`.
+  A first attempt loosened the edge out of `invoice_complete` instead, and the
+  compiler refused it — `missing_information` then matched two edges at once,
+  which is an ambiguous route. Worth recording: the wrong fix was caught by a
+  lint rule rather than by a test.
+- **Superseded — the serial gate as originally described.** Hand-writing an agent against a real frozen spec and running
   `CAAU4056270` showed `coas_valid` never executing: `invoice_complete` came out
   `missing_information`, and edge `e2` routes only `pass`. But the eval row says
   `coa_total: 5, coa_success: 5` — the real shipment failed its invoice check and
   still had every certificate counted. Remove the gate and **all seven producible
   columns match exactly.** The compiler's `sequence` sweep already asks this as a
   question; the corpus answers it.
-- **`total` means different things in two checks that share a scope.**
-  `invoice_complete` reports 20 (five line items × four codes) and `coas_valid`
-  reports 5 (five batches), both at `scope: per_line_item`. So `goods_failed: 2`
-  is either *two failed assertions* or *two failed line items*, and on this data
-  the two readings coincide. The eval set cannot distinguish them, which makes it
-  a spec gap rather than an implementation choice.
+- **RESOLVED — a Check counts rows, not assertions.** Four criteria over five
+  line items is five things checked, not twenty. That is what `quantifier`
+  always meant: `all` requires every criterion to hold **for a row to pass**.
+  Failures are keyed by `(document, indices)` rather than by locator, so a line
+  item missing two codes is one failed line item and not two. Both checks now
+  report at the same grain, and the ambiguity disappears rather than needing a
+  ruling.
 - **Two things the SOP requires have nowhere to live.** *"Log an error mentioning
   … Missing Information Type"* and *"reported via email with … description of
   discrepancy"* are both derived from a check result, and `payload_fields` is

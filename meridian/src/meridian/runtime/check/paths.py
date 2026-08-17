@@ -45,6 +45,16 @@ class Row:
     locator: str
     document: int
     """Index of the document this came from, so counts can roll up by document."""
+    indices: tuple[int, ...] = ()
+    """Array positions crossed on the way here.
+
+    Two criteria reading ``line_items[].hts_number`` and
+    ``line_items[].batch_no`` produce different values at the same *place*, and
+    a Check asks whether every criterion held on one line item. ``(document,
+    indices)`` is that place — without it the engine could only count
+    assertions, and "two codes missing" would be indistinguishable from "two
+    line items incomplete".
+    """
 
 
 def resolve(entity: str, instances: Sequence[Mapping[str, Any]], path: str) -> tuple[Row, ...]:
@@ -61,13 +71,15 @@ def resolve(entity: str, instances: Sequence[Mapping[str, Any]], path: str) -> t
     rows: list[Row] = []
     for index, instance in enumerate(instances):
         root = f"{entity}[{index}]" if numbered else entity
-        rows.extend(_walk(instance, path.split("."), root, index))
+        rows.extend(_walk(instance, path.split("."), root, index, ()))
     return tuple(rows)
 
 
-def _walk(value: Any, segments: Sequence[str], locator: str, document: int) -> list[Row]:
+def _walk(
+    value: Any, segments: Sequence[str], locator: str, document: int, at: tuple[int, ...]
+) -> list[Row]:
     if not segments:
-        return [Row(value=value, locator=locator, document=document)]
+        return [Row(value=value, locator=locator, document=document, indices=at)]
 
     head, rest = segments[0], segments[1:]
     iterated = head.endswith(_ITERATE)
@@ -82,22 +94,22 @@ def _walk(value: Any, segments: Sequence[str], locator: str, document: int) -> l
         raise PathError(msg)
 
     child = value.get(name)
-    at = f"{locator}.{name}"
+    here = f"{locator}.{name}"
 
     if not iterated:
         if name not in value and not rest:
             # A leaf the document never carried. The row still exists, valueless,
             # so the Check can fail on it.
-            return [Row(value=None, locator=at, document=document)]
-        return _walk(child, rest, at, document)
+            return [Row(value=None, locator=here, document=document, indices=at)]
+        return _walk(child, rest, here, document, at)
 
     if child is None:
         return []
     if not isinstance(child, Sequence) or isinstance(child, str | bytes):
-        msg = f"{name!r} at {at} is {type(child).__name__}, not a list, but the path iterates it"
+        msg = f"{name!r} at {here} is {type(child).__name__}, not a list, but the path iterates it"
         raise PathError(msg)
 
     rows: list[Row] = []
     for position, item in enumerate(child):
-        rows.extend(_walk(item, rest, f"{at}[{position}]", document))
+        rows.extend(_walk(item, rest, f"{here}[{position}]", document, (*at, position)))
     return rows
