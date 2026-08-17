@@ -29,8 +29,15 @@ def reaches(card: Primitive, anchor: Anchor) -> bool:
     """Whether something said about this anchor bears on this card.
 
     An ``entity_field`` statement travels sideways rather than down: it reaches
-    any card that reads the entity, which is how a constraint on a field lands
-    on the checks that test it and nowhere else.
+    any card that reads the **entity**, not only the cards that name the field.
+    So a constraint on one invoice field lands on every step that reads the
+    invoice at all, including a step that only quotes a different field back.
+
+    That is coarser than it could be — `Board.field_references` knows exactly
+    which cards name which path — and it is the deliberate side to err on.
+    A generated file carrying a statement it does not need ignores it; one
+    missing a statement it does need is wrong, and a field referenced only in
+    the prose of `instructions` is invisible to reference matching.
     """
     match anchor.kind:
         case "board":

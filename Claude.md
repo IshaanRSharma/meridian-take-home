@@ -2704,9 +2704,17 @@ everything; no lookups, no joins. That is why a board-level assertion physically
 appears N times in the payload.
 
 The chain still filters: `board` anchors reach every primitive, `group:X` only
-members, `document_field:invoice.batch_nos` only primitives whose `inputs` include
-that document. The batch-format constraint reaches `coas_valid` and
-`invoice_complete`, not `report_coa_discrepancy`.
+members, `entity_field:invoice.batch_no` only primitives whose `inputs` include
+that entity. So the batch-format constraint reaches every step that reads the
+invoice and none that read only the certificate — `report_invoice_discrepancy`
+gets it, `documentation_validated` does not.
+
+**Entity grain, not field grain**, and deliberately: a card that reads the
+invoice but names a different field still receives it. Tightening to the exact
+path is a two-line change and would cut that constraint from five cards to two,
+but a field named only in the prose of `instructions` is invisible to reference
+matching — and a generated file carrying a statement it does not need ignores
+it, while one missing a statement it does need is wrong.
 
 `negative` is collected at every level and **never overridden** — it is a statement
 about the world, not about a step.

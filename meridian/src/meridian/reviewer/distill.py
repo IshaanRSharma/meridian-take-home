@@ -167,9 +167,9 @@ Say no when it carries something the drawing cannot express: what a value means,
 what counts as two things being the same, how long to wait, who decides, what
 happens in a situation the drawing does not name, or why something is *not* done.
 
-Judge the statement as written, not the topic. "Certificates are checked against
-the invoice" restates the drawing. "Certificates match by product code, not by
-the order the pages arrive in" does not, even though it is about the same check.
+Judge the statement as written, not the topic. "A payment is checked against the
+membership" restates the drawing. "A payment matches by member number, not by the
+name on the card" does not, even though it is about the same check.
 
 Be strict. A statement that merely sounds specific, but adds nothing a code
 generator could not read off the drawing, is a restatement.\
