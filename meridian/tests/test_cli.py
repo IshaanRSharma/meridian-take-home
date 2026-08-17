@@ -214,3 +214,73 @@ def test_nothing_frozen_yet_says_so(finished: UUID) -> None:
 
     assert result.exit_code == 1
     assert "nothing frozen yet" in result.stdout
+
+
+# --- drawing a board from a terminal ------------------------------------------
+
+
+def test_a_board_can_be_drawn_from_nothing() -> None:
+    # The hole this package was built to close: before it, a board could only
+    # enter the system as a hand-written JSON file.
+    board_id = runner.invoke(app, ["board", "new", "Gym membership freeze"]).stdout.strip()
+
+    arrives = runner.invoke(
+        app, ["card", "add", board_id, "--type", "event", "--name", "A request arrives"]
+    )
+    checked = runner.invoke(
+        app, ["card", "add", board_id, "--type", "check", "--name", "Is it in good standing"]
+    )
+    assert arrives.exit_code == 0
+    assert checked.exit_code == 0
+
+    line = runner.invoke(
+        app, ["edge", "add", board_id, arrives.stdout.strip(), checked.stdout.strip()]
+    )
+    assert line.exit_code == 0
+    assert line.stdout.strip() == "e1"
+
+
+def test_a_card_prints_the_key_everything_else_refers_to() -> None:
+    board_id = runner.invoke(app, ["board", "new", "Returns"]).stdout.strip()
+
+    added = runner.invoke(
+        app, ["card", "add", board_id, "--type", "check", "--name", "Is it in date?"]
+    )
+
+    assert added.stdout.strip() == "is_it_in_date"
+
+
+def test_a_value_a_card_cannot_hold_is_the_users_fault_not_the_databases() -> None:
+    # Exit 1 and the field named, never exit 2 and "cannot reach the database" —
+    # which is where a unique violation or a bad enum would land without the
+    # ValidationError arm sitting ahead of the asyncpg one.
+    board_id = runner.invoke(app, ["board", "new", "Returns"]).stdout.strip()
+    key = runner.invoke(
+        app, ["card", "add", board_id, "--type", "action", "--name", "Tell them"]
+    ).stdout.strip()
+
+    refused = runner.invoke(
+        app, ["card", "set", board_id, key, "--json", '{"effect": "carrier pigeon"}']
+    )
+
+    assert refused.exit_code == 1
+    assert "effect" in refused.stdout
+    assert "database" not in refused.stdout
+
+
+def test_removing_a_card_says_what_it_left_behind() -> None:
+    # The offer the interface turns into "also remove 1 connection?". The
+    # decision stays the owner's, which is why nothing cascades.
+    board_id = runner.invoke(app, ["board", "new", "Returns"]).stdout.strip()
+    first = runner.invoke(
+        app, ["card", "add", board_id, "--type", "event", "--name", "It arrives"]
+    ).stdout.strip()
+    second = runner.invoke(
+        app, ["card", "add", board_id, "--type", "check", "--name", "Is it ok"]
+    ).stdout.strip()
+    runner.invoke(app, ["edge", "add", board_id, first, second])
+
+    removed = runner.invoke(app, ["card", "rm", board_id, second])
+
+    assert removed.exit_code == 0
+    assert "points at nothing" in removed.stdout

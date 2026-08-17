@@ -32,13 +32,27 @@ MAY_IMPORT: dict[str, set[str]] = {
     "core": {"domain"},
     "repositories": {"domain"},
     "compiler": {"domain"},
+    # Deliberately NOT `compiler`. Lint is the caller's business: if authoring
+    # could import `rules`, refusing an edit because of a lint finding is one
+    # import away — and that would make the canvas modal and delete the very
+    # findings the review loop runs on.
+    "authoring": {"domain", "repositories"},
     "reviewer": {"domain", "compiler", "repositories"},
     "codegen": {"domain", "compiler"},
     "healing": {"domain", "codegen", "repositories"},
     # Imported by GENERATED agents, so it may know the types and nothing else.
     "runtime": {"domain"},
     "worker": {"domain", "runtime"},
-    "api": {"domain", "core", "compiler", "reviewer", "codegen", "healing", "repositories"},
+    "api": {
+        "domain",
+        "core",
+        "authoring",
+        "compiler",
+        "reviewer",
+        "codegen",
+        "healing",
+        "repositories",
+    },
 }
 
 
