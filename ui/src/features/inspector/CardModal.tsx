@@ -25,7 +25,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Sparkles, Trash2, X } from 'lucide-react';
 import { api, type Board, type Finding, type Primitive, type Thread } from '@/lib/api';
 import { Badge, Button, Problem, SeverityBadge, cx } from '@/components/ui';
-import { fieldWord, categoryWord } from '@/lib/words';
+import { fieldWord } from '@/lib/words';
 
 /** What the fill stage may draft, per card type. Mirrors `authoring.ALLOWED`;
  *  shown so somebody can see why a field stayed blank. */
@@ -266,9 +266,6 @@ export default function CardModal({
                         >
                           {thread.status}
                         </span>
-                        <span className="font-mono text-[10px] text-(--color-ink-faint)">
-                          {categoryWord(thread.category)}
-                        </span>
                       </div>
                       <p className="mt-1 text-[12.5px] leading-snug text-(--color-ink)">
                         {thread.question}
@@ -285,24 +282,12 @@ export default function CardModal({
 
           {pickers.length > 0 && (
             <section className="border-t border-(--color-line) px-5 py-4">
-              <p className="font-mono text-[10px] tracking-wide text-(--color-ink-faint) uppercase">
-                Chosen, not written
+              <p className="text-[11.5px] leading-relaxed text-(--color-ink-faint)">
+                Some of this card points at other things on the board — which cards it reads,
+                which fields it compares, what its outcomes are called. Those are picked from a
+                list rather than read out of a sentence, because a plausible wrong answer there
+                would look exactly like a right one.
               </p>
-              <p className="mt-1.5 text-[11.5px] leading-relaxed text-(--color-ink-faint)">
-                These point at other things on the board, so they are picked from a list rather
-                than read out of a sentence — a wrong answer here would look exactly like a right
-                one.
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {pickers.map((field) => (
-                  <span
-                    key={field}
-                    className="rounded border border-(--color-line-soft) px-1.5 py-0.5 text-[11px] text-(--color-ink-faint)"
-                  >
-                    {fieldWord(field)}
-                  </span>
-                ))}
-              </div>
             </section>
           )}
         </div>

@@ -12,7 +12,6 @@
 import { ChevronRight } from 'lucide-react';
 import type { Finding, Severity } from '@/lib/api';
 import { Empty, SeverityBadge, cx } from '@/components/ui';
-import { fieldWord } from '@/lib/words';
 
 const ORDER: Severity[] = ['blocking', 'important', 'minor'];
 
@@ -61,7 +60,7 @@ export default function LintPanel({
               <div className="min-w-0 flex-1">
                 <p className="text-[12.5px] leading-snug text-(--color-ink)">{finding.reason}</p>
                 <p className="mt-0.5 truncate font-mono text-[10.5px] text-(--color-ink-faint)">
-                  {isBoard ? 'the board' : key} · {fieldWord(finding.field)}
+                  {isBoard ? 'the board' : key}
                 </p>
               </div>
               {!isBoard && (

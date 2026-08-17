@@ -1,121 +1,86 @@
-/** Our vocabulary, translated into theirs. One table, one direction.
+/** Labels for stored config, in the owner's words. One table, one consumer.
  *
- * The whiteboard belongs to the person who runs the process. Everything they
- * read there has to be a sentence they would say — and the schema is full of
- * words that are exactly right for a compiler and mean nothing to a warehouse
- * supervisor: `idempotency_key`, `correlation_key`, `on_missing_input`,
- * `missing_context`.
+ * This started much larger and most of it was wrong. The reviewer already
+ * produces language a process owner can read — a lint finding's `reason` is a
+ * finished sentence, and a semantic question is written by the model for the
+ * person answering. Where our vocabulary was showing through, the honest fix
+ * was almost always to **delete a redundant display**, not to translate it:
  *
- * **This is a display layer and only a display layer.** Nothing here changes
- * what is stored, sent or checksummed. `criteria` is still `criteria` in the
- * config, in the spec and in generated code; it is only ever *shown* as "what
- * it tests". That split is deliberate: the schema being the single source of
- * truth is what makes lint, codegen and the spec agree, and a rename to suit a
- * panel would put a second name on the same thing.
+ *   the lint panel printed the schema field beside the reason, and no card has
+ *   two findings sharing a reason — so the field said nothing the sentence had
+ *   not already said
  *
- * **The spec view is exempt.** It is the FDE's surface — bindings, conformance,
- * provenance — and there the field name *is* the useful word, because the
- * reader is about to open a generated file that uses it.
+ *   the question badge printed the reviewer's own taxonomy, and the question
+ *   states its own subject
  *
- * Anything missing from a table falls back to the raw key with underscores
- * turned to spaces. A word we forgot to translate should look slightly wrong
- * rather than crash a panel.
+ *   the editor listed the fields it cannot fill, where one sentence says the
+ *   same thing better
+ *
+ * What survives is the one place a label is genuinely needed: the editor's
+ * readout of what a description actually settled. That is a key/value view of
+ * stored config, and a key/value view needs a key.
+ *
+ * **This is where it should stop growing, and it is not where it belongs.** A
+ * second table of names is a second source of truth that drifts silently — add
+ * a field to `CheckConfig` and this falls back to the raw key with no warning.
+ * The right home is a `title=` beside the field in the Pydantic model, carried
+ * through the OpenAPI document into `schema.d.ts`, so one name ships with the
+ * thing it names. That is a change in `domain/primitives.py` and worth making.
+ *
+ * The spec view never uses this. It is the FDE's surface, and there the field
+ * name *is* the useful word — the reader is about to open a generated file
+ * that uses it.
  */
 
-/** Schema field → what it is, in the owner's words.
+/** Config key → what it holds, in the owner's words.
  *
- * Phrased as a noun a sentence could be built around ("what it tests"), not as
- * a title ("Test Criteria"), because these appear inline after a card name:
- * *"Under fifty pounds · what it tests"*.
+ * Only keys that appear as top-level config on a card. Anything that reaches a
+ * person some other way — a finding, a question — already arrives as a
+ * sentence and must not be looked up here.
  */
 const FIELDS: Record<string, string> = {
-  // shared
   name: 'its name',
   instructions: 'your description',
-  timing: 'when it happens',
-  deadline: 'the time limit',
-  outcomes: 'the ways it can come out',
-  inputs: 'what it reads',
-  condition: 'when this line is taken',
 
   // event
-  correlation_key: 'what to file it under',
-  match_condition: 'how to recognise it',
-  captures: 'what arrives with it',
   channel: 'how it reaches you',
+  match_condition: 'how to recognise it',
+  correlation_key: 'what to file it under',
+  captures: 'what arrives with it',
+  timing: 'when it happens',
+  schedule: 'when it runs',
 
   // action
   effect: 'what the step does',
+  system: 'which system',
   recipients: 'who hears about it',
   payload_fields: 'what the message says',
   idempotency_key: 'what stops it happening twice',
-  system: 'which system',
   timeout: 'how long to wait',
-  on_timeout: 'what happens if nobody answers',
   on_failure: 'what happens if it fails',
+  on_timeout: 'what happens if nobody answers',
   performed_by: 'who decides',
   produces: 'what it produces',
   is_terminal: 'whether it ends here',
 
   // check
   criteria: 'what it tests',
+  inputs: 'what it reads',
+  outcomes: 'the ways it can come out',
   scope: 'what it looks at each time',
   quantifier: 'whether all or any must hold',
   evidence: 'what it reports as proof',
   on_missing_input: 'what to do if it has not arrived',
   fills: 'what it fills in',
-  left: 'which field it tests',
-  right: 'what it compares against',
-  operator: 'how the two are compared',
-  value: 'what it compares against',
-  field: 'which field it compares against',
-  statement: 'what the test is',
-  reads: 'which fields it uses',
 
   // entity
   identified_by: 'how to recognise it',
   fields: 'what to read off it',
   cardinality: 'how many turn up',
-  per: 'what they are counted against',
   sample_path: 'a sample document',
-  schedule: 'when it runs',
-
-  // structural — these come from board rules rather than a card's own config
-  incoming: 'what leads here',
-  outgoing: 'where it goes next',
-  from_key: 'where the line starts',
-  to_key: 'where the line ends',
-  on_outcomes: 'which outcome it carries',
-  // Board-level: the whole drawing has no starting event.
-  events: 'what starts it',
 };
 
-/** Reviewer category → why it is being asked.
- *
- * The taxonomy is real and it ranks the questions, but it is ours. A process
- * owner does not need to know a question came from `undefined_timing`; they
- * need to know it is about timing.
- */
-const CATEGORIES: Record<string, string> = {
-  missing_path: 'no path',
-  ambiguous_rule: 'unclear rule',
-  missing_context: 'not stated',
-  undefined_exception: 'unhandled failure',
-  undefined_timing: 'timing',
-  redundancy: 'possibly redundant',
-  spec_gap: 'needs a decision',
-};
-
-const plain = (key: string) => key.replace(/_/g, ' ');
-
-/** What this field is, in the owner's words. */
-export const fieldWord = (field: string): string => {
-  if (FIELDS[field]) return FIELDS[field];
-  // `cardinality.per` and friends: translate the leaf, keep the sense.
-  const leaf = field.split('.').pop() ?? field;
-  return FIELDS[leaf] ?? plain(field);
-};
-
-/** Why this question is being asked, in the owner's words. */
-export const categoryWord = (category: string): string =>
-  CATEGORIES[category] ?? plain(category);
+/** What this config key holds. Falls back to the key with its underscores
+ *  opened out — a word we forgot should look slightly wrong, not crash. */
+export const fieldWord = (field: string): string =>
+  FIELDS[field] ?? field.replace(/_/g, ' ');
