@@ -112,18 +112,41 @@ export interface Round {
   consulted: Record<string, number>;
 }
 
-export interface SpecPrimitive {
-  key: string;
-  primitive_type: PrimitiveType;
-  config: Config;
-  context?: {
-    inherited?: string[];
-    local?: string[];
-    negative?: string[];
-    provenance?: string[];
-  };
+/** Everything review settled that bears on one element.
+ *
+ * `inherited` was anchored more broadly and reaches here through the scope
+ * chain; `local` was anchored on this element; narrow beats broad on conflict.
+ * `negative` is collected at every level and never overridden — it states
+ * something about the world rather than about a step. */
+export interface ScopedContext {
+  inherited?: string[];
+  local?: string[];
+  negative?: string[];
+  provenance?: string[];
 }
 
+/** One step as a code generator receives it. Never an entity — the spec's
+ *  `primitive_type` here is narrowed to the three kinds that are traversed. */
+export interface SpecPrimitive {
+  key: string;
+  primitive_type: 'event' | 'action' | 'check';
+  config: Config;
+  capabilities?: string[];
+  context?: ScopedContext;
+}
+
+/** The frozen contract.
+ *
+ * **Keyed maps, not arrays.** `primitives` and `entities` arrive as objects
+ * keyed by board key, because every consumer looks a card up by name rather
+ * than iterating in order.
+ *
+ * **An entity is its config, with its statements held separately.** `entities`
+ * maps to a bare `EntityConfig` — no key, no context — and anything settled
+ * about a thing lives in `entity_context` under the same key. That split is
+ * deliberate: a statement about how a batch number is written is true wherever
+ * it is read, so it belongs to the thing rather than to whichever step happened
+ * to read it first. `edge_context` is the same idea for transitions. */
 export interface FrozenSpec {
   version: number;
   board_id: string;
@@ -131,12 +154,12 @@ export interface FrozenSpec {
   slug: string;
   checksum: string;
   frozen_at: string;
-  entities: SpecPrimitive[];
-  primitives: SpecPrimitive[];
+  entities: Record<string, Config>;
+  primitives: Record<string, SpecPrimitive>;
   edges: Edge[];
-  edge_context?: Record<string, unknown>;
-  entity_context?: Record<string, unknown>;
-  capabilities?: string[];
+  edge_context: Record<string, ScopedContext>;
+  entity_context: Record<string, ScopedContext>;
+  capabilities: string[];
 }
 
 export interface CycleEvent {
