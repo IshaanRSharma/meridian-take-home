@@ -62,7 +62,11 @@ def freeze(
         raise BoardNotReadyError(blocking, unsettled)
 
     version = previous.version + 1 if previous else 1
-    spec = serialize.spec_payload(board, assertions=assertions, version=version)
+    # The slug is minted once, at v1, and carried forward: it is the agent's
+    # directory, and one that moved on a rename would take every reviewable
+    # repair diff with it.
+    slug = previous.slug if previous else ""
+    spec = serialize.spec_payload(board, assertions=assertions, version=version, slug=slug)
 
     # Content, not the counter — `version` is outside the checksum precisely so
     # this comparison is possible.

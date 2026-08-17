@@ -86,10 +86,23 @@ class FrozenSpec(DomainModel):
     checksum says whether it is the same spec. Keeping them apart is what lets
     two freezes of an unchanged board agree, which is in turn what lets a
     pointless re-freeze be refused rather than minting a duplicate.
+
+    ``name`` is inside the checksum, so renaming a board and re-freezing does
+    mint a new version even though no step changed. That is the deliberate side:
+    a code generator reads the name, so the document it is handed really is
+    different. ``slug`` is inside it too but can never move it — it is minted at
+    v1 and carried forward, because it is the agent's directory and a directory
+    that moved on a rename would take every reviewable repair diff with it.
     """
 
     version: int = 1
     board_id: UUID | None = None
+    # What this process is called, and where its code goes. Without them a spec
+    # is anonymous: a code generator handed one cold — which is exactly how the
+    # sufficiency test hands it over — sees eleven cards and no idea what it is
+    # building, and `agents/<slug>/` has nothing to be named after but a UUID.
+    name: str = ""
+    slug: str = ""
     checksum: str = ""
     frozen_at: datetime | None = None
     entities: dict[str, EntityConfig] = Field(default_factory=dict)

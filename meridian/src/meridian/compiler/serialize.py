@@ -27,6 +27,7 @@ from meridian.compiler import rules
 from meridian.compiler.context import context_for
 from meridian.domain.frozen import FrozenSpec, ScopedContext, SpecPrimitive
 from meridian.domain.graph import ActionPrimitive, Board, EventPrimitive, FlowNode
+from meridian.domain.keys import key_for
 from meridian.domain.review import Assertion, Thread
 
 
@@ -159,7 +160,10 @@ def _turns(thread: Thread) -> tuple[Any, ...]:
 
 
 def spec_payload(
-    board: Board, assertions: tuple[Assertion, ...] = (), version: int = 1
+    board: Board,
+    assertions: tuple[Assertion, ...] = (),
+    version: int = 1,
+    slug: str = "",
 ) -> FrozenSpec:
     """The board as a code generator receives it, sealed with its checksum."""
     primitives = {
@@ -176,6 +180,8 @@ def spec_payload(
     return FrozenSpec(
         version=version,
         board_id=board.id,
+        name=board.name,
+        slug=slug or key_for(board.name, (), fallback="agent"),
         entities={e.key: e.config for e in board.entities()},
         primitives=primitives,
         edges=board.edges,

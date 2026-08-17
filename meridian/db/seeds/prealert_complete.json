@@ -1,10 +1,37 @@
 {
-  "$comment": "The seed board as a process owner leaves it: every blank filled, every outcome wired, and the way back drawn after a discrepancy is reported. Kept beside the incomplete one because the pair is what makes the reviewer measurable — ablate a fact from this and check the reviewer asks for it; run it untouched and a finished board should produce almost nothing.",
-  "board": {
-    "name": "Inbound pre-alert validation (completed)",
-    "status": "draft",
-    "review_round": 2
-  },
+  "$comment": [
+    "The pre-alert board as a process owner leaves it once a review has finished",
+    "with it. The incomplete one beside this file is where it starts.",
+    "",
+    "",
+    "Same name as the first draft, deliberately: it is the same process at a",
+    "later stage, and the board's name becomes the agent's directory. A fixture",
+    "label in there would name the generated code after the fixture.",
+    "The pair is what makes the reviewer measurable, and neither number means",
+    "anything without a board somebody would actually call done:",
+    "",
+    "  ablate one fact from this   a working reviewer asks for it back   7/7",
+    "  run it untouched            a finished board should stay quiet    0 blanks",
+    "",
+    "What review added, over the first draft:",
+    "  · recipients on the COA report        the SOP never said who receives it",
+    "  · a system on the invoice report      'log an error' never said where",
+    "  · an idempotency key on both          a resumed shipment reported twice",
+    "  · on_missing_input on both checks     what to do while still waiting",
+    "  · an edge for mismatched_coa          the SOP named the outcome, not the path",
+    "  · e7 and e8, the way back             failure was drawn as final; it is not",
+    "",
+    "Both reports lead back rather than ending, which is the answer to the one",
+    "question that unlocks the second half of this process: a discrepancy is",
+    "reported and the shipment returns once the paperwork is fixed.",
+    "",
+    "Still not answered here, because a drawing cannot say it: what counts as the",
+    "same batch number, which certificate wins when two could match, how long the",
+    "wait is. Those are statements, and they live in the spec."
+  ],
+
+  "board": {"name": "Inbound pre-alert validation", "status": "draft", "review_round": 2},
+
   "primitives": [
     {
       "key": "prealert_email",
@@ -12,25 +39,12 @@
       "config": {
         "name": "Pre-alert email",
         "identified_by": "it arrives in the pre-alert group mailbox the bot has access to",
-        "cardinality": {
-          "kind": "one"
-        },
+        "cardinality": {"kind": "one"},
         "fields": {
-          "sender": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "received_at": {
-            "type": "string"
-          },
-          "attachment_names": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
+          "sender": {"type": "string"},
+          "subject": {"type": "string"},
+          "received_at": {"type": "string"},
+          "attachment_names": {"type": "array", "items": {"type": "string"}}
         },
         "instructions": "The SOP says documentation must be reported by email but never says to whom. The sender is the obvious candidate and is deliberately not assumed here. One email carries a subject and a list of attachments, and the attachments are what there are several of; that a shipment gets several emails over days is a fact about the trigger rather than about what an email is."
       }
@@ -41,57 +55,21 @@
       "config": {
         "name": "Commercial Invoice",
         "identified_by": "the page header reads \"Commercial Invoice\"",
-        "cardinality": {
-          "kind": "one"
-        },
+        "cardinality": {"kind": "one"},
         "fields": {
-          "invoice_no": {
-            "type": "string"
-          },
-          "container_no": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
+          "invoice_no": {"type": "string"},
+          "container_no": {"type": ["string", "null"]},
           "line_items": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "drug_description": {
-                  "type": "string"
-                },
-                "batch_no": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "hts_number": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "fda_product_code": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "ndc_number": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "anda_number": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                }
+                "drug_description": {"type": "string"},
+                "batch_no": {"type": ["string", "null"]},
+                "hts_number": {"type": ["string", "null"]},
+                "fda_product_code": {"type": ["string", "null"]},
+                "ndc_number": {"type": ["string", "null"]},
+                "anda_number": {"type": ["string", "null"]}
               }
             }
           }
@@ -109,22 +87,9 @@
         "identified_by": "the page header reads \"Certificate of Analysis\"",
         "cardinality": {
           "kind": "one_per",
-          "per": {
-            "entity": "commercial_invoice",
-            "path": "line_items[].batch_no"
-          }
+          "per": {"entity": "commercial_invoice", "path": "line_items[].batch_no"}
         },
-        "fields": {
-          "batch_no": {
-            "type": "string"
-          },
-          "product_code": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
+        "fields": {"batch_no": {"type": "string"}, "product_code": {"type": ["string", "null"]}},
         "sample_path": "fixtures/documents/certificate_of_analysis.pdf",
         "sample_extracted": null
       }
@@ -135,20 +100,10 @@
       "config": {
         "name": "Pre-alert documents received",
         "channel": "email",
-        "correlation_key": {
-          "entity": "commercial_invoice",
-          "path": "container_no"
-        },
+        "correlation_key": {"entity": "commercial_invoice", "path": "container_no"},
         "match_condition": "subject contains \"Pre-Alert Documents\" or \"APL USA // PRE-ALERT DOCUMENTATION\"",
-        "captures": [
-          "prealert_email",
-          "commercial_invoice",
-          "certificate_of_analysis"
-        ],
-        "timing": {
-          "kind": "await",
-          "mode": "on_arrival"
-        },
+        "captures": ["prealert_email", "commercial_invoice", "certificate_of_analysis"],
+        "timing": {"kind": "await", "mode": "on_arrival"},
         "instructions": "Sent by the exporter's clearing agent. Documents arrive in pieces — a shipment may get several emails, and corrected COAs come days later."
       }
     },
@@ -160,43 +115,26 @@
         "criteria": [
           {
             "op": "present",
-            "left": {
-              "entity": "commercial_invoice",
-              "path": "line_items[].hts_number"
-            }
+            "left": {"entity": "commercial_invoice", "path": "line_items[].hts_number"}
           },
           {
             "op": "present",
-            "left": {
-              "entity": "commercial_invoice",
-              "path": "line_items[].fda_product_code"
-            }
+            "left": {"entity": "commercial_invoice", "path": "line_items[].fda_product_code"}
           },
           {
             "op": "present",
-            "left": {
-              "entity": "commercial_invoice",
-              "path": "line_items[].ndc_number"
-            }
+            "left": {"entity": "commercial_invoice", "path": "line_items[].ndc_number"}
           },
           {
             "op": "present",
-            "left": {
-              "entity": "commercial_invoice",
-              "path": "line_items[].anda_number"
-            }
+            "left": {"entity": "commercial_invoice", "path": "line_items[].anda_number"}
           }
         ],
         "scope": "per_line_item",
         "quantifier": "all",
-        "inputs": [
-          "commercial_invoice"
-        ],
+        "inputs": ["commercial_invoice"],
         "outcomes": [
-          {
-            "name": "pass",
-            "priority": 0
-          },
+          {"name": "pass", "priority": 0},
           {
             "name": "missing_information",
             "priority": 1,
@@ -204,14 +142,8 @@
           }
         ],
         "evidence": [
-          {
-            "entity": "commercial_invoice",
-            "path": "invoice_no"
-          },
-          {
-            "entity": "commercial_invoice",
-            "path": "line_items[].drug_description"
-          }
+          {"entity": "commercial_invoice", "path": "invoice_no"},
+          {"entity": "commercial_invoice", "path": "line_items[].drug_description"}
         ],
         "instructions": "Review the \"Description of Goods\" section and make sure every line item carries all four identifiers.",
         "on_missing_input": "wait"
@@ -223,18 +155,10 @@
       "config": {
         "name": "Log the invoice error",
         "effect": "record",
-        "inputs": [
-          "commercial_invoice"
-        ],
+        "inputs": ["commercial_invoice"],
         "payload_fields": [
-          {
-            "entity": "commercial_invoice",
-            "path": "invoice_no"
-          },
-          {
-            "entity": "commercial_invoice",
-            "path": "line_items[].drug_description"
-          }
+          {"entity": "commercial_invoice", "path": "invoice_no"},
+          {"entity": "commercial_invoice", "path": "line_items[].drug_description"}
         ],
         "instructions": "Log an error naming the invoice number, the drug description and which information type is missing.",
         "system": "Aurologistics WMS",
@@ -249,30 +173,18 @@
         "criteria": [
           {
             "op": "each_has_matching",
-            "left": {
-              "entity": "commercial_invoice",
-              "path": "line_items[].batch_no"
-            },
+            "left": {"entity": "commercial_invoice", "path": "line_items[].batch_no"},
             "right": {
               "kind": "field",
-              "field": {
-                "entity": "certificate_of_analysis",
-                "path": "batch_no"
-              }
+              "field": {"entity": "certificate_of_analysis", "path": "batch_no"}
             }
           }
         ],
         "scope": "per_line_item",
         "quantifier": "all",
-        "inputs": [
-          "commercial_invoice",
-          "certificate_of_analysis"
-        ],
+        "inputs": ["commercial_invoice", "certificate_of_analysis"],
         "outcomes": [
-          {
-            "name": "pass",
-            "priority": 0
-          },
+          {"name": "pass", "priority": 0},
           {
             "name": "missing_coa",
             "priority": 1,
@@ -285,14 +197,8 @@
           }
         ],
         "evidence": [
-          {
-            "entity": "commercial_invoice",
-            "path": "invoice_no"
-          },
-          {
-            "entity": "commercial_invoice",
-            "path": "line_items[].batch_no"
-          }
+          {"entity": "commercial_invoice", "path": "invoice_no"},
+          {"entity": "commercial_invoice", "path": "line_items[].batch_no"}
         ],
         "instructions": "Each batch should have its own COA. Cross-check each batch listed on the invoice against a corresponding COA document.",
         "on_missing_input": "wait"
@@ -305,40 +211,23 @@
         "name": "Report the COA discrepancy",
         "effect": "notify",
         "channel": "email",
-        "inputs": [
-          "commercial_invoice",
-          "certificate_of_analysis"
-        ],
+        "inputs": ["commercial_invoice", "certificate_of_analysis"],
         "payload_fields": [
-          {
-            "entity": "commercial_invoice",
-            "path": "invoice_no"
-          },
-          {
-            "entity": "commercial_invoice",
-            "path": "line_items[].batch_no"
-          }
+          {"entity": "commercial_invoice", "path": "invoice_no"},
+          {"entity": "commercial_invoice", "path": "line_items[].batch_no"}
         ],
         "instructions": "Report missing or mismatched COAs by email with the invoice number, the batch numbers and a description of the discrepancy.",
-        "recipients": [
-          {
-            "kind": "role",
-            "role": "receiving_supervisor"
-          }
-        ],
+        "recipients": [{"kind": "role", "role": "receiving_supervisor"}],
         "idempotency_key": "container_no + batch_no + discrepancy_kind"
       }
     },
     {
       "key": "documentation_validated",
       "primitive_type": "action",
-      "config": {
-        "name": "Documentation validated",
-        "effect": "noop",
-        "is_terminal": true
-      }
+      "config": {"name": "Documentation validated", "effect": "noop", "is_terminal": true}
     }
   ],
+
   "edges": [
     {
       "key": "e1",
@@ -352,45 +241,35 @@
       "from_key": "invoice_complete",
       "to_key": "coas_valid",
       "relation": "normal",
-      "on_outcomes": [
-        "pass"
-      ]
+      "on_outcomes": ["pass"]
     },
     {
       "key": "e3",
       "from_key": "invoice_complete",
       "to_key": "report_invoice_discrepancy",
       "relation": "exception",
-      "on_outcomes": [
-        "missing_information"
-      ]
+      "on_outcomes": ["missing_information"]
     },
     {
       "key": "e4",
       "from_key": "coas_valid",
       "to_key": "documentation_validated",
       "relation": "normal",
-      "on_outcomes": [
-        "pass"
-      ]
+      "on_outcomes": ["pass"]
     },
     {
       "key": "e5",
       "from_key": "coas_valid",
       "to_key": "report_coa_discrepancy",
       "relation": "exception",
-      "on_outcomes": [
-        "missing_coa"
-      ]
+      "on_outcomes": ["missing_coa"]
     },
     {
       "key": "e6",
       "from_key": "coas_valid",
       "to_key": "report_coa_discrepancy",
       "relation": "exception",
-      "on_outcomes": [
-        "mismatched_coa"
-      ]
+      "on_outcomes": ["mismatched_coa"]
     },
     {
       "key": "e7",
@@ -405,30 +284,13 @@
       "relation": "repeat"
     }
   ],
+
   "layout": {
-    "prealert_received": {
-      "x": 120,
-      "y": 40
-    },
-    "invoice_complete": {
-      "x": 120,
-      "y": 200
-    },
-    "report_invoice_discrepancy": {
-      "x": 520,
-      "y": 200
-    },
-    "coas_valid": {
-      "x": 120,
-      "y": 380
-    },
-    "report_coa_discrepancy": {
-      "x": 520,
-      "y": 380
-    },
-    "documentation_validated": {
-      "x": 120,
-      "y": 580
-    }
+    "prealert_received": {"x": 120, "y": 40},
+    "invoice_complete": {"x": 120, "y": 200},
+    "report_invoice_discrepancy": {"x": 520, "y": 200},
+    "coas_valid": {"x": 120, "y": 380},
+    "report_coa_discrepancy": {"x": 520, "y": 380},
+    "documentation_validated": {"x": 120, "y": 580}
   }
 }
