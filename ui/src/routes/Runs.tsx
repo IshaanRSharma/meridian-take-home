@@ -15,6 +15,7 @@
  */
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { ChevronRight } from 'lucide-react';
 import { api, type CycleEvent, type EvalRow, type Evals } from '@/lib/api';
 import { Badge, Dot, Empty, Panel, PanelHeader, Problem, Spinner, cx } from '@/components/ui';
 
@@ -254,47 +255,138 @@ function EvalTable({ evals }: { evals: Evals }) {
   );
 }
 
-/** Expected on top, what the agent produced underneath.
+/** Expected on top, what the agent produced underneath, and the trace behind it.
  *
- * Only where they differ, and only when there is something to compare — a
- * second row of identical numbers on every line makes the mismatches harder to
- * find, which is the one thing this table exists for. An absent value is shown
- * as `—` rather than left blank, because "the agent produced nothing here" and
- * "the agent produced zero" are different failures and the eval set contains
- * both. */
+ * The row is a verdict; the expansion is the evidence. A screen that reports
+ * "failed" and withholds the trajectory sends the reader to a terminal, which
+ * is exactly the trip the failure bundle exists to save them.
+ *
+ * Three things live under a row and each answers a different question. **Steps**
+ * say what it was doing — a case that produced nothing usually stopped early,
+ * and the step it stopped at is the answer. **Declined** says what it was handed
+ * and would not read, which is where a scope gap shows up: the ASN spreadsheet
+ * is named there, by filename, rather than silently scoring zero. **Errored** is
+ * the message, and only an errored run has one.
+ */
 function Row({ row }: { row: EvalRow }) {
+  const [open, setOpen] = useState(false);
   const actual = row.actual ?? null;
+  const detail = row.steps.length + row.declined.length > 0 || Boolean(row.errored);
+
   return (
-    <tr className="align-top">
-      <td className="px-4 py-2 font-mono text-[11.5px] text-(--color-ink)">
-        {String(row.expected.shipment_no)}
-      </td>
-      {COLUMNS.map(([key]) => {
-        const want = row.expected[key];
-        const got = actual ? (actual as Record<string, unknown>)[key] : undefined;
-        const compared = actual !== null;
-        const differs = compared && String(got ?? '—') !== String(want ?? '—');
-        return (
-          <td key={key} className="px-3 py-2 font-mono text-[11.5px]">
-            <span className={cx(differs ? 'text-(--color-ink-faint)' : 'text-(--color-ink-dim)')}>
-              {String(want ?? '—')}
-            </span>
-            {differs && (
-              <span className="mt-0.5 block font-semibold text-(--color-ink)">
-                {got === undefined || got === null ? '—' : String(got)}
+    <>
+      <tr
+        className={cx('align-top', detail && 'cursor-pointer hover:bg-(--color-raised)')}
+        onClick={() => detail && setOpen((was) => !was)}
+      >
+        <td className="px-4 py-2 font-mono text-[11.5px] text-(--color-ink)">
+          <span className="flex items-center gap-1.5">
+            {detail ? (
+              <ChevronRight
+                size={11}
+                className={cx('shrink-0 transition-transform', open && 'rotate-90')}
+              />
+            ) : (
+              <span className="w-[11px]" />
+            )}
+            {String(row.expected.shipment_no)}
+          </span>
+        </td>
+        {COLUMNS.map(([key]) => {
+          const want = row.expected[key];
+          const got = actual ? (actual as Record<string, unknown>)[key] : undefined;
+          const differs = actual !== null && String(got ?? '—') !== String(want ?? '—');
+          return (
+            <td key={key} className="px-3 py-2 font-mono text-[11.5px]">
+              <span className={cx(differs ? 'text-(--color-ink-faint)' : 'text-(--color-ink-dim)')}>
+                {String(want ?? '—')}
               </span>
+              {differs && (
+                <span className="mt-0.5 block font-semibold text-(--color-ink)">
+                  {got === undefined || got === null ? '—' : String(got)}
+                </span>
+              )}
+            </td>
+          );
+        })}
+        <td className="px-3 py-2">
+          {row.outcome ? (
+            <Badge tone={row.outcome === 'passed' ? 'ok' : 'warn'}>{row.outcome}</Badge>
+          ) : (
+            <span className="font-mono text-[11px] text-(--color-ink-faint)">not run</span>
+          )}
+        </td>
+      </tr>
+
+      {open && (
+        <tr>
+          <td colSpan={COLUMNS.length + 2} className="bg-[#fafafa] px-4 py-3">
+            {row.errored && (
+              <div className="mb-3">
+                <Heading>What went wrong</Heading>
+                <p className="mt-1 font-mono text-[11px] text-(--color-ink)">{row.errored}</p>
+              </div>
+            )}
+
+            {row.steps.length > 0 && (
+              <div className="mb-3">
+                <Heading>Trajectory</Heading>
+                <ol className="mt-1 space-y-1">
+                  {row.steps.map((step) => (
+                    <li key={step.seq} className="flex gap-2 font-mono text-[11px]">
+                      <span className="w-4 shrink-0 text-(--color-ink-faint)">{step.seq}</span>
+                      <span className="w-[172px] shrink-0 text-(--color-ink)">{step.step}</span>
+                      <span
+                        className={cx(
+                          'w-12 shrink-0',
+                          step.status === 'ok'
+                            ? 'text-(--color-ink-faint)'
+                            : 'font-semibold text-(--color-ink)',
+                        )}
+                      >
+                        {step.status}
+                      </span>
+                      <span className="min-w-0 flex-1 break-words text-(--color-ink-dim)">
+                        {step.error ??
+                          (step.output
+                            ? Object.entries(step.output)
+                                .map(([k, v]) => `${k}: ${String(v)}`)
+                                .join('  ·  ')
+                            : '')}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
+            {row.declined.length > 0 && (
+              <div>
+                <Heading>Handed over, not read ({row.declined.length})</Heading>
+                <ul className="mt-1 space-y-0.5">
+                  {row.declined.map((gone, index) => (
+                    <li key={index} className="flex gap-2 font-mono text-[11px]">
+                      <span className="min-w-0 flex-1 truncate text-(--color-ink)">
+                        {gone.source}
+                      </span>
+                      <span className="shrink-0 text-(--color-ink-faint)">{gone.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </td>
-        );
-      })}
-      <td className="px-3 py-2">
-        {row.outcome ? (
-          <Badge tone={row.outcome === 'passed' ? 'ok' : 'warn'}>{row.outcome}</Badge>
-        ) : (
-          <span className="font-mono text-[11px] text-(--color-ink-faint)">not run</span>
-        )}
-      </td>
-    </tr>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function Heading({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="font-mono text-[9.5px] tracking-wide text-(--color-ink-faint) uppercase">
+      {children}
+    </p>
   );
 }
 

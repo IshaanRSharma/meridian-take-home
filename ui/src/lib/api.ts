@@ -191,10 +191,30 @@ export interface CycleEvent {
   detail: Record<string, unknown>;
 }
 
+/** One step of a run, as the harness recorded it. */
+export interface RunStep {
+  seq: number;
+  step: string;
+  status: string;
+  output: Record<string, unknown> | null;
+  error: string | null;
+}
+
+/** Something the build was handed and would not read. */
+export interface Declined {
+  source: string;
+  reason: string;
+}
+
 export interface EvalRow {
   expected: Record<string, string | number>;
   actual: Record<string, unknown> | null;
   outcome: string | null;
+  /** The message, only when the run actually errored. */
+  errored: string | null;
+  /** The trajectory. A verdict with no trace is one nobody can act on. */
+  steps: RunStep[];
+  declined: Declined[];
 }
 
 export interface Evals {
