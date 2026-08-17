@@ -52,17 +52,25 @@ const ITEMS: {
   },
 ];
 
-/** The three kinds of line, in the process owner's words.
+/** The three kinds of line.
  *
  * A relation is picked before the line is drawn rather than changed after,
  * because there is no endpoint to edit an edge in place — and that is not an
  * oversight. An edge key is what a thread anchors to with no foreign key, so
  * re-minting one to change its relation would silently orphan every comment
- * pinned to it. */
+ * pinned to it.
+ *
+ * **`Pass` is a knowingly overloaded label.** `pass` is also an *outcome* name
+ * on every Check the seed board draws, and a relation is not an outcome: the
+ * relation says whether the process carries on, the outcome says which branch
+ * it took. The board already has `normal` edges carrying `missing_information`,
+ * so the two are genuinely orthogonal and one word now spans both. `Next` says
+ * the same thing without the collision, and is one edit here if the overlap
+ * ever bites. */
 const LINES: { relation: Relation; label: string; hint: string }[] = [
-  { relation: 'normal', label: 'Carries on', hint: 'the usual next step' },
-  { relation: 'exception', label: 'Goes wrong', hint: 'something failed' },
-  { relation: 'repeat', label: 'Comes back', hint: 'loops round again' },
+  { relation: 'normal', label: 'Pass', hint: 'the process carries on to the next step' },
+  { relation: 'exception', label: 'Exception', hint: 'something went wrong and this is where it goes' },
+  { relation: 'repeat', label: 'Loop', hint: 'comes back round — the shape that proves this is not a one-way flowchart' },
 ];
 
 export default function Palette({
