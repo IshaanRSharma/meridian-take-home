@@ -210,6 +210,48 @@ def references_are_declared(board: Board) -> list[BoardFinding]:
     return found
 
 
+def inputs_arrive_before_they_are_read(board: Board) -> list[BoardFinding]:
+    """Cards reading something nothing has produced by the time they run.
+
+    Every other reference rule asks whether a thing *exists* on the board. This
+    asks whether it exists **yet**, which is a different question and the only
+    one that depends on the flow rather than on the cards.
+
+    It stayed invisible while every entity arrived with the Event, because an
+    Event is upstream of everything. A lookup is the first entity with a
+    position in the process, and a Check filling an output row is the second —
+    and both were reordered on purpose to produce a board that lints completely
+    clean while reading nothing forever. `fills_resolve` checks writes,
+    `field_references_resolve` checks reads, and until now nothing joined them.
+
+    A cycle counts as upstream, correctly: a `repeat` edge means the producer
+    genuinely can have run first.
+    """
+    found: list[BoardFinding] = []
+    for card in board.nodes():
+        # A card counts as its own producer. An Event that captures an entity
+        # both brings it in and holds it, and a lookup Action reads the inputs
+        # it searches by — neither is waiting on anything earlier.
+        before = board.upstream(card.key) | {card.key}
+        late = sorted(
+            entity_key
+            for entity_key in card.reads()
+            if (producers := _producers_of(board, entity_key)) and not producers & before
+        )
+        if not late:
+            continue
+        named = " and ".join(_name_of(board, key) for key in late)
+        found.append(
+            BoardFinding(
+                anchor=f"primitive:{card.key}",
+                field="inputs",
+                reason=f"This reads {named}, but nothing produces it before this step runs.",
+                severity="blocking",
+            )
+        )
+    return found
+
+
 def cardinality_resolves(board: Board) -> list[BoardFinding]:
     """Entities counted against a field that does not exist.
 
@@ -411,6 +453,7 @@ RULES: tuple[Rule, ...] = (
     something_starts_the_process,
     inputs_exist,
     references_are_declared,
+    inputs_arrive_before_they_are_read,
     field_references_resolve,
     cardinality_resolves,
     entities_are_recognisable,
@@ -452,6 +495,23 @@ def _outranks(candidate: Severity, current: Severity) -> bool:
 def _name_of(board: Board, key: str) -> str:
     """What the process owner called a card, for a message they have to read."""
     return (board.p(key).config.name or key) if board.has(key) else key
+
+
+def _producers_of(board: Board, entity_key: str) -> set[str]:
+    """Every step that brings this entity into existence, filling included.
+
+    ``Board.producers_of`` cannot see a Check that ``fills`` an output entity,
+    because a Check declares it produces nothing — which is true of the entities
+    it reads and false of the row it writes. Flow order needs both.
+    """
+    produced = {node.key for node in board.producers_of(entity_key)}
+    filled = {
+        check.key
+        for check in board.checks()
+        for fill in check.config.fills
+        if fill.field.entity == entity_key
+    }
+    return produced | filled
 
 
 def _arrives(board: Board, entity_key: str) -> bool:
