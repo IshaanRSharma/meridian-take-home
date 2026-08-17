@@ -31,11 +31,13 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Board, Finding, PrimitiveType, Relation, Thread } from '@/lib/api';
 import { api } from '@/lib/api';
 import { CardNode } from './nodes/CardNode';
+import { FlowEdge } from './edges/FlowEdge';
 import { build } from './graph';
 import Palette from './Palette';
 import Legend from './Legend';
 
 const nodeTypes = { card: CardNode };
+const edgeTypes = { flow: FlowEdge };
 
 /** The line that follows the cursor mid-drag, drawn as the thing it will
  *  become — so the relation is visible before the edge exists rather than only
@@ -242,6 +244,7 @@ function Inner({ board, findings, threads, selected, onSelect, onOpen, highlight
         nodes={nodes}
         edges={built.edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -260,7 +263,6 @@ function Inner({ board, findings, threads, selected, onSelect, onOpen, highlight
         onPaneClick={() => onSelect(null)}
         nodesConnectable
         proOptions={{ hideAttribution: true }}
-        defaultEdgeOptions={{ type: 'smoothstep' }}
         fitView
         fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
         minZoom={0.25}

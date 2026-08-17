@@ -188,21 +188,8 @@ export function build(
     source: edge.from_key,
     target: edge.to_key,
     sourceHandle: edge.on_outcomes[0] ?? null,
-    type: 'smoothstep',
-    animated: false,
-    label: edge.on_outcomes.join(' / ') || undefined,
-    labelBgStyle: { fill: '#ffffff' },
-    labelStyle: { fill: '#52525b', fontSize: 10, fontFamily: 'ui-monospace, monospace' },
-    labelBgPadding: [4, 2] as [number, number],
-    style: {
-      stroke: edge.relation === 'exception' ? '#000000' : '#71717a',
-      strokeWidth: 1.4,
-      strokeDasharray: edge.relation === 'exception' ? '5 3' : undefined,
-    },
-    // A repeat routes around the graph rather than through it, which is the
-    // one relation that visually proves this is not a DAG.
-    pathOptions: edge.relation === 'repeat' ? { offset: 60, borderRadius: 12 } : undefined,
-    data: { relation: edge.relation },
+    type: 'flow',
+    data: { relation: edge.relation, outcomes: edge.on_outcomes },
   }));
 
   if (options.showDataLinks) {
