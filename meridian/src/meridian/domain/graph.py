@@ -17,6 +17,8 @@ has its own policy.
 
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -204,7 +206,11 @@ class BoardFinding(DomainModel):
     anchor: str
     field: str
     reason: str
-    severity: Severity = "blocking"
+    # Required, not defaulted. A default silently makes every rule added later a
+    # freeze gate that nobody chose, and `blocking` has to keep meaning "no
+    # correct agent can be generated without this" — grep the literal and you
+    # have every gate in the system.
+    severity: Severity
     kind: Literal["field", "structure"] = "field"
 
 
@@ -420,8 +426,23 @@ class Board(DomainModel):
 
     # --- dry run -----------------------------------------------------------
 
-    def dry_run(self, outcomes: dict[str, str], start: str | None = None) -> DryRunResult:
+    def dry_run(
+        self, outcomes: Mapping[str, str | Sequence[str]], start: str | None = None
+    ) -> DryRunResult:
         """Walk one scenario, where ``outcomes`` picks how each Check comes out.
+
+        An answer is either one string, meaning the card always comes out that
+        way, or a sequence answering each visit in turn. The sequence is what
+        makes a resubmission expressible: a form that is incomplete on Tuesday
+        and complete on Thursday is one card visited twice, and with a single
+        answer per card that walk could only ever be reported as a loop —
+        indistinguishable from a process that never terminates. Which is to say
+        the review loop would stop being able to prove a resolution exactly
+        when the answer "it comes back once corrected" drew the repeat edge.
+
+        ``Mapping``, not ``dict``, because ``dict`` is invariant in its value
+        type: a caller holding a plain ``dict[str, str]`` would otherwise stop
+        type-checking against a signature that also admits sequences.
 
         Deliberately dumb — it is the one place this system interprets rather
         than compiles, and its job is to say whether a path exists, not whether
@@ -443,12 +464,14 @@ class Board(DomainModel):
 
         trace: list[TraceStep] = []
         visited: set[str] = set()
+        visits: Counter[str] = Counter()
         result: Literal["reached_terminal", "dead_end", "undefined_branch", "loop"] = "loop"
 
         for seq in range(1, MAX_DRY_RUN_STEPS + 1):
             node = self.p(current)
             visited.add(current)
-            outcome = outcomes.get(current)
+            outcome = _answer(outcomes.get(current), visits[current])
+            visits[current] += 1
             leaving = self.outgoing(current)
 
             if not leaving:
@@ -489,6 +512,23 @@ class Board(DomainModel):
             trace=tuple(trace),
             unreached=tuple(s.key for s in self.nodes() if s.key not in visited),
         )
+
+
+def _answer(given: str | Sequence[str] | None, visit: int) -> str | None:
+    """How a card comes out on its ``visit``-th arrival, counting from zero.
+
+    An exhausted sequence holds its last answer rather than falling silent. A
+    resubmission that keeps arriving incomplete has to stay a loop: running out
+    of answers is not evidence that the process terminates, and it must not
+    become permission to take a different edge.
+    """
+    if given is None or isinstance(given, str):
+        return given
+    if not given:
+        # A sequence of no answers says nothing about how the card came out,
+        # which is exactly the position of a scenario that never named it.
+        return None
+    return given[min(visit, len(given) - 1)]
 
 
 def _edge_for(leaving: tuple[Edge, ...], outcome: str | None) -> Edge | None:

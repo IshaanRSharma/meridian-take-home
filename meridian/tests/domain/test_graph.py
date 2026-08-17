@@ -29,6 +29,7 @@ from meridian.domain.primitives import (
     EventConfig,
     Outcome,
 )
+from meridian.domain.review import Scenario
 
 PASS = Outcome(name="pass")
 FAIL = Outcome(name="fail")
@@ -379,12 +380,137 @@ def test_dry_run_walks_a_two_entry_board_from_the_start_it_is_given(two_entries:
     assert [s.key for s in run.trace] == ["chased", "looks_ok", "done"]
 
 
+@pytest.fixture
+def resubmission() -> Board:
+    """A claim that comes back once the missing information arrives.
+
+    The shape the whole review loop turns on. Answering "it comes back once the
+    paperwork is fixed" is what ADDS the repeat edge, so the scenario that
+    raised the question has to stay runnable after the answer lands — otherwise
+    resolution can be asserted but never proved.
+    """
+    return Board(
+        name="resubmission",
+        primitives=[
+            EventPrimitive(key="claim_arrived", config=EventConfig(name="Claim arrived")),
+            CheckPrimitive(
+                key="form_complete",
+                config=CheckConfig(
+                    name="Is the form complete?",
+                    outcomes=[Outcome(name="complete"), Outcome(name="incomplete")],
+                ),
+            ),
+            ActionPrimitive(
+                key="request_more_info",
+                config=ActionConfig(name="Ask for the missing information"),
+            ),
+            ActionPrimitive(
+                key="claim_accepted",
+                config=ActionConfig(name="Accept the claim", is_terminal=True),
+            ),
+        ],
+        edges=[
+            Edge(key="r1", from_key="claim_arrived", to_key="form_complete"),
+            Edge(
+                key="r2",
+                from_key="form_complete",
+                to_key="claim_accepted",
+                on_outcomes=["complete"],
+            ),
+            Edge(
+                key="r3",
+                from_key="form_complete",
+                to_key="request_more_info",
+                on_outcomes=["incomplete"],
+            ),
+            Edge(
+                key="r4",
+                from_key="request_more_info",
+                to_key="form_complete",
+                relation="repeat",
+            ),
+        ],
+    )
+
+
+def test_a_resubmitted_claim_completes_the_second_time_it_is_checked(resubmission: Board):
+    run = resubmission.dry_run({"form_complete": ["incomplete", "complete"]})
+    assert run.result == "reached_terminal"
+    assert [s.key for s in run.trace] == [
+        "claim_arrived",
+        "form_complete",
+        "request_more_info",
+        "form_complete",
+        "claim_accepted",
+    ]
+
+
+def test_the_trace_names_the_outcome_taken_on_each_visit_to_the_same_check(resubmission: Board):
+    # A reviewer citing a trace has to be able to say *which* visit came out
+    # which way; "form_complete appears twice" on its own proves nothing.
+    run = resubmission.dry_run({"form_complete": ["incomplete", "complete"]})
+    assert [(s.key, s.outcome) for s in run.trace] == [
+        ("claim_arrived", None),
+        ("form_complete", "incomplete"),
+        ("request_more_info", None),
+        ("form_complete", "complete"),
+        ("claim_accepted", None),
+    ]
+
+
+def test_a_claim_that_is_never_completed_is_still_reported_as_a_loop(resubmission: Board):
+    # The board is identical; only the scenario differs. Per-visit answers must
+    # not turn every cycle into a terminal.
+    run = resubmission.dry_run({"form_complete": "incomplete"})
+    assert run.result == "loop"
+
+
+def test_an_exhausted_sequence_holds_its_last_answer_rather_than_papering_over_a_cycle(
+    resubmission: Board,
+):
+    # One answer for a check visited unboundedly often. Running out of answers
+    # is not permission to take a different edge.
+    run = resubmission.dry_run({"form_complete": ["incomplete"]})
+    assert run.result == "loop"
+
+
+def test_a_single_answer_still_answers_every_visit(resubmission: Board):
+    # A bare string is a whole answer, not a sequence of one-character answers.
+    run = resubmission.dry_run({"form_complete": "complete"})
+    assert run.result == "reached_terminal"
+    assert [(s.key, s.outcome) for s in run.trace] == [
+        ("claim_arrived", None),
+        ("form_complete", "complete"),
+        ("claim_accepted", None),
+    ]
+
+
+def test_a_scenario_that_gives_no_answers_for_a_check_has_not_answered_it(resubmission: Board):
+    run = resubmission.dry_run({"form_complete": []})
+    assert run.result == "undefined_branch"
+    assert [s.key for s in run.trace] == ["claim_arrived", "form_complete"]
+
+
+def test_a_scenarios_own_answers_can_be_walked_without_translation(resubmission: Board):
+    # The promise in Scenario's docstring: what a scenario stores is what
+    # dry_run takes. If these ever diverge a stored scenario stops being
+    # runnable, and a thread goes back to citing an opinion.
+    scenario = Scenario(
+        key="claim_resubmitted",
+        kind="variant",
+        description="The claim comes back complete after we ask for the missing pages.",
+        outcomes={"form_complete": ["incomplete", "complete"]},
+    )
+    run = resubmission.dry_run(scenario.outcomes)
+    assert run.result == "reached_terminal"
+
+
 # --- the seed board --------------------------------------------------------
 
 
 def test_the_seed_board_loads_and_validates(seed: Board):
     assert len(seed.nodes()) == 6
-    assert len(seed.entities()) == 2
+    assert len(seed.entities()) == 3
 
 
 def test_entities_carry_no_layout_position(seed: Board):

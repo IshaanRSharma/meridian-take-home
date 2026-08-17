@@ -193,12 +193,18 @@ class Scenario(DomainModel):
     ``outcomes`` is exactly what ``Board.dry_run`` takes, so a scenario is
     runnable rather than merely described — which is what lets a thread cite a
     trace instead of an opinion.
+
+    A card is answered once and for all with a string, or visit by visit with a
+    sequence. The sequence is how a resubmission is described: the COA check
+    comes out ``missing_coa`` on Tuesday and ``pass`` on Thursday once the
+    corrected document arrives. Stored as a tuple because these models are
+    frozen, and a tuple is a sequence, so the promise above still holds.
     """
 
     key: BoardKey
     kind: Literal["happy", "variant", "probe"]
     description: str
-    outcomes: dict[str, str] = Field(default_factory=dict)
+    outcomes: dict[str, str | tuple[str, ...]] = Field(default_factory=dict)
     start: BoardKey | None = None
     expected_terminal: BoardKey | None = None
     round: int = 1

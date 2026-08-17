@@ -213,3 +213,28 @@ def test_a_scenario_is_runnable_rather_than_merely_described():
         outcomes={"invoice_complete": "pass", "coas_valid": "mismatched_coa"},
     )
     assert probe.outcomes["coas_valid"] == "mismatched_coa"
+
+
+def test_a_scenario_can_answer_one_check_differently_on_each_visit():
+    # The scenario shape the review loop turns on: the shipment comes back once
+    # the paperwork is fixed, so the COA check comes out one way on Tuesday and
+    # another on Thursday. Without this a resubmission is undescribable.
+    corrected = Scenario(
+        key="coa_corrected",
+        kind="variant",
+        description="A corrected COA arrives after the discrepancy was reported.",
+        outcomes={"coas_valid": ["missing_coa", "pass"]},
+    )
+    assert corrected.outcomes["coas_valid"] == ("missing_coa", "pass")
+
+
+def test_a_single_answer_stays_a_single_answer_rather_than_becoming_a_sequence():
+    # A stored answer must not turn into a sequence of one-character answers on
+    # its way through validation.
+    probe = Scenario(
+        key="coa_missing",
+        kind="probe",
+        description="No COA carries one of the invoiced batches.",
+        outcomes={"coas_valid": "missing_coa"},
+    )
+    assert probe.outcomes["coas_valid"] == "missing_coa"
