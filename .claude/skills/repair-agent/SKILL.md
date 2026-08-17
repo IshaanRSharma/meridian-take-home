@@ -84,11 +84,29 @@ second because it only matters once you know the decision is yours:
 
 > Can I make this work by changing something under `agents/<slug>/`?
 
-Almost always yes, because the scaffold injects its moving parts rather than
-importing them. A reader, a classifier, an extractor, a provider, a comparison —
-all of these arrive as arguments, so the agent can pass a different one without
-anybody editing `runtime/`. **Wrapping or replacing an injected component is an
-ordinary patch, not a skeleton defect.**
+Almost always yes, and for two different reasons that are easy to confuse:
+
+```
+INJECTED       a reader, a classifier, an extractor, a provider — these arrive
+               as arguments, so pass a different one
+
+CALLED         a criterion kernel, a tally, a path resolver — these are
+               imported and called from a site inside YOUR file, so wrap the
+               call: canonicalise the inputs before it, restore what you need
+               after it
+```
+
+The second is the one that gets missed. Looking for a constructor argument that
+does not exist and concluding there is no seam is how a fixable defect gets
+escalated — the seam is the **call site**, and the call site is in a file you own.
+
+**Wrapping or replacing either is an ordinary patch, not a skeleton defect.**
+
+In practice `skeleton_defect` should be **rare to the point of suspicion**.
+Every moving part of the scaffold is either injected or called from generated
+code. If you are about to declare one, say precisely which line you cannot reach
+and why — that sentence is the finding, and if you cannot write it, the seam
+exists.
 
 It is a skeleton defect only when there is **no seam** — when the behaviour is
 hard-wired somewhere the agent cannot reach, and the only way to change it is to
@@ -107,16 +125,34 @@ means look harder for a seam, not that one is absent.
 | extraction read the wrong page region | defect — fix the hint |
 | a certificate arrives whose batch is on no invoice: ignore or flag? | **spec gap** |
 | an invoice line has no ANDA: block or warn? | **spec gap** |
-| every case fails identically at the same step | **skeleton defect** |
+| every case fails identically at the same step | **infrastructure** — read DECLINED and the entry point first. Skeleton defect only if no seam exists |
 
 A bucket covering **100% of cases** is evidence in itself: a per-check bug fails
 some cases, an infrastructure bug fails all of them the same way.
 
+### When the sweep is green and the agent is still wrong
+
+The suite is an oracle, not an authority. Some failures produce a **passing**
+sweep — most often a correlation or grouping bug, where every case is scored
+individually and nothing checks that they were grouped into the right units in
+the first place.
+
+You will usually meet this while investigating something else. If you conclude
+the spec is wrong and the sweep does not agree, **say so anyway**, and say what
+case would have caught it. A gap the suite cannot measure is still a gap, and an
+eval case that would expose it is the most useful thing you can leave behind.
+
 ## 3. When there is nothing to compare
 
-A sweep can fail without producing a single comparison: zero runs, or every case
-erroring identically. There is no expected-versus-actual, so the bundle you were
-handed is nearly empty — and that emptiness **is** the diagnosis.
+A sweep can fail without producing a single comparison: zero runs, every case
+erroring identically, **or every case returning all-zero counts.** That last one
+is the trap — a run that returns zeros is an empty sweep wearing a comparison.
+It reports runs, reports no errors, and quietly scores every column whose
+expected value happens to be zero as a pass.
+
+The tell is zeros across the board with a **non-empty DECLINED**, or a trace that
+stops before the first check. There is no real expected-versus-actual, so the
+bundle you were handed is nearly empty — and that emptiness **is** the diagnosis.
 
 It means the failure is **upstream of everything the eval measures**. Nothing
 reached the checks, so nothing could disagree with the expected output.
