@@ -71,7 +71,10 @@ def test_a_field_statement_travels_sideways_to_whoever_reads_that_entity(seed: B
     reached = {c.key for c in seed.nodes() if reaches(c, anchor)}
     assert "coas_valid" in reached
     assert "invoice_complete" in reached
-    assert "report_coa_discrepancy" not in reached
+    # The terminal reads nothing at all, which is the only honest negative on
+    # this board: every reporting step quotes the invoice number, so every one
+    # of them is entitled to know how batch numbers are written.
+    assert "documentation_validated" not in reached
 
 
 def test_an_edge_statement_reaches_no_card(seed: Board):
@@ -102,9 +105,11 @@ def test_a_card_separates_what_it_inherited_from_what_was_said_about_it(seed: Bo
 
 
 def test_a_card_does_not_receive_a_constraint_on_an_entity_it_never_reads(seed: Board):
-    # report_coa_discrepancy reads certificates, not invoices.
-    context = context_for(seed, SETTLED, "report_coa_discrepancy")
+    # documentation_validated is a named end state and reads nothing.
+    context = context_for(seed, SETTLED, "documentation_validated")
     assert not any("batch numbers match" in line for line in context.inherited)
+    # A board-level statement still reaches it, which is what makes this a test
+    # of the entity filter rather than of the card having no context at all.
     assert "[rule] one container is one shipment" in context.inherited
 
 

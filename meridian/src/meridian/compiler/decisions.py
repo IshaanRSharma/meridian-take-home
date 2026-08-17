@@ -78,9 +78,13 @@ def termination(board: Board) -> list[DecisionPoint]:
     """Places the drawing says the process stops.
 
     A failure path that leaves and never comes back is the highest-value one:
-    the process owner may well answer that the shipment returns once corrected,
-    and that answer adds a repeat edge — which is where the board stops being
+    the process owner may well answer that the work returns once corrected, and
+    that answer adds a repeat edge — which is where the board stops being
     acyclic.
+
+    Both claim and alternative are built from the card names the owner typed.
+    Nothing here may name a shipment, an invoice or a batch, because a sweep
+    that borrows one process's nouns is a pattern matcher with extra steps.
     """
     found: list[DecisionPoint] = []
     for card in board.terminals():
@@ -95,7 +99,7 @@ def termination(board: Board) -> list[DecisionPoint]:
                 elements=elements,
                 claim=f"the process ends at {_named(card)}"
                 + (" whenever something is wrong" if by_exception else ""),
-                alternative="the shipment comes back once the problem is fixed"
+                alternative="it comes back once the problem is fixed"
                 if by_exception
                 else "something happens after this",
             )
@@ -183,7 +187,7 @@ def coverage(board: Board) -> list[DecisionPoint]:
                     DecisionPoint(
                         kind="coverage",
                         elements=(f"primitive:{terminal.key}", f"primitive:{check.key}"),
-                        claim=f"a shipment can reach {_named(terminal)} "
+                        claim=f"{_named(terminal)} can be reached "
                         f"without {_named(check)} ever running",
                         alternative=f"{_named(check)} always runs first",
                     )

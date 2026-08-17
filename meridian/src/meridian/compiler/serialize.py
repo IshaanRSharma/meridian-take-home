@@ -19,6 +19,7 @@ Two functions rather than one with a mode flag. They share the helpers below and
 almost nothing else.
 """
 
+from collections.abc import Callable
 from typing import Any
 
 from meridian.compiler import decisions as decision_sweeps
@@ -27,12 +28,6 @@ from meridian.compiler.context import context_for
 from meridian.domain.frozen import FrozenSpec, ScopedContext, SpecPrimitive
 from meridian.domain.graph import ActionPrimitive, Board, EventPrimitive, FlowNode
 from meridian.domain.review import Assertion, Thread
-
-# What a card needs from outside itself, derived from the closed enums a process
-# owner chose. Never from `system`, which is free text and per-customer — that
-# stays on the config for the bindings file to key on, so the same spec deploys
-# to a company running different software.
-_NOTIFY = {"email": "email.send", "sms": "sms.send", "phone": "phone.call", "queue": "queue.push"}
 
 
 def review_payload(
@@ -48,6 +43,12 @@ def review_payload(
                 "key": card.key,
                 "type": card.primitive_type,
                 "name": card.config.name,
+                # The whole config, not a summary of it. Structure is what lint
+                # and the sweeps already interrogate; every *semantic* question
+                # comes from the prose the owner typed — the subject lines they
+                # quoted, the operators they picked, the aside in `instructions`
+                # — and none of that is derivable from the graph.
+                "config": card.config.model_dump(mode="json", exclude_none=True),
                 "group": card.group_key,
                 "reads": list(card.reads()),
                 "in": [e.key for e in board.incoming(card.key)],
@@ -114,7 +115,9 @@ def _turns(thread: Thread) -> tuple[Any, ...]:
     return tuple(sorted(thread.messages, key=lambda m: m.seq))
 
 
-def spec_payload(board: Board, assertions: tuple[Assertion, ...] = ()) -> FrozenSpec:
+def spec_payload(
+    board: Board, assertions: tuple[Assertion, ...] = (), version: int = 1
+) -> FrozenSpec:
     """The board as a code generator receives it, sealed with its checksum."""
     primitives = {
         card.key: SpecPrimitive(
@@ -128,6 +131,7 @@ def spec_payload(board: Board, assertions: tuple[Assertion, ...] = ()) -> Frozen
     }
 
     return FrozenSpec(
+        version=version,
         board_id=board.id,
         entities={e.key: e.config for e in board.entities()},
         primitives=primitives,
@@ -136,6 +140,9 @@ def spec_payload(board: Board, assertions: tuple[Assertion, ...] = ()) -> Frozen
         # step's file would tell that step about something it does not do — so
         # it lives here or it is lost at the freeze.
         edge_context=_edge_context(board, assertions),
+        # Same reason as the line above, for the other half of the board: a
+        # statement about a document reaches no step either.
+        entity_context=_entity_context(board, assertions),
         capabilities=tuple(sorted({c for p in primitives.values() for c in p.capabilities})),
     ).sealed()
 
@@ -146,20 +153,39 @@ def capabilities_for(card: FlowNode) -> tuple[str, ...]:
     A Check never appears here. It reads data that has already arrived and
     returns a result, which is what lets it be workflow code rather than an
     activity, and what makes a failing eval case fail for a logic reason.
+
+    Every name is **derived** from a closed enum the process owner chose, never
+    looked up in a table beside one. A table has to be kept in step with the
+    enum and nothing enforces that, so the first new channel someone adds either
+    raises here or silently produces a card that reaches the world with no
+    declared capability.
+
+    Reading a document is deliberately absent. The generator already has the
+    entity and its field schema; how those fields come out of whatever actually
+    arrived — parse a body, read a PDF — is an implementation decision, and
+    implementation decisions are the ones it is allowed to make. Nothing on a
+    board says whether a thing is a file, so a capability claiming it would be
+    this compiler guessing, and it guessed wrong on every process without
+    documents.
+
+    Never derived from `system`, which is free text and per-customer. That stays
+    on the config for the bindings file to key on, so the same spec deploys to a
+    company running different software.
     """
     needed: set[str] = set()
 
-    if isinstance(card, EventPrimitive):
-        if card.config.channel == "email":
-            needed.add("email.fetch")
-        if card.config.captures:
-            needed.update({"storage.put", "doc.extract"})
+    if isinstance(card, EventPrimitive) and card.config.channel:
+        needed.add(f"{card.config.channel}.fetch")
 
     if isinstance(card, ActionPrimitive):
+        # Both effects that put a person on the other end have to reach them,
+        # and both do it the same way. A decision nobody is asked for is not a
+        # decision — without this an engineer reading the capability list would
+        # never learn a mailbox is involved.
+        if card.config.effect in ("notify", "decide") and card.config.channel:
+            needed.add(f"{card.config.channel}.send")
+
         match card.config.effect:
-            case "notify":
-                if card.config.channel:
-                    needed.add(_NOTIFY[card.config.channel])
             case "record":
                 needed.add("system.write")
             case "lookup":
@@ -173,21 +199,61 @@ def capabilities_for(card: FlowNode) -> tuple[str, ...]:
 
 
 def _edge_context(board: Board, assertions: tuple[Assertion, ...]) -> dict[str, ScopedContext]:
-    by_edge: dict[str, list[Assertion]] = {}
+    return _context_by_key(
+        {edge.key for edge in board.edges},
+        assertions,
+        lambda a: a.anchor.key if a.anchor.kind == "edge" else None,
+    )
+
+
+def _entity_context(board: Board, assertions: tuple[Assertion, ...]) -> dict[str, ScopedContext]:
+    """What was settled about the things a process reads, rather than its steps.
+
+    The transposition walks steps, so a statement anchored on an entity reached
+    no card and was dropped at the freeze without a word — and those are exactly
+    the statements a generator writing an extraction schema needs. *How do you
+    recognise a certificate among the attachments* and *batch numbers are seven
+    digits after the prefix* are facts about the document, true wherever it is
+    read, so they belong to it rather than to whichever step read it first.
+
+    Field-level statements land here too. `entity_field:invoice.batch_no` still
+    travels sideways to every step reading that invoice, because a check needs
+    to know how to compare — but it is also a fact about the invoice itself.
+    """
+    entities = {entity.key for entity in board.entities()}
+
+    def owner(assertion: Assertion) -> str | None:
+        anchor = assertion.anchor
+        if anchor.kind == "primitive":
+            return anchor.key
+        if anchor.kind == "entity_field" and anchor.key:
+            return anchor.key.split(".", 1)[0]
+        return None
+
+    return _context_by_key(entities, assertions, owner)
+
+
+def _context_by_key(
+    keys: set[str],
+    assertions: tuple[Assertion, ...],
+    owner: Callable[[Assertion], str | None],
+) -> dict[str, ScopedContext]:
+    """Group settled statements under whichever element ``owner`` assigns them."""
+    grouped: dict[str, list[Assertion]] = {}
     for assertion in assertions:
-        if assertion.is_active() and assertion.anchor.kind == "edge" and assertion.anchor.key:
-            by_edge.setdefault(assertion.anchor.key, []).append(assertion)
+        key = owner(assertion) if assertion.is_active() else None
+        if key is not None and key in keys:
+            grouped.setdefault(key, []).append(assertion)
 
     return {
-        edge.key: ScopedContext(
+        key: ScopedContext(
             local=tuple(
                 f"[{a.kind}] {a.statement}"
-                for a in sorted(by_edge[edge.key], key=lambda a: (a.kind, a.statement))
+                for a in sorted(found, key=lambda a: (a.kind, a.statement))
                 if a.kind != "negative"
             ),
-            negative=tuple(a.statement for a in by_edge[edge.key] if a.kind == "negative"),
-            provenance=tuple(sorted({str(a.thread_id) for a in by_edge[edge.key] if a.thread_id})),
+            negative=tuple(a.statement for a in found if a.kind == "negative"),
+            provenance=tuple(sorted({str(a.thread_id) for a in found if a.thread_id})),
         )
-        for edge in board.edges
-        if edge.key in by_edge
+        for key, found in grouped.items()
     }

@@ -14,9 +14,11 @@ tool names, nobody's email address.
 
 import json
 import uuid
+from typing import get_args
 
 from meridian.compiler import serialize
-from meridian.domain.graph import Board
+from meridian.domain.graph import ActionPrimitive, Board, EventPrimitive
+from meridian.domain.primitives import ActionConfig, Channel, EventConfig, RoleRef
 from meridian.domain.review import Anchor, Assertion, Thread, ThreadMessage
 
 SETTLED = (
@@ -72,11 +74,33 @@ def test_the_payload_carries_the_board_and_what_was_derived_from_it(seed: Board)
 def test_entities_are_listed_apart_from_the_steps(seed: Board):
     payload = serialize.review_payload(seed)
     assert len(payload["nodes"]) == 6
-    assert len(payload["entities"]) == 2
     assert {e["key"] for e in payload["entities"]} == {
+        "prealert_email",
         "commercial_invoice",
         "certificate_of_analysis",
     }
+
+
+def test_the_reviewer_reads_what_the_process_owner_actually_wrote(seed: Board):
+    # A skeleton of keys and edges supports questions about structure, which
+    # lint and the sweeps already ask. Every semantic question comes from the
+    # prose on the card — the subject lines the owner typed, the operators they
+    # picked — so the config is the payload, not decoration on it.
+    node = {n["key"]: n for n in serialize.review_payload(seed)["nodes"]}
+
+    assert "Pre-Alert Documents" in node["prealert_received"]["config"]["match_condition"]
+    assert node["coas_valid"]["config"]["criteria"][0]["op"] == "each_has_matching"
+    assert "invoice number" in node["report_coa_discrepancy"]["config"]["instructions"]
+
+
+def test_the_reviewer_is_not_shown_fields_nobody_filled(seed: Board):
+    # An unset field is a blank, and lint already reports the blanks that matter.
+    # Carrying dozens of nulls buries the handful of things the owner did write.
+    assert all(
+        value is not None
+        for node in serialize.review_payload(seed)["nodes"]
+        for value in node["config"].values()
+    )
 
 
 def test_an_unwired_outcome_is_stated_rather_than_left_to_be_derived(seed: Board):
@@ -125,14 +149,20 @@ def test_the_payload_is_plain_json(seed: Board):
 
 
 def test_capabilities_come_from_what_the_owner_chose(seed: Board):
+    # Every name here traces to one word a process owner picked from a closed
+    # list — a channel, an effect. Nothing is derived from free text, and
+    # nothing is derived from a guess about the board.
     spec = serialize.spec_payload(seed)
-    assert set(spec.capabilities) == {
-        "email.fetch",
-        "storage.put",
-        "doc.extract",
-        "system.write",
-        "email.send",
-    }
+    assert set(spec.capabilities) == {"email.fetch", "email.send", "system.write"}
+
+
+def test_reading_a_document_is_codegens_decision_not_the_specs(seed: Board):
+    # The generator already has the entity and its field schema. How those
+    # fields come out of whatever actually arrived — parse a body, read a PDF —
+    # is an implementation decision, and implementation decisions are the ones
+    # it is allowed to make. Nothing on a board says whether a thing is a file,
+    # so any capability claiming it would be the compiler guessing.
+    assert not [c for c in serialize.spec_payload(seed).capabilities if "doc" in c]
 
 
 def test_a_capability_list_decides_what_becomes_an_activity(seed: Board):
@@ -225,5 +255,91 @@ def test_editing_the_board_changes_the_checksum(seed: Board):
 
 def test_the_spec_keeps_the_entities_it_reads(seed: Board):
     spec = serialize.spec_payload(seed)
-    assert set(spec.entities) == {"commercial_invoice", "certificate_of_analysis"}
+    assert set(spec.entities) == {
+        "prealert_email",
+        "commercial_invoice",
+        "certificate_of_analysis",
+    }
     assert "line_items" in spec.entities["commercial_invoice"].fields
+
+
+def test_every_channel_a_process_owner_can_pick_yields_a_capability():
+    # A hand-maintained channel→capability table is a drift hazard with no
+    # content: adding a Channel and forgetting the table is a KeyError at
+    # serialisation time, on a board that linted clean. Deriving the name means
+    # a new channel works the day it is added.
+    for channel in get_args(Channel):
+        card = ActionPrimitive(
+            key="tell", config=ActionConfig(name="Tell", effect="notify", channel=channel)
+        )
+        (capability,) = serialize.capabilities_for(card)
+        assert capability.startswith(f"{channel}.")
+
+
+def test_information_arriving_by_any_channel_needs_a_way_to_collect_it():
+    # A queue-driven or portal-driven process is not a special case of an
+    # email-driven one. An Event that named a channel nobody had thought about
+    # used to reach the spec with no capability at all, so the card became
+    # workflow code and quietly never fetched anything.
+    for channel in get_args(Channel):
+        card = EventPrimitive(key="arrived", config=EventConfig(name="Arrived", channel=channel))
+        assert f"{channel}.fetch" in serialize.capabilities_for(card)
+
+
+def test_what_was_settled_about_a_document_reaches_the_generator(seed: Board):
+    # The reviewer asks how to recognise a COA and how batch numbers are
+    # written. Both answers are about the *thing*, not about a step — and the
+    # transposition only ever walked the steps, so both were dropped at the
+    # freeze without a word. The generator writing the extraction schema is
+    # exactly who needed them.
+    settled = (
+        Assertion(
+            anchor=Anchor.parse("primitive:certificate_of_analysis"),
+            kind="terminology",
+            statement="a batch is matched by product code, not by page order",
+        ),
+        Assertion(
+            anchor=Anchor.parse("entity_field:commercial_invoice.invoice_no"),
+            kind="constraint",
+            constraint_json={"pattern": r"^\d{7}$"},
+            statement="the invoice number is seven digits after the prefix",
+        ),
+    )
+    spec = serialize.spec_payload(seed, assertions=settled)
+
+    assert "[terminology] a batch is matched by product code, not by page order" in (
+        spec.entity_context["certificate_of_analysis"].local
+    )
+    assert "[constraint] the invoice number is seven digits after the prefix" in (
+        spec.entity_context["commercial_invoice"].local
+    )
+
+
+def test_a_document_only_carries_what_was_said_about_it(seed: Board):
+    settled = (
+        Assertion(
+            anchor=Anchor.parse("primitive:certificate_of_analysis"),
+            kind="terminology",
+            statement="matched by product code",
+        ),
+    )
+    spec = serialize.spec_payload(seed, assertions=settled)
+    assert "commercial_invoice" not in spec.entity_context
+
+
+def test_a_decision_someone_has_to_be_asked_for_needs_a_way_to_ask_them():
+    # `human.decide` says a person is the one who answers. It does not say how
+    # the question reaches them, and a request nobody is sent is not a request —
+    # an engineer reading the capability list would never learn a mailbox is
+    # involved. The channel the owner picked is the same closed enum a notify
+    # step uses, so the delivery capability derives identically.
+    card = ActionPrimitive(
+        key="manager_decides",
+        config=ActionConfig(
+            name="Manager approves the purchase",
+            effect="decide",
+            channel="email",
+            recipients=[RoleRef(role="cost_centre_manager")],
+        ),
+    )
+    assert set(serialize.capabilities_for(card)) == {"human.decide", "email.send"}

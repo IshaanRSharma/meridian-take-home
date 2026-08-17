@@ -233,3 +233,24 @@ def test_a_check_whose_result_changes_nothing_is_not_yet_surfaced(sound: Board):
         }
     )
     assert d.sequence(board) == []
+
+
+# --- the claims belong to the graph, not to one customer's vocabulary -------
+
+
+def test_no_claim_borrows_the_running_examples_vocabulary(sound: Board, seed: Board):
+    # A sweep is structural or it is a pattern with extra steps. Every noun in a
+    # claim has to come from the board it ran on, so a credentialing process
+    # never reads "the shipment comes back once the problem is fixed".
+    borrowed = ("shipment", "invoice", "batch", "coa", "container")
+    for point in d.decisions(sound):
+        text = f"{point.claim} {point.alternative}".lower()
+        assert not [word for word in borrowed if word in text], point
+
+    # And on the board those words DO belong to, they appear only where the
+    # process owner's own card names put them.
+    for point in d.decisions(seed):
+        for word in borrowed:
+            if word in f"{point.claim} {point.alternative}".lower():
+                named = " ".join(p.config.name or p.key for p in seed.primitives).lower()
+                assert word in named, point
