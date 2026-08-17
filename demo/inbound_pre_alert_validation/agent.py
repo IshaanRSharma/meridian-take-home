@@ -51,6 +51,9 @@ SPEC = json.loads((HERE / "spec.lock.json").read_text())
 # only by fills. It is the workflow's return value.
 OUTPUT = "shipment_summary"
 
+# A ceiling on the routing walk, not a business rule — see `_walk`.
+MAX_PASSES = 12
+
 
 @dataclass
 class Arrival:
@@ -202,7 +205,23 @@ class InboundPreAlert:
         )
         step_key, outcome, walked = "prealert_received", "arrived", []
 
-        while step_key:
+        # The board is a state machine, not a DAG: corrected paperwork routes
+        # back to the check that rejected it. That cycle is only meant to turn
+        # when something NEW has arrived — so a step is re-entered only if the
+        # documents have changed since it last ran. Without that the check
+        # re-runs on the same data, reaches the same outcome, and routes back
+        # forever: an infinite loop inside workflow code, which raises nothing,
+        # logs nothing and returns nothing.
+        #
+        # MAX_PASSES stays as a ceiling underneath it. The guard above is the
+        # rule; this is the seatbelt, and the one failure mode with no
+        # diagnosis at all deserves both. See `assumptions.json`, `max_passes`.
+        seen: set[tuple[str, int]] = set()
+
+        while step_key and len(walked) < MAX_PASSES:
+            if (step_key, len(self.arrivals)) in seen:
+                break
+            seen.add((step_key, len(self.arrivals)))
             walked.append(step_key)
             card = SPEC["primitives"][step_key]
             if card["primitive_type"] == "check":

@@ -21,6 +21,13 @@
       "prompted_by": null,
       "because": "nothing in the spec says what closes a shipment; the SOP ends at reporting the discrepancy",
       "falsified_if": "an eval case expects RESOLVED"
+    },
+    {
+      "id": "reentry_needs_new_documents",
+      "decision": "a step is re-entered only when the number of arrived documents has changed since it last ran",
+      "prompted_by": "edges \u2014 report_invoice_discrepancy routes back to invoice_complete",
+      "because": "the board's cycle exists for corrected paperwork; re-running a check on unchanged data reaches the same outcome and routes back forever, and the supervisor gets the same email six times",
+      "falsified_if": "a legitimate re-check on unchanged inputs is skipped, or a shipment needs two passes over one step with no new document between them"
     }
   ]
 }
