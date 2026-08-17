@@ -25,7 +25,16 @@ from itertools import zip_longest
 from meridian.domain.primitives import Severity
 from meridian.domain.review import Thread
 
-CAP = 6
+# Three, not six. A round is a sitting: the person answering has to hold the
+# whole set in their head to notice that two of the questions are really one, and
+# six is past where that stops happening — they get skimmed, and a skimmed
+# question is answered badly rather than not at all.
+#
+# It costs nothing to be small. Overflow carries to the next round rather than
+# being dropped, and rounds differ in kind anyway, so more of them is the shape
+# the loop already wanted. What does not move is the freeze gate: every question
+# still has to be settled, because that is where authority transfers.
+CAP = 3
 
 _SEVERITY: dict[Severity, int] = {"blocking": 0, "important": 1, "minor": 2}
 

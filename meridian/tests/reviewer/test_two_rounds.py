@@ -38,7 +38,7 @@ from meridian.domain.primitives import RoleRef
 from meridian.repositories import assertions as assertions_repo
 from meridian.repositories import boards
 from meridian.repositories import threads as threads_repo
-from meridian.reviewer import run
+from meridian.reviewer import ranking, run
 from meridian.reviewer.distill import Distillation
 from meridian.reviewer.semantic import Questions
 from meridian.seed import SEED, board_from_file
@@ -184,6 +184,7 @@ def by_question(threads: Sequence[Any], fragment: str) -> Any:
 # --- the conversation -------------------------------------------------------
 
 
+@pytest.mark.usefixtures("uncapped")
 async def test_two_rounds_of_review_close_what_the_first_round_opened(
     connection: asyncpg.Connection,
 ):
@@ -202,7 +203,7 @@ async def test_two_rounds_of_review_close_what_the_first_round_opened(
 
     assert first.number == 1
     asked = {t.question for t in first.asked}
-    assert len(first.asked) <= 6
+    assert len(first.asked) <= ranking.CAP
     # Both sources are represented: blanks a rule proved, and questions only a
     # model could raise. Neither starved the other.
     origins = {t.origin for t in first.asked}
@@ -268,6 +269,12 @@ async def test_two_rounds_of_review_close_what_the_first_round_opened(
     #    and not duplicated.
     still_missing = by_question(settled, "where this gets written")
     assert final[still_missing.id].status == "open"
+
+
+@pytest.fixture
+def uncapped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """This is about the loop closing, not about how much fits in one sitting."""
+    monkeypatch.setattr(ranking, "CAP", 50)
 
 
 async def test_a_question_whose_gap_is_still_on_the_board_does_not_resolve(

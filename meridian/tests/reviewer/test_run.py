@@ -27,7 +27,7 @@ from meridian.repositories import assertions as assertions_repo
 from meridian.repositories import boards
 from meridian.repositories import scenarios as scenarios_repo
 from meridian.repositories import threads as threads_repo
-from meridian.reviewer import run
+from meridian.reviewer import ranking, run
 from meridian.reviewer.distill import Distillation
 from meridian.reviewer.semantic import Questions
 from meridian.seed import SEED, board_from_file
@@ -118,6 +118,17 @@ async def board_id(connection: asyncpg.Connection):
 # --- the gate ---------------------------------------------------------------
 
 
+@pytest.fixture
+def every_blank_in_one_round(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let one round ask everything, for tests that are not about the cap.
+
+    A round is capped so a person is not handed a wall of text, and the overflow
+    carries to the next one. A test naming one particular blank should not also
+    be asserting that it out-ranked five others.
+    """
+    monkeypatch.setattr(ranking, "CAP", 50)
+
+
 async def test_a_drawing_that_is_not_a_process_never_reaches_review(
     connection: asyncpg.Connection,
 ):
@@ -144,6 +155,7 @@ async def test_a_round_writes_what_it_asked(connection: asyncpg.Connection, boar
     assert all(c.round == 1 for c in stored)
 
 
+@pytest.mark.usefixtures("every_blank_in_one_round")
 async def test_a_blank_is_asked_in_the_words_the_rule_wrote(
     connection: asyncpg.Connection, board_id
 ):
@@ -155,6 +167,7 @@ async def test_a_blank_is_asked_in_the_words_the_rule_wrote(
     assert all(c.origin == "lint" for c in result.asked)
 
 
+@pytest.mark.usefixtures("every_blank_in_one_round")
 async def test_a_blank_is_recognised_by_where_it_is(connection: asyncpg.Connection, board_id):
     # Without an identity a blank is re-asked every round for as long as it stays
     # blank — which is forever, since nothing fills it but an answer.
@@ -168,7 +181,7 @@ async def test_no_more_than_six_questions_reach_anyone(connection: asyncpg.Conne
     many = [proposed(question=f"question {n}", anchors=["primitive:coas_valid"]) for n in range(20)]
     result = await run.review(connection, board_id, transport=model_asking(*many))
 
-    assert len(result.asked) <= 6
+    assert len(result.asked) <= ranking.CAP
 
 
 async def test_the_situations_walked_are_kept_for_next_time(
@@ -460,7 +473,7 @@ async def test_a_round_cannot_be_all_follow_ups(connection: asyncpg.Connection, 
     await run.review(connection, board_id, transport=model_asking(proposed()))
     await run.review(connection, board_id, transport=model_asking())
     open_now = await threads_repo.for_board(connection, board_id)
-    assert len(open_now) > 6
+    assert len(open_now) > ranking.CAP  # round one overflowed into round two
 
     for comment in open_now:
         assert comment.id is not None
@@ -472,7 +485,7 @@ async def test_a_round_cannot_be_all_follow_ups(connection: asyncpg.Connection, 
         transport=model_asking(*[proposed(follows_up=str(c.id)) for c in open_now]),
     )
 
-    assert len(again.reopened) + len(again.asked) <= 6
+    assert len(again.reopened) + len(again.asked) <= ranking.CAP
 
 
 async def test_a_question_answered_before_the_canvas_was_edited_still_resolves(
