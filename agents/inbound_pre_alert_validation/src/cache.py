@@ -33,7 +33,14 @@ READER_VERSION = "2"
 fallback, the page renderer, or the threshold between them. Anything that would
 make the same bytes produce different text."""
 
-DEFAULT_ROOT = Path(os.environ.get("MERIDIAN_CACHE", ".cache/pages"))
+DEFAULT_ROOT = Path(
+    os.environ.get("MERIDIAN_CACHE") or Path(__file__).resolve().parent.parent / ".cache" / "pages"
+)
+"""Beside the agent, not beside whoever invoked it.
+
+A relative path would put the cache wherever the process happened to start, so
+the CLI and the worker would each warm their own and neither would ever hit —
+which looks exactly like a cache that does not work."""
 
 
 def read_or(attachment_id: str, produce: object, root: Path = DEFAULT_ROOT) -> Sequence[str] | None:
