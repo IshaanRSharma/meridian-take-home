@@ -30,6 +30,17 @@ from meridian.repositories import boards
 router = APIRouter(prefix="/boards", tags=["board"])
 
 
+@router.get("")
+async def list_boards(connection: Connection) -> list[dict[str, object]]:
+    """Every board, newest first, with enough to pick one.
+
+    Not `list[Board]`. Rendering a picker does not need eleven cards and their
+    edges per row, and loading them would read the whole database to draw ten
+    lines of text — so this returns counts instead, computed in SQL.
+    """
+    return await boards.summaries(connection)
+
+
 @router.post("", response_model=Board, status_code=status.HTTP_201_CREATED)
 async def create_board(body: BoardCreate, connection: Connection) -> Board:
     """Start an empty board."""

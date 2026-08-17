@@ -7,10 +7,11 @@ behaviour here is the refusal — a 422 carrying every blank and every open
 question, so a canvas can pin them rather than show a count.
 """
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 
+from meridian import events
 from meridian.api.dependencies import Connection
 from meridian.compiler import freeze as freeze_
 from meridian.domain.frozen import FrozenSpec
@@ -23,22 +24,42 @@ router = APIRouter(tags=["spec"])
 
 
 @router.post("/boards/{board_id}/freeze", response_model=FrozenSpec, status_code=201)
-async def freeze_board(board_id: UUID, connection: Connection) -> FrozenSpec:
+async def freeze_board(board_id: UUID, connection: Connection, response: Response) -> FrozenSpec:
     """Seal the board into what a code generator reads.
 
     Settles first: anything answered since the last round becomes a statement
     here or never does. The whole thing is one transaction, so a spec can never
     exist beside a board that still claims to be in review.
+
+    Emits under `compile` rather than `review`: this is the moment authority
+    stops being a person's and starts being a test suite's, and a timeline that
+    filed it beside the questions would bury the single most consequential row
+    in the system among them.
     """
-    await run.settle(connection, board_id)
-    sealed = freeze_.freeze(
-        await boards.get(connection, board_id),
-        await assertions_repo.for_board(connection, board_id),
-        await threads_repo.for_board(connection, board_id),
-        previous=await specs.latest(connection, board_id),
-    )
-    await specs.save(connection, sealed)
-    await boards.mark_submitted(connection, board_id)
+    cycle_id = uuid4()
+    response.headers["X-Cycle-Id"] = str(cycle_id)
+
+    async with events.during(
+        connection, cycle_id=cycle_id, phase="compile", kind="freeze"
+    ) as detail:
+        settled = await run.settle(connection, board_id)
+        sealed = freeze_.freeze(
+            await boards.get(connection, board_id),
+            await assertions_repo.for_board(connection, board_id),
+            await threads_repo.for_board(connection, board_id),
+            previous=await specs.latest(connection, board_id),
+        )
+        await specs.save(connection, sealed)
+        await boards.mark_submitted(connection, board_id)
+        detail.update(
+            board_id=str(board_id),
+            version=sealed.version,
+            checksum=sealed.checksum,
+            slug=sealed.slug,
+            primitives=len(sealed.primitives),
+            entities=len(sealed.entities),
+            settled_now=len(settled),
+        )
     return sealed
 
 

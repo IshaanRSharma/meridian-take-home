@@ -1,0 +1,129 @@
+@import '@fontsource-variable/inter';
+@import 'tailwindcss';
+@import '@xyflow/react/dist/style.css';
+
+/* One palette, defined once, referenced everywhere.
+
+   Deep near-black ground with a slightly lifted surface, thin borders instead
+   of shadows, and exactly one accent. Severity is the only place colour is
+   allowed to carry meaning, because a palette that colours everything cannot
+   make anything stand out — and the whole product is a gap detector. */
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
+
+  --color-ground: #0a0a0a;
+  --color-surface: #101011;
+  --color-raised: #161617;
+  --color-line: #232326;
+  --color-line-strong: #34343a;
+
+  --color-ink: #f4f4f5;
+  --color-ink-dim: #a1a1aa;
+  --color-ink-faint: #6b6b75;
+
+  /* Muted electric blue. One accent, used for the primary action and the
+     current selection, and nowhere else. */
+  --color-accent: #4d7cfe;
+  --color-accent-dim: #2f4ea8;
+  --color-accent-wash: #4d7cfe14;
+
+  /* Severity, and these are the three the lint panel and the threads share.
+     `blocking` is the only red in the product. */
+  --color-blocking: #e5484d;
+  --color-important: #d9a441;
+  --color-minor: #6b6b75;
+  --color-ok: #3dd68c;
+
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'cv05' 1, 'ss03' 1;
+}
+
+/* Tight tracking on headings is most of what separates a technical product
+   from a marketing page. */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.017em;
+}
+
+::selection {
+  background: var(--color-accent-dim);
+  color: #fff;
+}
+
+/* Scrollbars: present, but not furniture. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* React Flow renders its own chrome; this makes it ours. */
+.react-flow {
+  --xy-background-color: var(--color-ground);
+  --xy-edge-stroke-default: #52525b;
+  --xy-edge-stroke-selected-default: var(--color-accent);
+  --xy-connectionline-stroke-default: var(--color-accent);
+}
+.react-flow__handle {
+  width: 7px;
+  height: 7px;
+  background: var(--color-line-strong);
+  border: 1px solid var(--color-ground);
+}
+.react-flow__handle:hover {
+  background: var(--color-accent);
+}
+.react-flow__node {
+  cursor: default;
+}
+.react-flow__attribution {
+  display: none;
+}
+.react-flow__controls-button {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-line);
+  fill: var(--color-ink-dim);
+}
+.react-flow__controls-button:hover {
+  background: var(--color-raised);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.16s ease-out both;
+}

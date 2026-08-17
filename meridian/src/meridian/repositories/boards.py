@@ -50,6 +50,31 @@ async def get(connection: asyncpg.Connection, board_id: UUID) -> Board:
     )
 
 
+async def summaries(connection: asyncpg.Connection) -> list[dict[str, object]]:
+    """Every board, newest first, with enough to draw a row and nothing more.
+
+    The one read that deliberately does not return a ``Board``. A picker needs a
+    name, a status and a size; loading the cards and edges of every board to
+    render a list would read the whole database to show ten lines of text.
+
+    Counted in SQL rather than by loading — the counts are what tell somebody
+    which board is the one they were working on.
+    """
+    rows = await connection.fetch(
+        """
+        select b.id, b.name, b.status, b.review_round, b.created_at,
+               (select count(*) from primitives p where p.board_id = b.id) as cards,
+               (select count(*) from edges e where e.board_id = b.id) as edges,
+               (select count(*) from threads t
+                 where t.board_id = b.id and t.status = 'open') as open_threads,
+               (select max(version) from specs s where s.board_id = b.id) as spec_version
+          from boards b
+         order by b.created_at desc
+        """
+    )
+    return [dict(row) for row in rows]
+
+
 async def save(connection: asyncpg.Connection, board: Board) -> UUID:
     """Write a whole board, replacing whatever was there.
 

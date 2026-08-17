@@ -34,7 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from meridian.api.routes import boards, review, specs
+from meridian.api.routes import boards, observability, review, specs
 from meridian.compiler.freeze import BoardNotReadyError
 from meridian.core.db import close_pool
 from meridian.core.llm import LLMError
@@ -64,6 +64,7 @@ app.add_middleware(
 app.include_router(boards.router)
 app.include_router(review.router)
 app.include_router(specs.router)
+app.include_router(observability.router)
 
 
 @app.get("/health", tags=["health"])
