@@ -26,15 +26,7 @@ import { Sparkles, Trash2, X } from 'lucide-react';
 import { api, type Board, type Finding, type Primitive, type Thread } from '@/lib/api';
 import { Badge, Button, Problem, SeverityBadge, cx } from '@/components/ui';
 import { fieldWord } from '@/lib/words';
-
-/** What the fill stage may draft, per card type. Mirrors `authoring.ALLOWED`;
- *  shown so somebody can see why a field stayed blank. */
-const PICKED_NOT_TYPED: Record<string, string[]> = {
-  event: ['correlation_key', 'captures', 'outcomes'],
-  action: ['inputs', 'produces', 'payload_fields', 'outcomes', 'idempotency_key', 'is_terminal'],
-  check: ['criteria', 'inputs', 'outcomes', 'evidence', 'scope', 'quantifier', 'fills'],
-  entity: ['fields', 'cardinality.per'],
-};
+import Pickers from './Pickers';
 
 export default function CardModal({
   board,
@@ -80,6 +72,12 @@ export default function CardModal({
     },
   });
 
+  const setConfig = useMutation({
+    mutationFn: (patch: Record<string, unknown>) =>
+      api.boards.setCard(board.id, card.key, patch),
+    onSuccess: refresh,
+  });
+
   const remove = useMutation({
     mutationFn: () => api.boards.removeCard(board.id, card.key),
     onSuccess: () => {
@@ -95,7 +93,6 @@ export default function CardModal({
       value !== undefined &&
       !(Array.isArray(value) && value.length === 0),
   );
-  const pickers = PICKED_NOT_TYPED[card.primitive_type] ?? [];
 
   return (
     <div
@@ -280,16 +277,12 @@ export default function CardModal({
             </section>
           )}
 
-          {pickers.length > 0 && (
-            <section className="border-t border-(--color-line) px-5 py-4">
-              <p className="text-[11.5px] leading-relaxed text-(--color-ink-faint)">
-                Some of this card points at other things on the board — which cards it reads,
-                which fields it compares, what its outcomes are called. Those are picked from a
-                list rather than read out of a sentence, because a plausible wrong answer there
-                would look exactly like a right one.
-              </p>
-            </section>
-          )}
+          <Pickers
+            board={board}
+            card={card}
+            busy={setConfig.isPending}
+            onChange={(patch) => setConfig.mutate(patch)}
+          />
         </div>
 
         <footer className="flex shrink-0 items-center justify-between border-t border-(--color-line) px-5 py-3">
