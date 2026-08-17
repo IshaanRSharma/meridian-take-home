@@ -157,7 +157,9 @@ async def test_a_sentence_becomes_fields() -> None:
 async def test_a_person_is_never_stored_as_a_recipient() -> None:
     # Roles, never identities: the spec is checksummed, so a leaver would
     # otherwise force a new spec version. An `EventRef` is unreachable too.
-    transport = FakeTransport(interpret.ActionDraft(recipient_roles=["ops_manager"]))
+    transport = FakeTransport(
+        interpret.ActionDraft(name="Tell them", recipient_roles=["ops_manager"])
+    )
 
     patch = await interpret.fields(action(), "the ops manager hears about it", transport=transport)
 
@@ -166,7 +168,7 @@ async def test_a_person_is_never_stored_as_a_recipient() -> None:
 
 async def test_the_owners_words_are_kept_exactly() -> None:
     said = "Nursys for most states, but California and Texas have their own portals."
-    transport = FakeTransport(interpret.ActionDraft(effect="lookup"))
+    transport = FakeTransport(interpret.ActionDraft(name="Look it up", effect="lookup"))
 
     patch = await interpret.fields(action(), said, transport=transport)
 
@@ -176,7 +178,7 @@ async def test_the_owners_words_are_kept_exactly() -> None:
 
 
 async def test_describing_a_card_twice_keeps_both_sentences() -> None:
-    transport = FakeTransport(interpret.ActionDraft())
+    transport = FakeTransport(interpret.ActionDraft(name="Tell them"))
     card = action(instructions="We email the supervisor.")
 
     patch = await interpret.fields(card, "It escalates after two days.", transport=transport)
@@ -199,7 +201,11 @@ async def test_a_value_the_model_got_wrong_drops_and_the_rest_survives() -> None
     # three — and a dropped field is blank, which is already a lint finding.
     transport = FakeTransport(
         interpret.ActionDraft(
-            effect="notify", channel="email", timing_kind="sla", deadline="two days"
+            name="Tell them",
+            effect="notify",
+            channel="email",
+            timing_kind="sla",
+            deadline="two days",
         )
     )
 
@@ -211,11 +217,36 @@ async def test_a_value_the_model_got_wrong_drops_and_the_rest_survives() -> None
 
 
 async def test_a_patch_that_is_wrong_all_through_still_keeps_the_words() -> None:
-    transport = FakeTransport(interpret.ActionDraft(timing_kind="sla", deadline="whenever"))
+    # A name always survives, because a name is the one field that is required
+    # rather than optional — a card without one is a box somebody has to go back
+    # and title, and any description at all implies a label.
+    transport = FakeTransport(
+        interpret.ActionDraft(name="Tell them", timing_kind="sla", deadline="whenever")
+    )
 
     patch = await interpret.fields(action(), "sometime soon", transport=transport)
 
-    assert patch == {"instructions": "sometime soon"}
+    assert patch == {"name": "Tell them", "instructions": "sometime soon"}
+
+
+async def test_a_role_is_spelled_one_way() -> None:
+    # A role is free text to the owner and a *key* to the bindings file. Let
+    # "receiving supervisor" and "receiving_supervisor" both through and one
+    # board names a role perfectly well while `bind check` reports it unbound.
+    transport = FakeTransport(
+        interpret.ActionDraft(
+            name="Tell them",
+            performed_by="Receiving Supervisor",
+            recipient_roles=["Ops Manager"],
+        )
+    )
+
+    patch = await interpret.fields(
+        action(), "the receiving supervisor decides", transport=transport
+    )
+
+    assert patch["performed_by"] == {"kind": "role", "role": "receiving_supervisor"}
+    assert patch["recipients"] == [{"kind": "role", "role": "ops_manager"}]
 
 
 # --- what it refuses to overwrite --------------------------------------------
@@ -224,7 +255,7 @@ async def test_a_patch_that_is_wrong_all_through_still_keeps_the_words() -> None
 async def test_a_field_that_is_already_set_is_left_alone() -> None:
     # Overwriting what somebody typed, or picked from a dropdown, is the exact
     # moment an accelerator becomes an authority.
-    transport = FakeTransport(interpret.ActionDraft(channel="sms"))
+    transport = FakeTransport(interpret.ActionDraft(name="Tell them", channel="sms"))
     card = action(effect="notify", channel="email")
 
     patch = await interpret.fields(card, "text them instead", transport=transport)
@@ -233,7 +264,7 @@ async def test_a_field_that_is_already_set_is_left_alone() -> None:
 
 
 async def test_overwrite_replaces_it_when_that_is_what_they_meant() -> None:
-    transport = FakeTransport(interpret.ActionDraft(channel="sms"))
+    transport = FakeTransport(interpret.ActionDraft(name="Tell them", channel="sms"))
     card = action(effect="notify", channel="email")
 
     patch = await interpret.fields(card, "no, text them", overwrite=True, transport=transport)
@@ -248,7 +279,7 @@ async def test_the_model_is_shown_no_key_it_could_return() -> None:
     # `distill` hands the model a list of valid anchors precisely so it stops
     # guessing keys. Here the opposite is wanted: a model that has never seen a
     # key cannot return one, which makes the guarantee structural.
-    transport = FakeTransport(interpret.CheckDraft())
+    transport = FakeTransport(interpret.CheckDraft(name="Is it ok"))
 
     await interpret.fields(check(), "every line needs a code", transport=transport)
 
@@ -260,7 +291,7 @@ async def test_the_model_is_shown_no_key_it_could_return() -> None:
 async def test_the_model_is_shown_what_is_already_answered() -> None:
     # So it can leave those alone rather than proposing them again and having
     # them dropped, which would waste the call and read as if it had ignored.
-    transport = FakeTransport(interpret.EventDraft())
+    transport = FakeTransport(interpret.EventDraft(name="It arrives"))
 
     await interpret.fields(event(channel="email"), "it arrives by email", transport=transport)
 

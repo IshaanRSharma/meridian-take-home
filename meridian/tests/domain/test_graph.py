@@ -458,6 +458,65 @@ def test_the_trace_names_the_outcome_taken_on_each_visit_to_the_same_check(resub
     ]
 
 
+def test_the_trace_names_the_edge_each_step_left_by(resubmission: Board):
+    # A pair of steps does not identify the transition between them, so a route
+    # reconstructed after the fact is a guess. The walk knows, so it records it.
+    run = resubmission.dry_run({"form_complete": ["incomplete", "complete"]})
+    assert [(s.key, s.via) for s in run.trace] == [
+        ("claim_arrived", "r1"),
+        ("form_complete", "r3"),
+        ("request_more_info", "r4"),
+        ("form_complete", "r2"),
+        # The last step left by nothing, which is what makes it the last step.
+        ("claim_accepted", None),
+    ]
+
+
+def test_two_edges_between_one_pair_of_steps_are_told_apart(resubmission: Board):
+    # The case that made re-derivation wrong: one check, two ways of coming out,
+    # both routed to the same next step. The pair of steps is identical either
+    # way, so only the edge the walk recorded tells them apart — and whether
+    # those two deserve the same handling is what a reviewer is there to ask.
+    board = resubmission.model_copy(
+        update={
+            "primitives": tuple(
+                card.model_copy(
+                    update={
+                        "config": card.config.model_copy(
+                            update={
+                                "outcomes": (
+                                    Outcome(name="complete"),
+                                    Outcome(name="incomplete"),
+                                    Outcome(name="illegible"),
+                                )
+                            }
+                        )
+                    }
+                )
+                if card.key == "form_complete"
+                else card
+                for card in resubmission.primitives
+            ),
+            "edges": (
+                *resubmission.edges,
+                Edge(
+                    key="r5",
+                    from_key="form_complete",
+                    to_key="request_more_info",
+                    on_outcomes=["illegible"],
+                ),
+            ),
+        }
+    )
+
+    incomplete = board.dry_run({"form_complete": ["incomplete", "complete"]})
+    illegible = board.dry_run({"form_complete": ["illegible", "complete"]})
+
+    assert [s.key for s in incomplete.trace] == [s.key for s in illegible.trace]
+    assert [s.via for s in incomplete.trace] == ["r1", "r3", "r4", "r2", None]
+    assert [s.via for s in illegible.trace] == ["r1", "r5", "r4", "r2", None]
+
+
 def test_a_claim_that_is_never_completed_is_still_reported_as_a_loop(resubmission: Board):
     # The board is identical; only the scenario differs. Per-visit answers must
     # not turn every cycle into a terminal.

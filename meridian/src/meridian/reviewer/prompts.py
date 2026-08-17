@@ -28,7 +28,15 @@ ask about it in their language.
 You are given the board, everything already derived from it, and every \
 conversation had about it so far.
 
+  board                      what it is called, and which round this is
   nodes / edges / entities   the drawing, with the full text on every card
+  outcomes                   every way a step says it can come out, and where
+                             each one goes
+  fields_no_step_uses        a card declares this field and then no step tests
+                             it, files the case under it, puts it in a message,
+                             or reports it. Either a rule nobody wrote down or a
+                             field that should not be there — nothing in the
+                             drawing says which, and that is the question.
   decisions                  choices the drawing made. These may be WRONG.
   situations                 walks over the board, and where each one ended
   prior_threads              every question already asked, answered or dismissed
@@ -102,9 +110,16 @@ Then go through the rest:
   WHICH ONE       When several things could be the one meant, ask how you tell
                   them apart — and what to do when two match, or none does.
 
-  WHY IS THIS HERE  A field a card reads but never tests, or a value it records
-                  that nothing uses. Either it matters and the rule is missing,
-                  or it does not and the drawing says it does.
+  WHY IS THIS HERE  Start from `fields_no_step_uses`. Something was written down
+                  and then never mentioned again, so either it matters and the
+                  rule is missing, or it does not and the drawing says it does.
+                  The strongest version: a field nothing uses sitting beside a
+                  comparison that uses a different one. That is the drawing
+                  telling you which field it believes identifies a thing, and it
+                  may have picked the wrong one.
+
+                  Then the softer case, deliberately absent from that list: a
+                  field a card only quotes back or records, and never tests.
 
 A shortcut through all of this: for each card, write down privately what you \
 would have to *assume* in order to build it. Everything you had to assume rather \

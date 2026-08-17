@@ -82,10 +82,11 @@ def review_payload(
             }
             for entity in board.entities()
         ],
-        # Every field the board declares that no step ever looks at. Each is
+        # Every field the board declares that no step refers to at all. Each is
         # either a rule nobody wrote down or a field that should not be there,
-        # and a reviewer cannot ask about either without being told which.
-        "never_read": _never_read(board),
+        # and nothing here can tell which — which is exactly what makes it a
+        # question rather than a finding.
+        "fields_no_step_uses": _fields_no_step_uses(board),
         # Stated rather than left to be derived: an outcome leading nowhere is
         # the most common real gap, and a model should not have to find it by
         # comparing two lists.
@@ -139,8 +140,17 @@ def review_payload(
     return payload
 
 
-def _never_read(board: Board) -> list[str]:
-    """Fields the board declares and no step references."""
+def _fields_no_step_uses(board: Board) -> list[str]:
+    """Fields the board declares and no step refers to, in any of the four ways.
+
+    "Uses" is deliberately the union of every reference a step can make — what it
+    tests, what it files the case under, what it puts in a message, what it
+    reports as proof — because the question this block asks is *did anyone think
+    about this field at all*. Narrowing it to what a step **tests** looks
+    tempting and is wrong: an invoice number appears as evidence on both
+    reporting steps and in no criterion, so a narrower rule would ask why nothing
+    validates an identifier that was only ever meant to be quoted.
+    """
     referenced = {
         f"{ref.entity}.{ref.path}"
         for card in board.nodes()

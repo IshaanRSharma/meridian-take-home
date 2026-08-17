@@ -78,7 +78,7 @@ def _walking(board: Board, probed: dict[str, tuple[Scenario, DryRunResult]]) -> 
             # only way the question can be re-run later to show it was answered.
             "key": key,
             "result": result.result,
-            "path": dryrun.path(board, steps),
+            "path": dryrun.path(board, result.trace),
             "along_the_way": dryrun.data_flow(board, steps),
             "never_reached": list(result.unreached),
             "why_it_stopped": next(

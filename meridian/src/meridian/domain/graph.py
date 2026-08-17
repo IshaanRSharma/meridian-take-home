@@ -215,11 +215,23 @@ class BoardFinding(DomainModel):
 
 
 class TraceStep(DomainModel):
-    """One step of a dry run."""
+    """One step of a dry run, and the edge it left by.
+
+    ``via`` is recorded as the walk takes the edge rather than worked out
+    afterwards, because a pair of steps does not identify the transition between
+    them: one edge per outcome means two edges may join the same pair, and
+    anything reconstructing the route from ``(from, to)`` gets whichever was
+    drawn first. That is wrong precisely where a board sends two outcomes to one
+    step — a shape the reviewer exists to ask about — so the walk that knows the
+    answer is the thing that writes it down.
+
+    ``None`` on the last step, which left by nothing.
+    """
 
     seq: int
     key: BoardKey
     outcome: str | None = None
+    via: BoardKey | None = None
     note: str | None = None
 
 
@@ -504,7 +516,7 @@ class Board(DomainModel):
                 result = "undefined_branch"
                 break
 
-            trace.append(TraceStep(seq=seq, key=current, outcome=outcome))
+            trace.append(TraceStep(seq=seq, key=current, outcome=outcome, via=taken.key))
             current = taken.to_key
 
         return DryRunResult(

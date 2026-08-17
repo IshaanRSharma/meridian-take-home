@@ -9,7 +9,7 @@ and how to put it in words they can answer.
 import json
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -109,20 +109,12 @@ async def ask(  # noqa: PLR0913 - a board, what was walked, and three kinds of p
 ) -> Asked:
     """Everything the model wants to ask, kept only where the board agrees."""
     probed: dict[str, tuple[Scenario, DryRunResult]] = {}
-    payload = serialize.review_payload(board, threads, assertions=settled)
-    # The model is not shown the blanks. Every one of them is already being put
-    # to the owner in the words the rule wrote, and they are the most concrete
-    # thing in the payload — left in, the model spends every question restating
-    # them and the questions only it can find never get asked. Measured, not
-    # assumed: with findings present it produced six structural questions and
-    # zero about what the values mean.
-    payload.pop("findings", None)
     answer = await structured(
         Task.REVIEW,
         Questions,
         prompts.SYSTEM,
         prompts.board_for_review(
-            json.dumps(payload, indent=2),
+            json.dumps(shown(board, threads, settled), indent=2),
             dryrun.describe(board, walked),
             "\n".join(anchorable(board)),
         ),
@@ -172,6 +164,28 @@ async def ask(  # noqa: PLR0913 - a board, what was walked, and three kinds of p
         dropped=dropped,
         consulted=Counter(call.name for call in answer.calls),
     )
+
+
+def shown(
+    board: Board, threads: tuple[Thread, ...] = (), settled: tuple[Assertion, ...] = ()
+) -> dict[str, Any]:
+    """The board as the model receives it: everything observable, minus the blanks.
+
+    A named function rather than two lines inside the call, because *what the
+    model is not shown* is a decision and it should be greppable. The blanks are
+    withheld: every one of them is already being put to the owner in the words
+    the rule wrote, and they are the most concrete thing in the payload — left
+    in, the model spends every question restating them and the questions only it
+    can find never get asked. Measured, not assumed: with findings present it
+    produced six structural questions and zero about what the values mean.
+
+    Everything remaining has to be announced in the prompt, and a test holds
+    these two to each other. A block the model is handed and never told about is
+    one it reads as data rather than as part of the job.
+    """
+    payload = serialize.review_payload(board, threads, assertions=settled)
+    payload.pop("findings", None)
+    return payload
 
 
 def anchorable(board: Board) -> tuple[str, ...]:

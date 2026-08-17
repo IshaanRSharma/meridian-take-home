@@ -2,8 +2,8 @@
 
 A round is a transaction over a board, and the request is that transaction —
 threads, situations and settled statements are written together or none of them
-are, because `dependencies.connection` yields inside one and rolls back if the handler
-raises.
+are, because `dependencies.connection` yields inside one and rolls back if the
+handler raises.
 
 Synchronous, which is a deliberate deviation from `Claude.md` §18. It has this
 return a `cycle_id` immediately and the browser follow progress on the `events`
@@ -12,9 +12,10 @@ have no way to learn the outcome — worse than waiting. The function behind thi
 does not change when it lands.
 """
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from meridian.api.dependencies import Connection
 from meridian.api.schemas import MessageCreate, ThreadUpdate
@@ -50,15 +51,25 @@ async def settle_answers(board_id: UUID, connection: Connection) -> list[str]:
 
 @router.get("/boards/{board_id}/threads", response_model=list[Thread])
 async def read_threads(
-    board_id: UUID, connection: Connection, thread_status: str | None = None
+    board_id: UUID,
+    connection: Connection,
+    # Aliased because `status` is already the FastAPI helper imported above, and
+    # the wire contract is `?status=` — a route named after a local import would
+    # be the module's problem leaking into somebody else's URL.
+    wanted: Annotated[str | None, Query(alias="status")] = None,
 ) -> list[Thread]:
     """Every question asked about this board, with its anchors and every turn.
 
     Rejected ones included. A question already dismissed must not be asked
     again, and knowing why it was dismissed is what stops a near-miss re-ask.
+
+    `anchors` is what a canvas draws a pin from, and it arrives with a drawable
+    element first — a card or a line, never the bare board. A comment carrying
+    only `board` would have nowhere to sit, so it is refused before it is
+    stored; the rest are highlighted beside the pin when somebody hovers it.
     """
     found = await threads_repo.for_board(connection, board_id)
-    return [t for t in found if thread_status is None or t.status == thread_status]
+    return [t for t in found if wanted is None or t.status == wanted]
 
 
 @router.post("/threads/{thread_id}/messages", status_code=status.HTTP_204_NO_CONTENT)

@@ -35,7 +35,6 @@ from meridian.repositories import threads as threads_repo
 from meridian.reviewer import run
 from meridian.reviewer.distill import Distillation
 from meridian.reviewer.semantic import Questions
-from meridian.seed import COMPLETE, board_from_file
 
 pytestmark = [
     pytest.mark.db,
@@ -85,11 +84,6 @@ def unset(board: Board, ref: str) -> Board:
 def remove_edge(board: Board, key: str) -> Board:
     """The board with one line rubbed out."""
     return board.model_copy(update={"edges": tuple(e for e in board.edges if e.key != key)})
-
-
-@pytest.fixture
-def complete() -> Board:
-    return board_from_file(COMPLETE)
 
 
 async def asked_about(connection: asyncpg.Connection, board: Board) -> set[str]:

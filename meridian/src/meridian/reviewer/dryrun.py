@@ -18,11 +18,14 @@ from collections.abc import Sequence
 from itertools import pairwise
 
 from meridian.domain.errors import IncompleteError, NotFoundError
-from meridian.domain.graph import Board, DryRunResult
+from meridian.domain.graph import Board, DryRunResult, TraceStep
 from meridian.domain.primitives import FieldRef
 from meridian.domain.review import Evidence, Scenario
 
 Walked = Sequence[tuple[Scenario, DryRunResult]]
+
+_COLUMN = " " * 17
+"""Where a described situation's values start, so a wrapped path lines up."""
 
 
 def walk(board: Board, scenario: Scenario) -> DryRunResult:
@@ -125,14 +128,34 @@ def describe(board: Board, walked: Walked) -> str:
     return "\n\n".join(_described(board, scenario, result) for scenario, result in walked)
 
 
-def path(board: Board, steps: Sequence[str]) -> str:
-    """The walk with its arrows named, so a question can cite one."""
-    if not steps:
+def path(board: Board, trace: Sequence[TraceStep]) -> str:
+    """The walk: each step, how it came out, and the arrow it left by.
+
+    Both halves are load-bearing for a model reading this.
+
+    The arrow is the edge the walk **recorded**, never one worked back out of the
+    pair of steps it joins. Re-deriving it returns whichever edge was drawn
+    first, so a board routing two outcomes to one step described every walk
+    through that pair as the same arrow — including the walk that took the other
+    one.
+
+    The answer sits beside the step that gave it because otherwise two
+    situations differing only in how one check came out render as the same
+    sentence, and that difference is the whole question. On the pre-alert board
+    a missing certificate and a mismatched one lead to the same reporting step,
+    and whether those deserve different handling is exactly what is being asked.
+
+    One line per transition, so a walk that goes round a loop stays readable —
+    the same step appearing twice with two different answers is the point of
+    those walks, and on one line it is lost. The step it started at has no arrow
+    into it, so it shares the first line.
+    """
+    if not trace:
         return "nothing"
-    drawn = steps[0]
-    for before, after in pairwise(steps):
-        drawn += f" {_arrow(board, before, after)} {after}"
-    return drawn
+    hops = [f"{_arrow(board, before.via)} {_step(after)}" for before, after in pairwise(trace)]
+    if not hops:
+        return _step(trace[0])
+    return "\n".join([f"{_step(trace[0])} {hops[0]}", *hops[1:]])
 
 
 def data_flow(board: Board, steps: Sequence[str]) -> list[str]:
@@ -160,10 +183,11 @@ def data_flow(board: Board, steps: Sequence[str]) -> list[str]:
 
 def _described(board: Board, scenario: Scenario, result: DryRunResult) -> str:
     steps = [step.key for step in result.trace]
+    walked = path(board, result.trace).replace("\n", f"\n{_COLUMN}")
     lines = [
         f"{scenario.key}  ({scenario.kind})",
         f"  what happens   {scenario.description}",
-        f"  path           {path(board, steps)}",
+        f"  path           {walked}",
         f"  ended          {result.result}",
         f"  never reached  {', '.join(result.unreached) or 'nothing'}",
     ]
@@ -173,12 +197,24 @@ def _described(board: Board, scenario: Scenario, result: DryRunResult) -> str:
     return "\n".join(lines)
 
 
-def _arrow(board: Board, before: str, after: str) -> str:
-    for edge in board.outgoing(before):
-        if edge.to_key == after:
+def _step(step: TraceStep) -> str:
+    """A step, and how it came out if the situation said.
+
+    Only a Check is ever answered, so an event or an action prints bare rather
+    than being given an answer it never gave.
+    """
+    return step.key if step.outcome is None else f"{step.key} ={step.outcome!r}"
+
+
+def _arrow(board: Board, key: str | None) -> str:
+    """One named arrow, looked up by the key the walk recorded taking."""
+    for edge in board.edges:
+        if edge.key == key:
             on = f" on {'/'.join(edge.on_outcomes)}" if edge.on_outcomes else ""
             relation = f" ({edge.relation})" if edge.relation != "normal" else ""
             return f"──{edge.key}{on}{relation}──▶"
+    # An edge deleted between the walk and the render. Rare, and saying nothing
+    # about which arrow it was beats naming one that is gone.
     return "──▶"
 
 

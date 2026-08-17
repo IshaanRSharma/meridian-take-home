@@ -18,7 +18,7 @@ import pytest
 from meridian.core.config import settings
 from meridian.core.db import close_pool, pool
 from meridian.domain.graph import Board
-from meridian.seed import SEED, board_from_file
+from meridian.seed import COMPLETE, SEED, board_from_file
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -37,6 +37,17 @@ def seed() -> Board:
     and several tests hold it to exactly that list.
     """
     return board_from_file(SEED)
+
+
+@pytest.fixture
+def complete() -> Board:
+    """The same board once a review has finished with it.
+
+    Beside ``seed`` because the pair is what makes the reviewer measurable, and
+    because several structures only exist on this one: the way back after a
+    discrepancy is reported, and two outcomes routed to a single step.
+    """
+    return board_from_file(COMPLETE)
 
 
 @pytest.fixture(autouse=True)

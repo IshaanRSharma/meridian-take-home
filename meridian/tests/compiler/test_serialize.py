@@ -365,7 +365,7 @@ def test_the_reviewer_is_told_which_fields_nothing_ever_reads(seed: Board):
     # be there, and both are worth asking. `certificate_of_analysis.product_code`
     # is the live one: the check matches on batch number, and the SOP's real rule
     # is that association is by product code.
-    unread = set(serialize.review_payload(seed)["never_read"])
+    unread = set(serialize.review_payload(seed)["fields_no_step_uses"])
 
     assert "certificate_of_analysis.product_code" in unread
     assert "prealert_email.sender" in unread

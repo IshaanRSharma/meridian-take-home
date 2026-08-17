@@ -192,6 +192,56 @@ def test_a_path_says_what_each_step_does_with_the_data(seed: Board):
     assert "commercial_invoice.line_items[].batch_no" in described
 
 
+def test_a_path_names_the_arrow_the_walk_actually_took(complete: Board):
+    # `e5` carries 'missing_coa' and `e6` carries 'mismatched_coa', and both run
+    # between the same pair of steps. Working the arrow back out of that pair
+    # returns whichever was drawn first, so every walk through it was described
+    # as `e5 on missing_coa` — including the one that took `e6`.
+    mismatched = enumerated(complete, "coas_valid_mismatched_coa")
+    described = dryrun.describe(complete, [(mismatched, dryrun.walk(complete, mismatched))])
+
+    assert "──e6 on mismatched_coa (exception)──▶" in described
+    assert "e5" not in described
+
+
+def test_two_situations_that_differ_only_in_an_answer_do_not_read_the_same(complete: Board):
+    # The property both halves above exist to uphold, and it is worth pinning
+    # separately because either one delivers it alone: a missing certificate and
+    # a mismatched one are handled by the same step, so a description that cannot
+    # tell them apart shows the model two identical paths and asks what the
+    # difference is. Whether they deserve different handling is the question.
+    walked = [
+        (sc, dryrun.walk(complete, sc))
+        for sc in (
+            enumerated(complete, "coas_valid_missing_coa"),
+            enumerated(complete, "coas_valid_mismatched_coa"),
+        )
+    ]
+    paths = {dryrun.path(complete, result.trace) for _, result in walked}
+
+    assert len(paths) == 2
+
+
+def test_a_path_says_how_each_step_came_out(complete: Board):
+    # The answer sits beside the step that gave it. Without it the two walks
+    # above differ by a single arrow label in the middle of a long line.
+    mismatched = enumerated(complete, "coas_valid_mismatched_coa")
+    drawn = dryrun.path(complete, dryrun.walk(complete, mismatched).trace)
+
+    assert "coas_valid ='mismatched_coa'" in drawn
+    # The same step, reached again round the loop, and answered differently.
+    assert "coas_valid ='pass'" in drawn
+
+
+def test_a_step_the_situation_never_answered_is_not_given_an_answer(seed: Board):
+    # An event is not a check and nothing says how it "came out". Printing an
+    # answer there would invent one.
+    happy = enumerated(seed, "happy_path")
+    drawn = dryrun.path(seed, dryrun.walk(seed, happy).trace)
+
+    assert drawn.startswith("prealert_received ──e1──▶")
+
+
 def test_what_a_step_tests_is_kept_apart_from_what_it_reports(seed: Board):
     # `invoice_complete` tests four identifiers and *reports* the invoice number
     # and the drug description as proof. Rolled together, the model asks why the

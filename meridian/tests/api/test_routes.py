@@ -312,7 +312,7 @@ async def test_a_question_can_be_answered_over_http(client: AsyncClient) -> None
     await client.post(f"/boards/{board_id}/edges", json={"from_key": first, "to_key": ending})
     await client.post(f"/boards/{board_id}/review")
 
-    open_now = (await client.get(f"/boards/{board_id}/threads?thread_status=open")).json()
+    open_now = (await client.get(f"/boards/{board_id}/threads?status=open")).json()
     assert open_now
 
     moved = await client.patch(

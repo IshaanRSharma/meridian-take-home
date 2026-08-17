@@ -29,7 +29,10 @@ import re
 import pytest
 
 import meridian
+from meridian.compiler import serialize
+from meridian.domain.graph import Board
 from meridian.reviewer import prompts as reviewer_prompts
+from meridian.reviewer import semantic
 
 # The pre-alert board's vocabulary, plus the vertical it sits in. Every one of
 # these is a legitimate word for a *board* to use and an illegitimate one for a
@@ -86,6 +89,30 @@ def test_no_prompt_carries_the_demo_customer_s_vocabulary(name: str, text: str) 
     assert not leaked, (
         f"{name} names {leaked} — the board supplies nouns, the prompt supplies shape"
     )
+
+
+def test_every_block_the_model_is_handed_is_announced_in_the_prompt(seed: Board) -> None:
+    # The index at the top of the prompt is not documentation — each row is a
+    # policy. `decisions` says "these may be WRONG", `settled` says "never ask
+    # about any of it again". A block that is handed over and never named is read
+    # as data rather than as part of the job, and that is what happened to
+    # `fields_no_step_uses`: the highest-value thing in the payload arrived as an
+    # unannounced key the model had to notice and interpret unaided.
+    unannounced = [key for key in semantic.shown(seed) if key not in reviewer_prompts.SYSTEM]
+
+    assert not unannounced, (
+        f"the payload carries {unannounced} and the prompt never mentions them — "
+        "add a row to the index saying what to do with each"
+    )
+
+
+def test_the_blanks_are_the_one_thing_withheld(seed: Board) -> None:
+    # The other half of the same property. Withholding is deliberate and
+    # measured, so it has to stay visible: if `findings` ever stops being popped,
+    # the test above starts demanding a prompt row for it and this one says why
+    # there must not be one.
+    assert "findings" in serialize.review_payload(seed)
+    assert "findings" not in semantic.shown(seed)
 
 
 def test_the_board_is_still_what_supplies_the_nouns() -> None:
