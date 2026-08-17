@@ -524,3 +524,28 @@ def test_a_process_with_no_way_in_says_so_once():
     )
     assert fired(rules.steps_are_reachable, board) == set()
     assert "board:events" in fired(rules.something_starts_the_process, board)
+
+
+def test_a_step_cannot_produce_something_the_board_does_not_have(sound: Board):
+    # The mirror of `inputs_exist`, and it matters most for a lookup — the third
+    # direction data moves. The whole reason a lookup is one card rather than
+    # three is that its answer becomes a thing other steps can read; naming an
+    # entity nobody drew makes that answer unaddressable, so no Check could list
+    # it in `inputs` and a generator writes a live API result into nowhere.
+    looking_up = ActionPrimitive(
+        key="verify_licence",
+        config=ActionConfig(
+            name="Verify the licence",
+            effect="lookup",
+            system="state medical board",
+            produces="board_record",
+            on_failure="wait",
+        ),
+    )
+    board = sound.model_copy(update={"primitives": (*sound.primitives, looking_up)})
+
+    assert "primitive:verify_licence:produces" in fired(rules.produced_entities_exist, board)
+
+
+def test_a_step_producing_something_that_is_there_is_fine(sound: Board):
+    assert fired(rules.produced_entities_exist, sound) == set()

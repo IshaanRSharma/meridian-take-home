@@ -342,7 +342,11 @@ def test_every_effect_reports_what_that_effect_needs():
     demanded: dict[p.Effect, set[str]] = {
         "notify": {"recipients", "channel", "payload_fields", "idempotency_key"},
         "record": {"system", "idempotency_key"},
-        "lookup": {"system", "produces", "on_failure", "timeout"},
+        # `payload_fields` is on both effects that send something outward: a
+        # notify puts them in the message, a lookup puts them in the query.
+        # Without them a lookup gives a generator a capability to call and
+        # nothing to call it with.
+        "lookup": {"system", "produces", "payload_fields", "on_failure", "timeout"},
         "decide": {"performed_by", "recipients", "channel", "outcomes", "timing"},
         "noop": set(),
     }

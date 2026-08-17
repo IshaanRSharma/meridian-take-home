@@ -164,6 +164,34 @@ def inputs_exist(board: Board) -> list[BoardFinding]:
     ]
 
 
+def produced_entities_exist(board: Board) -> list[BoardFinding]:
+    """A step claiming to produce something the board does not have.
+
+    The mirror of `inputs_exist`, and it matters most for a lookup. A lookup is
+    the third direction data moves — in from a system, mid-process — and the
+    whole reason it is one card rather than three is that its answer becomes a
+    thing other steps can read. `produces` naming an entity nobody drew makes
+    that answer unaddressable: no Check can list it in `inputs`, no `FieldRef`
+    can reach into it, and a generator writes the result of a live API call into
+    nowhere.
+
+    Blocking, because a reference that does not resolve is not a missing value —
+    it is a drawing that does not work as a process.
+    """
+    return [
+        BoardFinding(
+            anchor=f"primitive:{card.key}",
+            field="produces",
+            reason=f"This produces {key!r}, which is not on the board.",
+            kind="structure",
+            severity="blocking",
+        )
+        for card in board.nodes()
+        for key in card.produces()
+        if not board.has(key)
+    ]
+
+
 def field_references_resolve(board: Board) -> list[BoardFinding]:
     """Cards reading a field the entity they name does not carry."""
     return [
@@ -452,6 +480,7 @@ RULES: tuple[Rule, ...] = (
     entities_are_read,
     something_starts_the_process,
     inputs_exist,
+    produced_entities_exist,
     references_are_declared,
     inputs_arrive_before_they_are_read,
     field_references_resolve,
