@@ -767,6 +767,55 @@ def eval_case(
     )
 
 
+@app.command("run")
+def run_agent(  # noqa: PLR0913, PLR0917 - one board, and the four knobs the steps take
+    board_id: BoardId,
+    case: Annotated[list[str] | None, typer.Option(help="run only these keys")] = None,
+    cases_from: Annotated[
+        Path | None, typer.Option("--from", help="load the suite from here first")
+    ] = None,
+    author: Annotated[str, typer.Option("--as", help="codegen · repair · human")] = "codegen",
+    seconds: Annotated[
+        float, typer.Option("--timeout", help="give up on a case after this long")
+    ] = sweep_.CASE_TIMEOUT_SECONDS,
+    agents: AgentsRoot = "agents",
+) -> None:
+    """Take the agent on disk and run it: register, sweep, and print the failure.
+
+    Three commands that have no decision between them. After a skill has written
+    or patched an agent, `build register`, `eval sweep` and `bundle` are always
+    run in that order and the middle one is meaningless without the first — so
+    typing them separately is ceremony, and getting the order wrong is a
+    confusing error rather than a wrong answer.
+
+    Deliberately not a fourth step. `repair record` stays its own command
+    because it takes a judgement — which failure this patch was aimed at, and
+    whether it is a defect or a spec gap — and a command that guessed either
+    would be recording a decision nobody made.
+
+    Every sub-step keeps its own command. This is a shortcut for the loop, not
+    a replacement for being able to run one part of it.
+
+    **Commit the agent first.** `source_ref` is `agents/<slug>@<sha>`, so a build
+    is a commit — registering an uncommitted directory would name a commit that
+    does not contain it. The refusal says so, and this does not commit on
+    anybody's behalf.
+    """
+    if cases_from is not None:
+        eval_load(board_id, cases_from)
+
+    build_register(board_id, from_git=True, author=author, agents=agents)
+    typer.echo("")
+    eval_sweep(board_id, None, None, case, seconds, agents)
+    typer.echo("")
+    # Only when something failed. A clean sweep printing a failure block would
+    # be printing the absence of one, and the block is long.
+    try:
+        bundle(board_id, None, None, Path(agents))
+    except (NotFoundError, IncompleteError):
+        typer.echo("  nothing to repair")
+
+
 @app.command("bundle")
 def bundle(
     board_id: BoardId,
