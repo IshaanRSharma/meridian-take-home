@@ -1,19 +1,11 @@
-/** The written procedure, attached to the board so the reviewer can read it.
+/** Documents attached to the board for the reviewer to read.
  *
- * It sits above the questions because that is what it changes. Every other
- * question the reviewer asks notices a silence and guesses the silence matters;
- * with a procedure attached it can ask the one class that is **checkable** —
- * *your procedure says a description of the problem goes in the report, and
- * this step sends two identifiers.* That is a difference between two things
- * that both exist, rather than an absence somebody has to judge.
+ * Sits above the questions because it is what changes them: with a procedure
+ * attached the reviewer can ask where the drawing and the document disagree,
+ * rather than only where the drawing is silent.
  *
- * **The extracted text is shown, not just the filename.** A scan that
- * transcribed badly is invisible otherwise, and it looks exactly like the
- * reviewer ignoring a procedure it was never able to read.
- *
- * Upload is synchronous and can take a few seconds, because a PDF goes to a
- * model to be read. The spinner is honest rather than optimistic: knowing the
- * text came out is the thing that tells you the upload worked.
+ * Shows what was read, not just the filename — a scan that transcribed badly
+ * is otherwise invisible and looks like the reviewer ignoring it.
  */
 import { useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
