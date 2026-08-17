@@ -246,11 +246,30 @@ the signal or the input.
 
 ## 7. Verify, in this order
 
-A patch is held to the same gate as the code it edits: `make check` runs ruff
-with 24 rule families and `mypy --strict`. The ones a patch trips most often are
-a missing annotation on a helper you added, a missing docstring, a stray
-`print()` left in from debugging, and a naive `datetime` — that last one is the
-determinism rule, not style, and `ctx.clock` exists so you never need one.
+### A patch is held to the same gate as the code it edits
+
+Python 3.12. `make check` runs ruff with 24 rule families and `mypy --strict`,
+and it is not advisory — a patch that does not pass has not been made. The ones
+a repair trips, in order of how often:
+
+```
+mypy --strict   the helper you added needs annotations too, parameters and
+                return, and no bare `dict` or `list`
+D  pydocstyle   a new function needs a docstring, Google convention, saying WHY
+T20             the `print()` you added to see what was happening. Workflow code
+                uses `workflow.logger`, which is replay-aware
+DTZ             no naive datetimes — the determinism rule, not style. `ctx.clock`
+ERA             the old line you commented out instead of deleting. Git remembers
+ARG             an argument you stopped using
+```
+
+And the one no linter checks: **a comment explains why the fix works, not what
+the line does.** `# strip whitespace` above a `.strip()` is noise. `# suppliers
+pad batch numbers to a fixed width; the invoice does not` is the reason, and it
+is what stops somebody reverting your patch next month.
+
+Keep the diff small enough to read in one pass. A large diff hides the change
+that mattered and makes the next bundle harder to work from.
 
 ```bash
 make check                                 # ruff · mypy --strict · tests
@@ -290,7 +309,53 @@ The same applies to a patch the gate rejects twice for regressions. Two
 different attempts breaking two different sets of previously-passing cases means
 the thing you are changing is load-bearing in a way the failure did not reveal.
 
-## 10. Report
+## 10. Leave a record the next attempt can read
+
+**Your report in chat disappears. Write the attempt down.**
+
+A `/goal` loop runs you repeatedly, often across sessions, and the single most
+wasteful thing it can do is retry an approach that was already rejected. The
+bundle's `REPAIR HISTORY` section is built from these files.
+
+Append one line per attempt to a file named by the **failure signature** — the
+same string the bundle prints, which is stable and is exactly what "do not retry
+this" keys on:
+
+```
+agents/<slug>/repairs/coas_valid__output_diff__coa_count_mismatch.jsonl
+```
+
+One JSON object per line, appended, never rewritten:
+
+```json
+{"attempt": 1,
+ "signature": "coas_valid :: output_diff :: coa_count_mismatch",
+ "classification": "implementation_defect",
+ "tried": "canonicalised both sides at the call site before each_has_matching",
+ "files": ["agents/inbound_pre_alert/checks/coas_valid.py"],
+ "outcome": "accepted",
+ "before": "19/21", "after": "21/21", "regressed": [],
+ "falsified": "batch_values_compare_exactly"}
+```
+
+`outcome` is one of:
+
+```
+accepted    the target passed and nothing regressed
+regressed   the target passed and something else broke — say WHICH columns
+stopped     spec gap, skeleton defect, or three attempts with no progress
+```
+
+**A `stopped` line is the most valuable one in the file**, because it is the one
+that keeps the next session from spending its budget re-deriving what you
+already found. Say what you concluded and what would change the answer.
+
+`mvp repair record` reads this directory into the `repairs` table; git carries it
+either way, since `agents/` is committed. Write the file even if you fixed
+nothing — an attempt that failed is history, and history is what stops the loop
+going in circles.
+
+## 11. Report
 
 - what changed, in one sentence, and **why that was the cause**
 - **which assumption this falsified**, if any — and update `assumptions.json`,
