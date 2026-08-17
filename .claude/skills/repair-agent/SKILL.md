@@ -41,7 +41,22 @@ REPAIR HISTORY FOR THIS SIGNATURE
   none
 ```
 
-**Read `DECLINED` before anything else.** Half of "found nothing" failures are a
+**Read `assumptions.json` first.** The generator recorded every decision the
+spec did not determine, each with a `falsified_if` — a prediction about what
+failure would disprove it. Scan those against the failure in front of you before
+reading a line of code:
+
+```
+falsified_if: "a real pre-alert is missed"        ← and the sweep found 0 runs
+falsified_if: "a document is declined that
+               should have been read"             ← and DECLINED names the invoice
+```
+
+A match there is the answer, and it arrives in seconds rather than after reading
+a diff. An assumption whose `prompted_by` is `null` had no spec anchor at all,
+which makes it both the likeliest cause and a candidate spec gap.
+
+**Then read `DECLINED`.** Half of "found nothing" failures are a
 document that was skipped, not a document that was absent, and those have
 completely different fixes.
 
@@ -175,6 +190,9 @@ cause upstream.
 ## 8. Report
 
 - what changed, in one sentence, and **why that was the cause**
+- **which assumption this falsified**, if any — and update `assumptions.json`,
+  because a prediction that has been disproved and left in place will mislead
+  the next session
 - which cases it fixes, and which it does not
 - the classification, and for a spec gap or skeleton defect: the decision
   somebody else has to make, and the two or more readings it lies between

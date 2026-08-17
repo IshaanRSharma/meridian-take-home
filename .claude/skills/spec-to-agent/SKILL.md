@@ -246,10 +246,44 @@ by an Event, produced by an Action, or filled by a Check.
 **Two readings that give different numbers**, where the eval set cannot
 distinguish them.
 
+### Typed fields are exact. Prose fields describe recognition.
+
+The single most useful distinction in this file, and the corpus proves it.
+
+```
+Criterion(op="each_has_matching", …)   a TYPED OPERATOR with defined semantics.
+                                       Compare exactly. Trimming and lowercasing
+                                       here invents a rule nobody stated.
+
+match_condition: 'subject contains     PROSE. A process owner writing this is
+  "Pre-Alert Documents"'               telling you how to RECOGNISE the email,
+                                       not specifying a byte comparison.
+```
+
+Reading prose literally treats natural language as code. In the running corpus
+that exact phrase appears in **zero** of fourteen real emails — every one is
+plural, and the case and separator vary — so a literal implementation matches
+nothing and the agent never fires.
+
+**Absorb orthographic variation. Stop at semantic variation.**
+
+```
+same words, written differently        → absorb it, and record the assumption
+  case · separator · singular/plural · doubled whitespace
+
+different words                        → STOP and ask
+  "Shipment Documents"      a different process, or this one?
+  "Pre-Alert CANCELLED"     contains the phrase and means the opposite
+```
+
+The test is §4's: **is there anything but a person that can settle it?** Whether
+`pre-Alerts` is the same phrase — obviously yes. Whether `Shipment Documents` is
+the same process — only the process owner knows.
+
 ### Decide these yourself — they are implementation
 
-Whitespace and case when matching. Paging a multi-page document. Which library
-parses what. How to structure a helper. Retry intervals. Log wording.
+Paging a multi-page document. Which library parses what. How to structure a
+helper. Retry intervals. Log wording.
 
 ---
 
@@ -273,9 +307,56 @@ agents/<slug>/
   spec.lock.json    verbatim, byte for byte. Conformance verifies the checksum.
   build.json        file_map: {primitive_key: path}   ← the repair loop reads this
                     plus model · prompt_version · temperature · spec_checksum
+  assumptions.json  every decision the spec did not determine       ← see below
   <an entry point>  runnable, and named in build.json. `mvp eval sweep` runs it.
   one file per primitive, and its path in file_map
 ```
+
+### `assumptions.json` — the decisions, with predictions attached
+
+You will make choices the spec does not determine, and today they vanish into
+the code. The repair loop then has to reverse-engineer them from a diff, which
+is slow and often wrong. Write them down instead.
+
+```json
+{
+  "spec_checksum": "a25ceea0…",
+  "assumptions": [
+    {
+      "id": "match_condition_orthographic",
+      "decision": "matched the subject phrase case-insensitively, tolerating
+                   'Alert'/'Alerts' and '-'/' '",
+      "prompted_by": "primitives.prealert_received.match_condition",
+      "because": "the spec quotes a phrase; prose describes recognition, not a
+                  byte comparison",
+      "falsified_if": "a real pre-alert is missed, or something that is not one
+                       matches"
+    },
+    {
+      "id": "confidence_floor",
+      "decision": "0.6",
+      "prompted_by": null,
+      "because": "nothing in the spec sets one",
+      "falsified_if": "a document is declined that should have been read"
+    }
+  ]
+}
+```
+
+Four fields carry the weight:
+
+- **`id`** is stable across builds, so two builds can be diffed and *"what
+  changed between 3 and 4"* has an answer that is not a code diff.
+- **`prompted_by`** points into the spec, or is `null`. **A null is the signal**
+  — an assumption with no spec anchor is the most likely spec gap on the board,
+  and it is worth listing those first in your summary.
+- **`falsified_if`** is the one that pays. It turns each decision into a
+  prediction, so when a case fails the first question is *"which assumption
+  predicted this?"* rather than *"what does this code do?"*
+
+Write one for every choice in §6's list of tunable numbers, every prose field you
+made concrete, and anything you did because the spec was silent rather than
+because it told you to.
 
 **`file_map` is the load-bearing one.** Localisation resolves
 `primitive_key → file` from it, so a failure bundle can name the file to open.
