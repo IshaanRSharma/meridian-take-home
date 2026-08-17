@@ -147,11 +147,41 @@ effect: noop     → no activity at all. A named end state: record the outcome
 `payload_fields` with an iterated path — `line_items[].drug_description` —
 means **every** value, as a list. The message names all of them.
 
-**`idempotency_key` absent on a `notify` or `record` is a real hazard, not a
-default.** The board is cyclic: corrected paperwork arrives, the check re-runs,
-and the same message goes out twice. Build a key from the payload so it changes
-when the content changes — *once per distinct situation*, not once ever. Say in
-your summary that you did, since nobody specified it.
+### Every field on the card drives a behaviour
+
+Read the Action as a set of instructions, not as a payload description. Each
+field answers a question you would otherwise have to invent an answer to:
+
+| field | what it decides |
+|---|---|
+| `effect` + `channel` | which capability, and therefore whether it is an activity |
+| `recipients` | who — `ctx.bindings.role(...)`, resolved at run time |
+| `payload_fields` | what the message says **and when two messages are the same** |
+| `idempotency_key` | when to suppress a repeat. Default below. |
+| `timeout` | the activity's `start_to_close_timeout` |
+| `on_failure` | `fail` → one attempt · `wait` → keep retrying · `skip` → continue without |
+| `is_terminal` | stop after this, rather than routing on |
+| `produces` | the entity a `lookup` result is filed under |
+| `instructions` | prose the other fields could not carry. Read it. |
+
+**Deduplicate on the payload, and do it without being asked.** The board is
+cyclic by construction: corrected paperwork arrives, the check re-runs, and a
+supervisor who has already been told gets told again. Eight passes over a check
+that keeps finding the same two batches missing sent eight identical emails, and
+a supervisor who gets eight identical emails stops reading them.
+
+`payload_fields` already says what the message contains, so it already says when
+two messages are the same one. `runtime.temporal.activities.idempotency_from`
+hashes the resolved payload:
+
+```python
+key = idempotency_from("email.send", payload)     # changes iff the message does
+```
+
+This is not *send once*. It is **once per distinct situation** — one batch
+arriving changes the payload, changes the key, and the new discrepancy goes out.
+Use `idempotency_key` from the card when it is set; derive it when it is not,
+and say in your summary that you did.
 
 ### Check → a pure function, always
 

@@ -41,5 +41,8 @@ agents/
 .claude/worktrees/
 
 /handoffs
+
+# Sweep output. The .gitkeep stays; the rows do not.
+eval/runs/*.csv
 # Toy agents for falsifying the skeleton contract. Scratch, never shipped.
 test_toy_agents/

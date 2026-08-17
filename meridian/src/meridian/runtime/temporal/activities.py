@@ -13,6 +13,9 @@ for a logic reason rather than because a network was slow.
 
 from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -34,6 +37,27 @@ class CapabilityCall:
     capability: str
     args: dict[str, Any] = field(default_factory=dict)
     idempotency_key: str | None = None
+
+
+def idempotency_from(capability: str, payload: Mapping[str, Any]) -> str:
+    """A key that changes exactly when the message does.
+
+    ``payload_fields`` on the card already says what the message contains, so it
+    already says when two messages are the same one. Nothing new has to be
+    specified and nobody has to invent a key format.
+
+    This is *not* "send once". It is **once per distinct situation**, which is
+    what a cyclic board needs: a shipment resumes, the check re-runs, and if the
+    same two batches are still missing the supervisor has already been told. One
+    batch arriving changes the payload, changes the key, and the new discrepancy
+    goes out.
+
+    Sorted and JSON-encoded so two payloads equal in content hash the same
+    however they were built.
+    """
+    body = json.dumps(payload, sort_keys=True, default=str)
+    digest = hashlib.sha256(body.encode()).hexdigest()[:16]
+    return f"{capability}:{digest}"
 
 
 @dataclass

@@ -1,0 +1,2 @@
+# Output rows from an eval sweep, one CSV per build.
+# Written by CsvProvider — the local stand-in for a customer system.

@@ -13,7 +13,11 @@ import pytest
 
 from meridian.runtime.errors import BindingError
 from meridian.runtime.temporal import waits
-from meridian.runtime.temporal.activities import Capabilities, CapabilityCall
+from meridian.runtime.temporal.activities import (
+    Capabilities,
+    CapabilityCall,
+    idempotency_from,
+)
 
 
 class RecordingTools:
@@ -146,3 +150,64 @@ async def test_every_mode_returns_the_same_shape(mode: str):
     )
     assert isinstance(result.ok, bool)
     assert isinstance(result.output, dict)
+
+
+# --- not sending the same thing twice ----------------------------------------
+
+
+def test_the_same_message_hashes_the_same_key():
+    payload = {"invoice_no": "CI-1", "missing": ["UAC25019", "UAC25022"]}
+    assert idempotency_from("email.send", payload) == idempotency_from("email.send", dict(payload))
+
+
+def test_a_changed_message_changes_the_key():
+    # One batch arrives. The discrepancy is different, so it must go out.
+    before = idempotency_from("email.send", {"missing": ["UAC25019", "UAC25022"]})
+    after = idempotency_from("email.send", {"missing": ["UAC25022"]})
+    assert before != after
+
+
+def test_key_order_does_not_change_the_key():
+    a = idempotency_from("email.send", {"invoice_no": "CI-1", "missing": ["X"]})
+    b = idempotency_from("email.send", {"missing": ["X"], "invoice_no": "CI-1"})
+    assert a == b
+
+
+def test_two_capabilities_never_collide():
+    payload = {"shipment": "CAAU4056270"}
+    assert idempotency_from("email.send", payload) != idempotency_from("system.write", payload)
+
+
+async def test_a_cycle_reporting_the_same_thing_sends_once():
+    # THE case. Eight passes over a check that keeps finding the same two
+    # batches missing sent the supervisor eight identical emails, which is the
+    # failure `idempotency_key` exists for and it was not wired.
+    tools = RecordingTools()
+    caps = Capabilities(tools, mode="live")
+    payload = {"invoice_no": "CI-1", "missing": ["UAC25019", "UAC25022"]}
+
+    for _ in range(8):
+        await caps.invoke(
+            CapabilityCall(
+                capability="email.send",
+                args=payload,
+                idempotency_key=idempotency_from("email.send", payload),
+            )
+        )
+    assert len(tools.calls) == 1
+
+
+async def test_a_cycle_that_makes_progress_reports_each_time():
+    # Not "send once" — once per distinct situation.
+    tools = RecordingTools()
+    caps = Capabilities(tools, mode="live")
+    for missing in (["A", "B", "C"], ["B", "C"], ["C"]):
+        payload = {"missing": missing}
+        await caps.invoke(
+            CapabilityCall(
+                capability="email.send",
+                args=payload,
+                idempotency_key=idempotency_from("email.send", payload),
+            )
+        )
+    assert len(tools.calls) == 3
