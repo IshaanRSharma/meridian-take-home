@@ -192,7 +192,7 @@ class BoardFinding(DomainModel):
     """A finding with the element it belongs to.
 
     ``anchor`` uses the same vocabulary as thread anchors — ``primitive:<key>``,
-    ``edge:<key>``, ``board`` — so a lint finding and a review comment can point
+    ``edge:<key>``, ``board`` — so a lint finding and a review thread can point
     at the same element.
 
     ``kind`` says where the fix lives, which is the difference between the two

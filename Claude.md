@@ -451,7 +451,7 @@ create table threads (
 create index on threads (board_id, status);
 
 -- A conversation may span a primitive, an edge and a region at once.
-create table thread_anchors (
+create table comment_anchors (
   thread_id   uuid not null references threads(id) on delete cascade,
   anchor_kind text not null check (anchor_kind in
               ('primitive','edge','group','document_field','board')),
@@ -460,9 +460,9 @@ create table thread_anchors (
   primary key (thread_id, anchor_kind, anchor_key),
   check ((anchor_kind = 'board') = (anchor_key is null))
 );
-create index on thread_anchors (anchor_kind, anchor_key);
+create index on comment_anchors (anchor_kind, anchor_key);
 
-create table thread_messages (
+create table comment_messages (
   id         uuid primary key default gen_random_uuid(),
   thread_id  uuid not null references threads(id) on delete cascade,
   seq        int  not null,
@@ -691,7 +691,7 @@ Views: `v_reliability` (the curve), `v_timeline` (one cycle end to end),
 do $$ declare t text; begin
   foreach t in array array[
     'boards','primitives','edges','documents','reference_docs','scenarios',
-    'threads','thread_anchors','thread_messages','assertions','specs','tools','agent_builds','eval_cases','runs','run_steps','failures',
+    'threads','comment_anchors','comment_messages','assertions','specs','tools','agent_builds','eval_cases','runs','run_steps','failures',
     'repairs','deployments','events']
   loop execute format('alter table public.%I enable row level security', t); end loop;
 end $$;
@@ -785,7 +785,7 @@ many COAs to expect; nothing configures a count.
 | Credentials never touch the spec | spec references a capability, bindings reference an entity, the provider holds the secret. |
 | No CRUD for registry or bindings | the UI reads them and highlights gaps; edits happen in a file under version control. Any screen must make the loop visible, not merely make config editable. |
 | `agent_builds` records model + prompt version | reproducibility is a claim about builds, and the same spec with a different model produces different code. |
-| `agent_builds.file_map` is explicit | localisation otherwise depends on a `[from primitive X]` comment convention that fails silently on rename. |
+| `agent_builds.file_map` is explicit | localisation otherwise depends on a `[from primitive X]` thread convention that fails silently on rename. |
 | `patch_proposals` cut | the PO edits the canvas directly. Losing the AI-proposes-a-patch moment costs a demo beat, not correctness. |
 | Shapes emit matches, not prose | detection is deterministic, phrasing is the model's. If the model authored the claim it could hallucinate a pattern that isn't there. |
 | Shapes are a floor, not a fence | six matchers guarantee certain classes always get asked; the prompt explicitly invites the model to find what the patterns missed. A pattern it keeps rediscovering gets promoted to a matcher. |
@@ -1162,7 +1162,7 @@ Two tabs:
 
 - **Config** — form generated from `openapi.json`, so adding a field to
   `CheckConfig` makes it appear in the UI with no frontend change.
-- **Threads** — comments anchored here, with status pills.
+- **Threads** — threads anchored here, with status pills.
 
 **Field pickers, never text inputs.** Anywhere config takes a `FieldRef`, render a
 dropdown populated from the board's documents. That is what keeps Checks from
@@ -2715,7 +2715,7 @@ about the world, not about a step.
 
 | Withheld | Why |
 |---|---|
-| the questions | it gets settled statements, not `"AI asked: does this end the process?"`. Transcripts stay in `thread_messages`. |
+| the questions | it gets settled statements, not `"AI asked: does this end the process?"`. Transcripts stay in `comment_messages`. |
 | sibling assertions from the same thread | `as_07` went to the edge and appears in *that* entry. Codegen reading one primitive should not see statements destined for another file. |
 | anchors as data | `provenance` is thread ids for the audit path; the model never resolves them. It reads four lists of English and a config. |
 

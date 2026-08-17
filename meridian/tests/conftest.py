@@ -1,14 +1,22 @@
 """Shared pytest fixtures.
 
-``tests/`` mirrors the package and touches no database (Claude.md §3). Anything
-that needs Postgres is marked ``db`` and runs against the local container from
-``make db`` — never against Supabase.
+``tests/`` mirrors the package. Most of it touches no database; anything that
+does asks for the ``connection`` fixture below, is marked ``db``, and runs
+against the local container from ``make db`` — never against Supabase.
+
+The connection fixture lives here rather than beside the repository tests
+because the reviewer needs it too: a round is a transaction over a board, so
+proving the loop means proving it against a real one.
 """
 
+from collections.abc import AsyncIterator
 from pathlib import Path
 
+import asyncpg
 import pytest
 
+from meridian.core.config import settings
+from meridian.core.db import close_pool, pool
 from meridian.domain.graph import Board
 from meridian.seed import SEED, board_from_file
 
@@ -29,3 +37,26 @@ def seed() -> Board:
     and several tests hold it to exactly that list.
     """
     return board_from_file(SEED)
+
+
+@pytest.fixture(autouse=True)
+async def _release_pool() -> AsyncIterator[None]:
+    yield
+    await close_pool()
+
+
+@pytest.fixture
+async def connection() -> AsyncIterator[asyncpg.Connection]:
+    """A connection to the test database, always rolled back."""
+    try:
+        acquired = await pool(settings().requires_test_database())
+    except (OSError, asyncpg.PostgresError) as exc:
+        pytest.skip(f"no test database — run `make db` ({exc})")
+
+    async with acquired.acquire() as conn:
+        transaction = conn.transaction()
+        await transaction.start()
+        try:
+            yield conn
+        finally:
+            await transaction.rollback()

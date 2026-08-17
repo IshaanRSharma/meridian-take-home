@@ -39,8 +39,8 @@ class BoardNotReadyError(IncompleteError):
 
 def freeze(
     board: Board,
-    assertions: tuple[Assertion, ...] = (),
-    threads: tuple[Thread, ...] = (),
+    assertions: tuple[Assertion, ...],
+    threads: tuple[Thread, ...],
     previous: FrozenSpec | None = None,
 ) -> FrozenSpec:
     """Seal a board into the spec a code generator is handed.
@@ -49,6 +49,12 @@ def freeze(
     incomplete. The third is about a version meaning something: re-submitting an
     unchanged board would otherwise mint v2 with identical content, and "which
     spec is this build against" stops being a useful question.
+
+    ``assertions`` and ``threads`` have no defaults on purpose. Defaulting them
+    to empty made both gates pass by not being handed their input — a board with
+    six unanswered questions sealed cleanly as v1, with every scoped context
+    empty, and nothing noticed because the checksum covers the content that is
+    there. A caller with nothing to pass says so.
     """
     blocking = rules.blocking(board)
     unsettled = [thread for thread in threads if not thread.is_settled()]

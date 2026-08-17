@@ -33,6 +33,7 @@ from meridian.domain.review import Assertion, Thread
 def review_payload(
     board: Board,
     threads: tuple[Thread, ...] = (),
+    assertions: tuple[Assertion, ...] = (),
     corpus: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Everything a reviewer needs to ask a good question about this board."""
@@ -69,15 +70,21 @@ def review_payload(
         "entities": [
             {
                 "key": entity.key,
-                "name": entity.config.name,
-                "identified_by": entity.config.identified_by,
-                "cardinality": entity.config.cardinality.model_dump(mode="json"),
-                "fields": sorted(entity.config.fields),
+                # The whole schema, like the steps get. A flat list of top-level
+                # names hides that a line item is a repeated thing with fields of
+                # its own, that every identifier on it is nullable on purpose so
+                # a check can detect the failure it exists to detect, and the
+                # note the owner wrote about how to read the document.
+                **entity.config.model_dump(mode="json", exclude_none=True),
                 "read_by": [c.key for c in board.readers_of(entity.key)],
                 "produced_by": [c.key for c in board.producers_of(entity.key)],
             }
             for entity in board.entities()
         ],
+        # Every field the board declares that no step ever looks at. Each is
+        # either a rule nobody wrote down or a field that should not be there,
+        # and a reviewer cannot ask about either without being told which.
+        "never_read": _never_read(board),
         # Stated rather than left to be derived: an outcome leading nowhere is
         # the most common real gap, and a model should not have to find it by
         # comparing two lists.
@@ -88,6 +95,22 @@ def review_payload(
         },
         "findings": [f.model_dump(mode="json") for f in rules.findings(board)],
         "decisions": [d.model_dump(mode="json") for d in decision_sweeps.decisions(board)],
+        # What every conversation so far actually concluded, flat. `prior_threads`
+        # says what was ASKED, and the answer is buried in a turn the model has to
+        # find and interpret; a settled statement says what was DECIDED, in one
+        # line, in the owner's own words. Flat rather than inlined per card the way
+        # the spec does it: codegen reads one entry and joins nothing, but a
+        # reviewer joins fine, and inlining would repeat a board-level rule on
+        # every card while dropping the edge and entity statements it most needs.
+        "settled": [
+            {
+                "anchor": str(assertion.anchor),
+                "kind": assertion.kind,
+                "statement": assertion.statement,
+            }
+            for assertion in assertions
+            if assertion.is_active()
+        ],
         # Including rejected ones. A question already dismissed must not come
         # back, and knowing *why* it was dismissed stops a near-miss re-ask.
         "prior_threads": [
@@ -98,6 +121,10 @@ def review_payload(
                 "round": thread.round,
                 "question": thread.question,
                 "reason": thread.reason,
+                # What it is recognised by. The model is asked not to repeat a
+                # question and has to be able to tell which is which.
+                "decision_key": thread.decision_key,
+                "scenario_key": thread.scenario_key,
                 "anchors": [str(a) for a in thread.anchors],
                 "messages": [
                     m.model_dump(mode="json", exclude={"created_at"}) for m in _turns(thread)
@@ -109,6 +136,22 @@ def review_payload(
     if corpus is not None:
         payload["corpus"] = corpus
     return payload
+
+
+def _never_read(board: Board) -> list[str]:
+    """Fields the board declares and no step references."""
+    referenced = {
+        f"{ref.entity}.{ref.path}"
+        for card in board.nodes()
+        for refs in board.field_references(card).values()
+        for ref in refs
+    }
+    return sorted(
+        full
+        for entity in board.entities()
+        for field in entity.config.fields
+        if not any(seen.startswith(full := f"{entity.key}.{field}") for seen in referenced)
+    )
 
 
 def _turns(thread: Thread) -> tuple[Any, ...]:

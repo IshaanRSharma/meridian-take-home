@@ -46,14 +46,14 @@
       "config": {
         "name": "Pre-alert email",
         "identified_by": "it arrives in the pre-alert group mailbox the bot has access to",
-        "cardinality": { "kind": "many" },
+        "cardinality": { "kind": "one" },
         "fields": {
           "sender": { "type": "string" },
           "subject": { "type": "string" },
           "received_at": { "type": "string" },
           "attachment_names": { "type": "array", "items": { "type": "string" } }
         },
-        "instructions": "The SOP says documentation must be reported by email but never says to whom. The sender is the obvious candidate and is deliberately not assumed here."
+        "instructions": "The SOP says documentation must be reported by email but never says to whom. The sender is the obvious candidate and is deliberately not assumed here. One email carries a subject and a list of attachments, and the attachments are what there are several of; that a shipment gets several emails over days is a fact about the trigger rather than about what an email is."
       }
     },
     {
@@ -140,7 +140,8 @@
         "evidence": [
           { "entity": "commercial_invoice", "path": "invoice_no" },
           { "entity": "commercial_invoice", "path": "line_items[].drug_description" }
-        ]
+        ],
+        "instructions": "Review the \"Description of Goods\" section and make sure every line item carries all four identifiers."
       }
     },
 
@@ -185,7 +186,8 @@
         "evidence": [
           { "entity": "commercial_invoice", "path": "invoice_no" },
           { "entity": "commercial_invoice", "path": "line_items[].batch_no" }
-        ]
+        ],
+        "instructions": "Each batch should have its own COA. Cross-check each batch listed on the invoice against a corresponding COA document."
       }
     },
 

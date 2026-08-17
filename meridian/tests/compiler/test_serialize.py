@@ -19,7 +19,7 @@ from typing import get_args
 from meridian.compiler import serialize
 from meridian.domain.graph import ActionPrimitive, Board, EventPrimitive
 from meridian.domain.primitives import ActionConfig, Channel, EventConfig, RoleRef
-from meridian.domain.review import Anchor, Assertion, Thread, ThreadMessage
+from meridian.domain.review import Anchor, Assertion, CommentMessage, Thread
 
 SETTLED = (
     Assertion(
@@ -48,8 +48,8 @@ ANSWERED = Thread(
     status="answered",
     anchors=(Anchor.parse("primitive:coas_valid"),),
     messages=(
-        ThreadMessage(seq=1, author="ai", body="Does a COA problem end the process?"),
-        ThreadMessage(seq=2, author="human", body="No — it comes back once they resend it."),
+        CommentMessage(seq=1, author="ai", body="Does a COA problem end the process?"),
+        CommentMessage(seq=2, author="human", body="No — it comes back once they resend it."),
     ),
 )
 
@@ -343,3 +343,42 @@ def test_a_decision_someone_has_to_be_asked_for_needs_a_way_to_ask_them():
         ),
     )
     assert set(serialize.capabilities_for(card)) == {"human.decide", "email.send"}
+
+
+def test_the_reviewer_sees_the_whole_shape_of_a_thing_it_reads(seed: Board):
+    # A flat list of top-level names hides the three questions worth asking about
+    # a document: that a line is a repeated thing with fields of its own, that
+    # every identifier on it is optional on purpose, and that the owner wrote a
+    # note about how to read it. None of those survive `sorted(fields)`.
+    entity = {e["key"]: e for e in serialize.review_payload(seed)["entities"]}
+    invoice = entity["commercial_invoice"]["fields"]
+
+    assert invoice["line_items"]["type"] == "array"
+    assert "batch_no" in invoice["line_items"]["items"]["properties"]
+    assert "null" in invoice["line_items"]["items"]["properties"]["hts_number"]["type"]
+    assert "top-right" in entity["commercial_invoice"]["instructions"]
+
+
+def test_the_reviewer_is_told_which_fields_nothing_ever_reads(seed: Board):
+    # The best question source on this board. A field the process declares and
+    # never touches is either a rule nobody wrote down or a field that should not
+    # be there, and both are worth asking. `certificate_of_analysis.product_code`
+    # is the live one: the check matches on batch number, and the SOP's real rule
+    # is that association is by product code.
+    unread = set(serialize.review_payload(seed)["never_read"])
+
+    assert "certificate_of_analysis.product_code" in unread
+    assert "prealert_email.sender" in unread
+    assert "commercial_invoice.invoice_no" not in unread
+
+
+def test_a_prior_comment_carries_the_identity_it_is_deduped_on(seed: Board):
+    # The model is told not to repeat itself and shown comments with no way to
+    # tell which is which.
+    prior = ANSWERED.model_copy(
+        update={"decision_key": "termination:edge:e5", "scenario_key": "coas_valid_missing_coa"}
+    )
+    (shown,) = serialize.review_payload(seed, threads=(prior,))["prior_threads"]
+
+    assert shown["decision_key"] == "termination:edge:e5"
+    assert shown["scenario_key"] == "coas_valid_missing_coa"

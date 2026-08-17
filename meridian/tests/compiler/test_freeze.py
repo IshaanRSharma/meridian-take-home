@@ -41,7 +41,7 @@ def test_the_seed_board_is_refused_and_told_what_is_missing(seed: Board):
     # is not yet a workable process — an outcome with no line, and two steps it
     # stops at without saying so.
     with pytest.raises(f.BoardNotReadyError) as raised:
-        f.freeze(seed)
+        f.freeze(seed, (), ())
 
     assert {(x.anchor, x.field) for x in raised.value.findings} == {
         ("primitive:coas_valid", "outcomes"),
@@ -54,7 +54,7 @@ def test_a_refusal_carries_sentences_a_person_can_act_on(seed: Board):
     # A count tells someone they failed; it does not tell them what to do. The
     # CLI prints these verbatim, so they have to be the reason strings.
     with pytest.raises(f.BoardNotReadyError) as raised:
-        f.freeze(seed)
+        f.freeze(seed, (), ())
 
     assert "Nothing says what happens on 'mismatched_coa'." in {
         x.reason for x in raised.value.findings
@@ -65,7 +65,7 @@ def test_a_refusal_names_only_what_actually_blocks(seed: Board):
     # The seed board has six softer findings. Listing them beside the three that
     # stop the freeze is how a gate turns back into a printout.
     with pytest.raises(f.BoardNotReadyError) as raised:
-        f.freeze(seed)
+        f.freeze(seed, (), ())
 
     assert all(x.severity == "blocking" for x in raised.value.findings)
 
@@ -74,11 +74,11 @@ def test_the_refusal_is_the_one_the_api_already_maps(seed: Board):
     # Incomplete → 422 with findings is wired at the boundary. A new base class
     # here would need its own handler and would eventually not get one.
     with pytest.raises(IncompleteError):
-        f.freeze(seed)
+        f.freeze(seed, (), ())
 
 
 def test_a_sound_board_freezes(sound: Board):
-    spec = f.freeze(sound, assertions=SETTLED)
+    spec = f.freeze(sound, SETTLED, ())
     assert spec.version == 1
     assert spec.is_intact()
     assert set(spec.primitives) == {"arrived", "looks_ok", "done", "complain"}
@@ -89,7 +89,7 @@ def test_a_sound_board_freezes(sound: Board):
 
 def test_an_unanswered_question_stops_the_freeze(sound: Board):
     with pytest.raises(f.BoardNotReadyError) as raised:
-        f.freeze(sound, threads=(OPEN,))
+        f.freeze(sound, (), (OPEN,))
 
     assert raised.value.findings == []
     assert [t.question for t in raised.value.unsettled] == [OPEN.question]
@@ -100,14 +100,14 @@ def test_knowing_the_answer_is_not_enough(sound: Board):
     # The spec is built from the drawing, so freezing at `answered` would ship a
     # board that does not contain the answer someone just gave.
     with pytest.raises(f.BoardNotReadyError):
-        f.freeze(sound, threads=(OPEN.model_copy(update={"status": "answered"}),))
+        f.freeze(sound, (), (OPEN.model_copy(update={"status": "answered"}),))
 
 
 def test_a_question_that_was_dismissed_does_not_block(sound: Board):
     # `rejected` is not a delete — it is considered and set aside, and it still
     # crosses the freeze as negative knowledge.
-    assert f.freeze(sound, threads=(OPEN.model_copy(update={"status": "rejected"}),))
-    assert f.freeze(sound, threads=(OPEN.model_copy(update={"status": "resolved"}),))
+    assert f.freeze(sound, (), (OPEN.model_copy(update={"status": "rejected"}),))
+    assert f.freeze(sound, (), (OPEN.model_copy(update={"status": "resolved"}),))
 
 
 # --- what a version means --------------------------------------------------
@@ -116,13 +116,13 @@ def test_a_question_that_was_dismissed_does_not_block(sound: Board):
 def test_freezing_an_unchanged_board_again_is_refused(sound: Board):
     # Otherwise a version number counts button presses rather than revisions,
     # and "which spec is build 4 against" stops being answerable.
-    first = f.freeze(sound)
+    first = f.freeze(sound, (), ())
     with pytest.raises(ConflictingStateError):
-        f.freeze(sound, previous=first)
+        f.freeze(sound, (), (), previous=first)
 
 
 def test_a_changed_board_becomes_the_next_version(sound: Board):
-    first = f.freeze(sound)
+    first = f.freeze(sound, (), ())
     edited = sound.model_copy(
         update={
             "primitives": tuple(
@@ -136,7 +136,7 @@ def test_a_changed_board_becomes_the_next_version(sound: Board):
         }
     )
 
-    second = f.freeze(edited, previous=first)
+    second = f.freeze(edited, (), (), previous=first)
     assert second.version == 2
     assert second.checksum != first.checksum
 
@@ -145,10 +145,19 @@ def test_a_version_is_not_part_of_what_is_sealed(sound: Board):
     # The checksum answers "is this the same spec", which conformance and
     # `is_intact` both rely on. A version answers "which submission is this".
     # Mixing them makes two freezes of identical content disagree.
-    first = f.freeze(sound)
+    first = f.freeze(sound, (), ())
     assert first.model_copy(update={"version": 9}).is_intact()
 
 
 def test_settled_statements_reach_the_spec(sound: Board):
-    spec = f.freeze(sound, assertions=SETTLED)
+    spec = f.freeze(sound, SETTLED, ())
     assert "[rule] one container is one shipment" in spec.primitives["looks_ok"].context.inherited
+
+
+def test_a_board_cannot_be_frozen_without_being_handed_its_conversation(sound: Board):
+    # The gate that nearly was not one. With `assertions` and `threads`
+    # defaulting to empty, a caller that forgot them froze a board with every
+    # question still open and every scoped context empty — and the checksum
+    # covered the content that was there, so nothing disagreed.
+    with pytest.raises(TypeError):
+        f.freeze(sound)  # type: ignore[call-arg]

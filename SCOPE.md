@@ -25,7 +25,7 @@ Every requirement in the brief, and where it lives. Nothing here is optional.
 | # | Requirement | Ships as |
 |---|---|---|
 | 1a | Canvas with a fixed primitive set | React Flow: drag from palette, connect, edit config in an inspector. One source handle per declared outcome, so an unwired outcome is visible on the card rather than only in a lint panel. |
-| 1b | AI review leaves structured comments **on the canvas** | `threads` anchored to `primitive:` / `edge:` / `document_field:` keys, rendered as pins on the element — not a chat sidebar |
+| 1b | AI review leaves structured threads **on the canvas** | `threads` anchored to `primitive:` / `edge:` / `document_field:` keys, rendered as pins on the element — not a chat sidebar |
 | 1b | Statuses `open` · `answered` · `rejected` · `resolved` | enforced in the DB. `answered` means the knowledge exists; `resolved` requires the reviewer to **re-run the originating scenario**, so resolution is proved rather than declared |
 | 1c | Revision loop | reply posts a `thread_message`; a canvas patch re-runs lint and the scenario; `rejected` compiles into the spec as negative knowledge rather than being deleted |
 | 1d | Submit → immutable spec | `specs` row with a Postgres trigger that raises on `UPDATE`/`DELETE`, plus a checksum. Editing the board afterwards cannot touch it. |
@@ -99,8 +99,8 @@ marginal, and the CLI covers it in the video.
 | 9 | eval cases from the snapshot | 1.5 | ground truth per shipment |
 | 10 | `healing/` — sweep, bundle, gate, repair skill | 3.5 | **the curve moves** |
 | 11 | `events.py` + realtime + background jobs | 1.5 | `cycle_id` streams to the browser |
-| 12 | `ui/` — canvas, comments, submit, spec viewer, cycle panel | 6.5 | the demo |
-| 12a | **notation key** — palette carries each card's question; a `?` panel explains edge relations, severities and comment statuses | 0.5 | a stranger can read the board |
+| 12 | `ui/` — canvas, threads, submit, spec viewer, cycle panel | 6.5 | the demo |
+| 12a | **notation key** — palette carries each card's question; a `?` panel explains edge relations, severities and thread statuses | 0.5 | a stranger can read the board |
 | 12b | **text → cards** — `mvp board add --text`, route, UI panel | 1.5 | a paragraph becomes cards |
 | 13 | Temporal + Composio on the real path | 2.5 | one live shipment |
 | 14 | README, PDF, Loom, final deploy | 4.0 | shipped |
@@ -160,7 +160,7 @@ fallback, not the plan.
 *The spine (1–10) is provable from a terminal*, so a UI slip costs polish rather
 than evidence. `reviewer/` sits at 10 because hand-written threads in the seed
 unblock units 3–9 — a slip there blocks nothing. Within unit 12 the build order
-is canvas → comments → submit → cycle panel → spec viewer, each shippable alone.
+is canvas → threads → submit → cycle panel → spec viewer, each shippable alone.
 
 **Vertical slice first.** Before widening, `coas_valid` goes all the way through
 alone: domain type → lint finding → assertion → frozen spec entry → generated
@@ -198,7 +198,7 @@ Alfonso and Sid confirm direction.
 | Beat | Shows |
 |---|---|
 | the incomplete board | what a PO actually drew from the SOP |
-| review round 1 | comments appear **on cards**, anchored, with categories |
+| review round 1 | threads appear **on cards**, anchored, with categories |
 | answering as the PO | status moves `open → answered → resolved`, and resolution re-runs the scenario |
 | round 2 | the ASN question — a gap **no human wrote down**, found from corpus shape |
 | Submit | checksum, and editing the board afterwards leaves the spec untouched |
@@ -207,7 +207,7 @@ Alfonso and Sid confirm direction.
 | repair | Codex with the skill file, one diff, gate, re-sweep, curve moves |
 
 **PDF** — how to run it · the primitive set and why, backed by the five-process
-study · the comment and spec data model · the Section 0 stance · what I would do
+study · the thread and spec data model · the Section 0 stance · what I would do
 differently.
 
 **The Section 0 stance, grounded.** Three claims the build has to earn:

@@ -14,10 +14,10 @@ from pydantic import ValidationError
 from meridian.domain.review import (
     Anchor,
     Assertion,
+    CommentMessage,
     Evidence,
     Scenario,
     Thread,
-    ThreadMessage,
 )
 
 
@@ -138,8 +138,8 @@ def test_a_structural_claim_carries_the_evidence_that_produced_it():
 def test_messages_keep_their_order_and_author():
     conversation = thread(
         messages=[
-            ThreadMessage(seq=1, author="ai", body="What happens on a mismatch?"),
-            ThreadMessage(seq=2, author="human", body="It comes back once corrected."),
+            CommentMessage(seq=1, author="ai", body="What happens on a mismatch?"),
+            CommentMessage(seq=2, author="human", body="It comes back once corrected."),
         ]
     )
     assert [m.author for m in conversation.messages] == ["ai", "human"]

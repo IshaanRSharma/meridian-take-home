@@ -100,7 +100,7 @@ class Evidence(DomainModel):
     detail: dict[str, object] | None = None
 
 
-class ThreadMessage(DomainModel):
+class CommentMessage(DomainModel):
     """One turn in a conversation."""
 
     seq: int
@@ -132,9 +132,17 @@ class Thread(DomainModel):
     # reporting and never says what closes the shipment" beside it.
     reason: str | None = None
     anchors: tuple[Anchor, ...] = ()
-    messages: tuple[ThreadMessage, ...] = ()
+    messages: tuple[CommentMessage, ...] = ()
     scenario_key: BoardKey | None = None
     evidence: Evidence | None = None
+    # A structural question's identity, derived from the graph rather than from
+    # its wording — `sequence:primitive:invoice_complete|edge:e2|…`. The same
+    # board raises the same key every round, so dedup is an exact match and a
+    # *rejected* question does not come back either. Null for questions a model
+    # invented, which have no structural identity and are deduped by the model
+    # having every prior thread in front of it.
+    decision_key: str | None = None
+    resolved_at: datetime | None = None
 
     def may_become(self, status: ThreadStatus) -> bool:
         """Whether this thread can legally move to that status."""
@@ -208,3 +216,8 @@ class Scenario(DomainModel):
     start: BoardKey | None = None
     expected_terminal: BoardKey | None = None
     round: int = 1
+    # Where the last walk ended up. Kept on the scenario rather than recomputed,
+    # because resolving a thread means re-running the walk that raised it and
+    # comparing — and "it dead-ended before, it reaches a terminal now" is the
+    # whole proof. `None` until it has been run.
+    dryrun_result: Literal["reached_terminal", "dead_end", "undefined_branch", "loop"] | None = None
