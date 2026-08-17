@@ -63,6 +63,9 @@ class Task(StrEnum):
     FILL = "fill"
     """Natural language into a typed card config. Structure, not judgement."""
 
+    EXTRACT = "extract"
+    """Words off a page. Needs vision, so it cannot run on the cheap tier."""
+
 
 # Only the two tasks whose needs genuinely differ from the default get a row.
 # Everything else runs on OPENAI_MODEL, so the common case is configured in the
@@ -139,7 +142,7 @@ async def structured[T: BaseModel](  # noqa: PLR0913 - four are the call itself;
     task: Task,
     schema: type[T],
     system: str,
-    user: str,
+    user: str | list[dict[str, Any]],
     *,
     tools: Sequence[Tool] = (),
     transport: Transport | None = None,
@@ -150,7 +153,11 @@ async def structured[T: BaseModel](  # noqa: PLR0913 - four are the call itself;
         task: what this call is for; decides the model.
         schema: the Pydantic model the response must validate against.
         system: instructions, resent unchanged on every iteration.
-        user: the payload — a board, a thread, a document.
+        user: the payload — a board, a thread, a document. A list instead of a
+            string sends content parts rather than text, which is how a file
+            reaches the model: a scanned page has no text to send, so the file
+            itself goes and the model reads it. Same seam, same model choice,
+            same temperature — extraction is not a second way to call OpenAI.
         tools: what the model may call. Empty for most calls.
         transport: the function that talks to OpenAI. Tests pass a fake.
 

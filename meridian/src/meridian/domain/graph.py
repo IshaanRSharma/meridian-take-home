@@ -506,11 +506,7 @@ class Board(DomainModel):
                         seq=seq,
                         key=current,
                         outcome=outcome,
-                        note=(
-                            "no outcome given and no unconditional edge"
-                            if outcome is None
-                            else f"no edge carries {outcome!r}"
-                        ),
+                        note=_why_it_stopped(leaving, outcome),
                     )
                 )
                 result = "undefined_branch"
@@ -524,6 +520,16 @@ class Board(DomainModel):
             trace=tuple(trace),
             unreached=tuple(s.key for s in self.nodes() if s.key not in visited),
         )
+
+
+def _why_it_stopped(leaving: tuple[Edge, ...], outcome: str | None) -> str:
+    """Which of the three reasons a walk could not continue, in the trace's words."""
+    if outcome is not None:
+        return f"no edge carries {outcome!r}"
+    unconditional = sum(1 for edge in leaving if not edge.on_outcomes)
+    if unconditional > 1:
+        return f"{unconditional} ways out of here and nothing to choose between them"
+    return "no outcome given and no unconditional edge"
 
 
 def _answer(given: str | Sequence[str] | None, visit: int) -> str | None:
@@ -553,13 +559,24 @@ def _edge_for(leaving: tuple[Edge, ...], outcome: str | None) -> Edge | None:
         # when an unconditional edge exists — otherwise an unwired outcome would
         # silently fall through and the gap would never surface.
         return None
-    for edge in leaving:
-        if not edge.on_outcomes:
-            return edge
-    # No outcome named means we do not know how the card came out, so every edge
-    # left here is conditional on something unknown. Taking the only one would be
-    # a guess reported as a traversal.
-    return None
+
+    unconditional = [edge for edge in leaving if not edge.on_outcomes]
+    # Several ways out and nothing to choose between them. Taking the first is
+    # what the guard on multiple entry points already refuses to do for the same
+    # reason: it silently answers a question nobody asked and drops the rest.
+    #
+    # And the consequence was not theoretical. A board drawn with two steps
+    # hanging off one event — which is how a process owner draws "these both
+    # happen, in no particular order" — walked down one branch, reported the
+    # other as never reached, and called the situation `reached_terminal`. A
+    # scenario named for a check on the dropped branch passed without that check
+    # ever running. This vocabulary is sequential; saying so is better than
+    # walking half a board and reporting success.
+    if len(unconditional) > 1:
+        return None
+    return unconditional[0] if unconditional else None
+    # No outcome named and every edge conditional means we do not know how the
+    # card came out. Taking one would be a guess reported as a traversal.
 
 
 __all__ = [

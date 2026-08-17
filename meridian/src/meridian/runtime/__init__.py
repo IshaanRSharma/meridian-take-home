@@ -51,6 +51,7 @@ from meridian.runtime.errors import (
     RetryableError,
     TerminalError,
 )
+from meridian.runtime.harness import CaseOutcome
 from meridian.runtime.ingest import Candidate, Source, candidates_from, ingest
 from meridian.runtime.outcome import CheckResult, Failure
 from meridian.runtime.policy import Disposition, RetryPolicy, disposition_of, retry_policy
@@ -62,6 +63,7 @@ __all__ = [
     "BindingError",
     "Bindings",
     "Candidate",
+    "CaseOutcome",
     "CheckResult",
     "Disposition",
     "EntityStore",

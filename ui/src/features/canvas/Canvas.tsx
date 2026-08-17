@@ -23,11 +23,12 @@ import {
   useReactFlow,
   type Connection,
   type Node as FlowNode,
+  type EdgeChange,
   type NodeChange,
   type OnConnect,
 } from '@xyflow/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Board, Finding, PrimitiveType, Thread } from '@/lib/api';
+import type { Board, Finding, PrimitiveType, Relation, Thread } from '@/lib/api';
 import { api } from '@/lib/api';
 import { CardNode } from './nodes/CardNode';
 import { build } from './graph';
@@ -35,6 +36,15 @@ import Palette from './Palette';
 import Legend from './Legend';
 
 const nodeTypes = { card: CardNode };
+
+/** The line that follows the cursor mid-drag, drawn as the thing it will
+ *  become — so the relation is visible before the edge exists rather than only
+ *  after it is committed. */
+const CONNECTION_LINE: Record<Relation, React.CSSProperties> = {
+  normal: { stroke: '#0f766e', strokeWidth: 1.6 },
+  exception: { stroke: '#000000', strokeWidth: 1.6, strokeDasharray: '5 3' },
+  repeat: { stroke: '#0f766e', strokeWidth: 1.6, strokeDasharray: '1 4' },
+};
 
 interface Props {
   board: Board;
@@ -65,6 +75,10 @@ function Inner({ board, findings, threads, selected, onSelect, onOpen, highlight
   // Cleared on a timer so the drop animation plays once rather than on every
   // re-render for as long as the card stays selected.
   const [landed, setLanded] = useState<string | null>(null);
+  // What kind of line the next drag draws. A mode rather than a per-edge edit,
+  // because there is no endpoint to change an edge's relation in place — the
+  // choice has to be made before the line exists.
+  const [drawing, setDrawing] = useState<Relation>('normal');
   const pending = useRef<Record<string, [number, number]>>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -120,8 +134,17 @@ function Inner({ board, findings, threads, selected, onSelect, onOpen, highlight
   });
 
   const connect = useMutation({
-    mutationFn: (edge: { from_key: string; to_key: string; on_outcomes: string[] }) =>
-      api.boards.connect(board.id, edge),
+    mutationFn: (edge: {
+      from_key: string;
+      to_key: string;
+      on_outcomes: string[];
+      relation: Relation;
+    }) => api.boards.connect(board.id, edge),
+    onSuccess: refresh,
+  });
+
+  const disconnect = useMutation({
+    mutationFn: (key: string) => api.boards.disconnect(board.id, key),
     onSuccess: refresh,
   });
 
@@ -161,9 +184,26 @@ function Inner({ board, findings, threads, selected, onSelect, onOpen, highlight
         // outcome that handle represents — two outcomes to the same target are
         // two lines, because the owner drew two.
         on_outcomes: connection.sourceHandle ? [connection.sourceHandle] : [],
+        // A line onto its own card can only mean `repeat`, and the database
+        // says so — `check (from_key <> to_key or relation = 'repeat')`. Sending
+        // the picked relation there would be a constraint violation shown to
+        // somebody who drew a perfectly sensible loop.
+        relation: connection.source === connection.target ? 'repeat' : drawing,
       });
     },
-    [connect],
+    [connect, drawing],
+  );
+
+  /** Select a line and press Delete. Removing is never a click, because a line
+   *  is a one-pixel target and an accidental delete is silent — the process
+   *  simply stops routing somewhere and nothing says it used to. */
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      for (const change of changes) {
+        if (change.type === 'remove') disconnect.mutate(change.id);
+      }
+    },
+    [disconnect],
   );
 
   /** Refused rather than reported. */
@@ -202,7 +242,10 @@ function Inner({ board, findings, threads, selected, onSelect, onOpen, highlight
         edges={built.edges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        deleteKeyCode={['Backspace', 'Delete']}
+        connectionLineStyle={CONNECTION_LINE[drawing]}
         isValidConnection={isValidConnection}
         onDrop={onDrop}
         onDragOver={(event) => {
@@ -230,7 +273,7 @@ function Inner({ board, findings, threads, selected, onSelect, onOpen, highlight
         />
       </ReactFlow>
 
-      <Palette pending={addCard.isPending} />
+      <Palette pending={addCard.isPending} drawing={drawing} onDrawing={setDrawing} />
 
       <Legend
         showDataLinks={showDataLinks}

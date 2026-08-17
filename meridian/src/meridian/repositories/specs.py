@@ -48,6 +48,20 @@ async def save(connection: asyncpg.Connection, spec: FrozenSpec) -> UUID:
     return UUID(str(row["id"]))
 
 
+async def latest_id(connection: asyncpg.Connection, board_id: UUID) -> UUID | None:
+    """The row id of the most recent spec, for the tables that reference it.
+
+    Separate from ``latest`` rather than a field on it. ``FrozenSpec`` is
+    checksummed over everything it carries, so an id inside the model would
+    change the digest — and two databases holding the same approved spec would
+    disagree about whether it was the same spec.
+    """
+    found: UUID | None = await connection.fetchval(
+        "select id from specs where board_id = $1 order by version desc limit 1", board_id
+    )
+    return found
+
+
 async def latest(connection: asyncpg.Connection, board_id: UUID) -> FrozenSpec | None:
     """The most recent spec frozen from this board, or None if never submitted."""
     row = await connection.fetchrow(_LATEST_SQL, board_id)

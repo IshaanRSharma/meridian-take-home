@@ -95,6 +95,23 @@
       }
     },
     {
+      "key": "shipment_summary",
+      "primitive_type": "entity",
+      "config": {
+        "name": "Shipment summary",
+        "fields": {
+          "invoices_successful": {"type": "integer"},
+          "invoices_failed": {"type": "integer"},
+          "invoices_total": {"type": "integer"},
+          "goods_failed": {"type": "integer"},
+          "failed_coa": {"type": "integer"},
+          "coa_success": {"type": "integer"},
+          "coa_total": {"type": "integer"}
+        },
+        "instructions": "One row per shipment, which is the thing this process exists to produce. Nothing recognises it and nothing counts it, because it never arrives — the checks write into it as they run and it is what the process hands back. Seven fields, one per check measurement. The historical report carries two more, an ASN mismatch count and an open/closed status, and neither is here because nothing on this board can produce either: no card reads an ASN, and no card decides what closes a shipment. Declaring a column the process cannot fill would make the board claim something untrue, so the gap belongs in the review rather than in this list."
+      }
+    },
+    {
       "key": "prealert_received",
       "primitive_type": "event",
       "config": {
@@ -144,6 +161,12 @@
         "evidence": [
           {"entity": "commercial_invoice", "path": "invoice_no"},
           {"entity": "commercial_invoice", "path": "line_items[].drug_description"}
+        ],
+        "fills": [
+          {"measure": "failed", "field": {"entity": "shipment_summary", "path": "goods_failed"}},
+          {"measure": "checked", "per": "per_document", "field": {"entity": "shipment_summary", "path": "invoices_total"}},
+          {"measure": "passed", "per": "per_document", "field": {"entity": "shipment_summary", "path": "invoices_successful"}},
+          {"measure": "failed", "per": "per_document", "field": {"entity": "shipment_summary", "path": "invoices_failed"}}
         ],
         "instructions": "Review the \"Description of Goods\" section and make sure every line item carries all four identifiers.",
         "on_missing_input": "wait"
@@ -199,6 +222,11 @@
         "evidence": [
           {"entity": "commercial_invoice", "path": "invoice_no"},
           {"entity": "commercial_invoice", "path": "line_items[].batch_no"}
+        ],
+        "fills": [
+          {"measure": "checked", "field": {"entity": "shipment_summary", "path": "coa_total"}},
+          {"measure": "passed", "field": {"entity": "shipment_summary", "path": "coa_success"}},
+          {"measure": "failed", "field": {"entity": "shipment_summary", "path": "failed_coa"}}
         ],
         "instructions": "Each batch should have its own COA. Cross-check each batch listed on the invoice against a corresponding COA document.",
         "on_missing_input": "wait"

@@ -195,6 +195,42 @@ class Assertion(DomainModel):
         return self.superseded_by is None
 
 
+class ReferenceDoc(DomainModel):
+    """A document that *describes* the process, rather than flowing through it.
+
+    An SOP, a policy, a training note. The distinction from an Entity is which
+    direction it points: an invoice is data the process reads, and an SOP is a
+    claim about what the process should do. So this is never a card, never in the
+    frozen spec, and read only while questions are being asked.
+    """
+
+    id: UUID | None = None
+    kind: Literal["sop", "policy", "email", "other"] = "sop"
+    filename: str
+    text: str | None = None
+
+
+class DocumentClaim(DomainModel):
+    """Something a reference document says about one element of the board.
+
+    Deliberately **not** an :class:`Assertion`. An assertion is settled — a
+    person was asked and answered, and only settled statements cross the freeze.
+    A document is evidence: it says what somebody wrote down once, which is not
+    the same as what the process does now, and nobody has confirmed it. So this
+    type exists to be un-freezable by construction.
+
+    Anchored the same way an assertion is, and validated against the board the
+    same way, because the value is in the alignment: put beside what the card
+    actually says, a claim either agrees, disagrees, or covers something the
+    drawing is silent about — and the second and third are questions.
+    """
+
+    anchor: Anchor
+    statement: str
+    source: str
+    """Which document said it, so a question can cite where it came from."""
+
+
 class Scenario(DomainModel):
     """A situation the board is asked to account for.
 

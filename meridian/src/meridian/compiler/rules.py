@@ -134,7 +134,16 @@ def outcomes_are_wired(board: Board) -> list[BoardFinding]:
 
 
 def entities_are_read(board: Board) -> list[BoardFinding]:
-    """Entities nothing on the board looks at."""
+    """Entities nothing on the board looks at.
+
+    An entity a Check *fills* is exempt, because the row a process produces is
+    consumed outside the process — by whoever reads the report. Every other
+    entity exists to be read by something on the board, so one nothing reads is
+    a card somebody forgot to wire up. Same asymmetry `_producers_of` documents:
+    a Check declares it produces nothing, which is true of what it reads and
+    false of what it writes.
+    """
+    filled = {fill.field.entity for check in board.checks() for fill in check.config.fills}
     return [
         BoardFinding(
             anchor=f"primitive:{entity.key}",
@@ -144,7 +153,7 @@ def entities_are_read(board: Board) -> list[BoardFinding]:
             kind="structure",
         )
         for entity in board.entities()
-        if not board.readers_of(entity.key)
+        if not board.readers_of(entity.key) and entity.key not in filled
     ]
 
 
@@ -189,6 +198,66 @@ def produced_entities_exist(board: Board) -> list[BoardFinding]:
         for card in board.nodes()
         for key in card.produces()
         if not board.has(key)
+    ]
+
+
+def something_produces_what_a_step_reads(board: Board) -> list[BoardFinding]:
+    """Entities a step reads that nothing on the board ever brings into existence.
+
+    The mirror of `produced_entities_exist`, and the one direction nothing
+    covered. Every other rule passes it: the card is on the board, so
+    `inputs_exist` is happy; a step reads it, so `entities_are_read` is happy;
+    it is in `inputs`, so `references_are_declared` is happy. And
+    `inputs_arrive_before_they_are_read` asks whether the producer runs *early
+    enough*, which is vacuously true when there is no producer at all — so a
+    board reading an entity nothing ever creates lints exactly as clean as one
+    that does not.
+
+    What reaches codegen is a Check whose `inputs` name something that will never
+    exist at runtime. Blocking, because an unresolvable reference is not a missing
+    value: it is a drawing that does not work as a process.
+    """
+    return [
+        BoardFinding(
+            anchor=f"primitive:{card.key}",
+            field="inputs",
+            reason=f"This reads {_name_of(board, key)}, and nothing on the board produces it.",
+            kind="structure",
+            severity="blocking",
+        )
+        for card in board.nodes()
+        for key in sorted(set(card.reads()))
+        if board.has(key) and not _producers_of(board, key)
+    ]
+
+
+def one_way_out_of_every_step(board: Board) -> list[BoardFinding]:
+    """Steps with several ways out and nothing to choose between them.
+
+    This vocabulary is sequential: an edge carries an outcome or it is the one
+    way on. Two unconditional edges leaving one step is how a process owner draws
+    *"these both happen, in no particular order"* — and nothing here can express
+    that, so the honest thing is to say so on the card rather than to accept the
+    drawing and then quietly walk half of it.
+
+    Quietly is the operative word. Before this rule, such a board linted clean,
+    reported every step as reachable, and dry-ran down whichever branch was drawn
+    first — reporting the other as never reached and the situation as having
+    reached an ending. A scenario named for a check on the dropped branch passed
+    without that check ever running, which is the worst failure available to a
+    gap detector: a clean bill of health on the thing it was built to interrogate.
+    """
+    return [
+        BoardFinding(
+            anchor=f"primitive:{card.key}",
+            field="outgoing",
+            reason="Several things leave this step and nothing says which happens "
+            "first. Order them, or make each one depend on how this came out.",
+            kind="structure",
+            severity="blocking",
+        )
+        for card in board.nodes()
+        if len([e for e in board.outgoing(card.key) if not e.on_outcomes]) > 1
     ]
 
 
@@ -373,7 +442,7 @@ def produced_fields_are_filled(board: Board) -> list[BoardFinding]:
     return [
         BoardFinding(
             anchor=f"primitive:{entity_key}",
-            field="fields",
+            field=f"fields.{field_name}",
             reason=f"Nothing fills in {field_name!r}.",
             severity="important",
             kind="structure",
@@ -481,6 +550,8 @@ RULES: tuple[Rule, ...] = (
     something_starts_the_process,
     inputs_exist,
     produced_entities_exist,
+    something_produces_what_a_step_reads,
+    one_way_out_of_every_step,
     references_are_declared,
     inputs_arrive_before_they_are_read,
     field_references_resolve,

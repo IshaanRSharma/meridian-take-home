@@ -1,0 +1,319 @@
+"""The other direction: artifacts a skill wrote, read back into the database.
+
+The bundle is the CLI writing text for a skill to read. **This is a skill
+writing files for the CLI to read.** A human in a terminal with a coding agent
+produces no rows at all by default — it has no connection string and must not
+have one, because that is what keeps the loop runnable by anyone with the repo
+and keeps credentials out of it entirely.
+
+So the skill leaves two things behind and the CLI collects them:
+
+    build.json         file_map · entry_point · model · prompt_version · checksum
+    a git commit       the patch itself, which is also the diff and the audit trail
+
+**git is the transport for the diff.** `agents/` is committed, so
+`source_ref` is `agents/<slug>@<sha>` and every build is recoverable with
+`git checkout`. Nothing has to ask the skill what it changed — the commit says.
+
+Which is why an untracked agent directory is refused rather than warned about.
+A `source_ref` naming a commit that does not contain the code is worse than no
+`source_ref`: it reads as recoverable, and the recovery silently gives you a
+different program.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+from uuid import UUID
+
+import asyncpg
+
+from meridian import events
+from meridian.domain.build import Build, Classification, CreatedBy, Repair
+from meridian.domain.errors import ConflictingStateError, NotFoundError
+from meridian.domain.frozen import FrozenSpec
+from meridian.healing.gate import Verdict, gate
+from meridian.repositories import builds as builds_repo
+from meridian.repositories import evals as evals_repo
+from meridian.repositories import repairs as repairs_repo
+
+
+def _status(verdict: Verdict) -> str:
+    """What to call a patch, from what the gate measured — never from its prose.
+
+    The gate can only reject, so `accepted` is not among these: a patch it
+    passes stays **proposed** until a person reads the diff. The other two are
+    different failures with different next steps — `regressed` means the patch
+    broke something that worked, `rejected` means it did not fix what it claimed
+    — and reading them off `reason` would make a reworded sentence relabel every
+    repair in the table.
+    """
+    if verdict.accepted:
+        return "proposed"
+    return "regressed" if verdict.regressed else "rejected"
+
+
+@dataclass(frozen=True)
+class Manifest:
+    """`agents/<slug>/build.json`, as the generator wrote it."""
+
+    entry_point: str
+    file_map: dict[str, str] = field(default_factory=dict)
+    model: str | None = None
+    prompt_version: str | None = None
+    temperature: float | None = None
+    spec_checksum: str | None = None
+
+
+class NotRegisterableError(ConflictingStateError):
+    """The agent on disk cannot honestly be recorded as a build of this spec."""
+
+
+def read_manifest(agent_dir: Path) -> Manifest:
+    """Read `build.json`, refusing rather than defaulting anything load-bearing.
+
+    `entry_point` has no default because guessing one is how a sweep runs the
+    wrong file and reports its results as this build's.
+    """
+    path = agent_dir / "build.json"
+    if not path.is_file():
+        raise NotRegisterableError(
+            f"{path} does not exist — the generator writes it, and it carries "
+            "the file_map every failure bundle resolves a path from"
+        )
+    try:
+        body = json.loads(path.read_text())
+    except json.JSONDecodeError as broken:
+        raise NotRegisterableError(f"{path} is not valid JSON: {broken}") from broken
+
+    entry = body.get("entry_point")
+    if not entry:
+        raise NotRegisterableError(f"{path} names no entry_point")
+    return Manifest(
+        entry_point=str(entry),
+        file_map={str(k): str(v) for k, v in (body.get("file_map") or {}).items()},
+        model=body.get("model"),
+        prompt_version=body.get("prompt_version"),
+        temperature=body.get("temperature"),
+        spec_checksum=body.get("spec_checksum"),
+    )
+
+
+async def register(  # noqa: PLR0913 - a build names its spec, its code and its author
+    connection: asyncpg.Connection,
+    *,
+    spec: FrozenSpec,
+    spec_id: UUID,
+    repo_root: Path,
+    cycle_id: UUID,
+    created_by: CreatedBy = "codegen",
+    agents_dir: str = "agents",
+) -> Build:
+    """Record the agent currently on disk as a build of this spec."""
+    agent_dir = repo_root / agents_dir / spec.slug
+    manifest = read_manifest(agent_dir)
+
+    if manifest.spec_checksum and manifest.spec_checksum != spec.checksum:
+        raise NotRegisterableError(
+            f"{agent_dir}/build.json was generated from spec {manifest.spec_checksum[:12]}, "
+            f"and this spec is {spec.checksum[:12]} — regenerate, or register against that spec"
+        )
+    if not (agent_dir / manifest.entry_point).is_file():
+        raise NotRegisterableError(
+            f"build.json names {manifest.entry_point}, which does not exist under {agent_dir}"
+        )
+    if not tracked(repo_root, agent_dir):
+        raise NotRegisterableError(
+            f"{agent_dir} is not tracked by git, so `agents/{spec.slug}@<sha>` would name a "
+            "commit that does not contain it — commit the agent, or remove it from .gitignore"
+        )
+
+    build = await builds_repo.save(
+        connection,
+        Build(
+            spec_id=spec_id,
+            source_ref=f"{agents_dir}/{spec.slug}@{head(repo_root)}",
+            created_by=created_by,
+            model=manifest.model,
+            prompt_version=manifest.prompt_version,
+            temperature=manifest.temperature,
+            file_map=manifest.file_map,
+            entry_point=manifest.entry_point,
+        ),
+    )
+    await events.emit(
+        connection,
+        cycle_id=cycle_id,
+        phase="codegen" if created_by == "codegen" else "repair",
+        kind="build",
+        status="ok",
+        spec_id=spec_id,
+        build_id=build.identity,
+        detail={
+            "iteration": build.iteration,
+            "source_ref": build.source_ref,
+            "model": build.model,
+            "primitives": len(build.file_map),
+        },
+    )
+    return build
+
+
+async def record_repair(  # noqa: PLR0913 - a repair names what, where, why and against what
+    connection: asyncpg.Connection,
+    *,
+    build: Build,
+    signature: str,
+    classification: Classification,
+    summary: str,
+    cycle_id: UUID,
+    repo_root: Path,
+    thread_id: UUID | None = None,
+    diff: str | None = None,
+) -> tuple[Repair, Verdict | None]:
+    """Record one patch, and let the gate decide what to call it.
+
+    `failing_case_ids`, `regressed_case_ids` and `status` are all derived rather
+    than supplied. That is the whole point of a gate: it can only reject, a
+    human is required to override it, and neither means anything if the numbers
+    it judges on were typed in by whoever wrote the patch.
+
+    A `spec_gap` is not gated at all. No patch is correct because no rule
+    decides the answer, so there is nothing to measure — it is escalated, and
+    the table refuses it without a thread.
+    """
+    parent = await _parent(connection, build)
+    verdict = None
+    status = "escalated"
+    regressed: tuple[UUID, ...] = ()
+
+    if classification != "spec_gap":
+        verdict = await gate(connection, before=parent, after=build, signature=signature)
+        status = _status(verdict)
+        regressed = await _case_ids(connection, parent, {case for case, _ in verdict.regressed})
+
+    failing = await _failing_case_ids(connection, parent, signature)
+    repair = await repairs_repo.save(
+        connection,
+        Repair(
+            build_id=parent.identity,
+            classification=classification,
+            failure_signature=signature,
+            failing_case_ids=failing,
+            files_touched=changed(repo_root, parent.commit(), build.commit()),
+            summary=summary,
+            diff=diff,
+            status=status,  # type: ignore[arg-type]
+            regressed_case_ids=regressed,
+            produced_build_id=build.identity,
+            raised_thread_id=thread_id,
+        ),
+    )
+    await events.emit(
+        connection,
+        cycle_id=cycle_id,
+        phase="repair",
+        kind="patch",
+        status="ok" if status == "proposed" else "rejected",
+        build_id=build.identity,
+        primitive_key=signature.split(" :: ", 1)[0] if " :: " in signature else None,
+        detail={
+            "signature": signature,
+            "classification": classification,
+            "status": status,
+            "verdict": verdict.reason if verdict else "spec gap — not gated",
+        },
+    )
+    return repair, verdict
+
+
+async def _parent(connection: asyncpg.Connection, build: Build) -> Build:
+    if build.parent_build_id is None:
+        raise NotRegisterableError(
+            f"build {build.iteration} has no parent, so there is nothing to have repaired"
+        )
+    return await builds_repo.get(connection, build.parent_build_id)
+
+
+async def _failing_case_ids(
+    connection: asyncpg.Connection, parent: Build, signature: str
+) -> tuple[UUID, ...]:
+    """Which cases this signature was failing on before the patch.
+
+    Read from the parent's sweep rather than taken on trust. A repair that
+    claims four cases and fixed one would otherwise be indistinguishable from
+    one that fixed four.
+    """
+    rows = await evals_repo.failures_for(connection, parent.identity, signature=signature)
+    return tuple(dict.fromkeys(row["case_id"] for row in rows if row["case_id"]))
+
+
+async def _case_ids(
+    connection: asyncpg.Connection, build: Build, keys: set[str]
+) -> tuple[UUID, ...]:
+    by_key = {
+        r.case_key: r.case_id for r in await evals_repo.results_for(connection, build.identity)
+    }
+    found = (by_key.get(key) for key in sorted(keys))
+    return tuple(case_id for case_id in found if case_id is not None)
+
+
+# ── git, which is the transport ──────────────────────────────────────────────
+
+
+def head(repo_root: Path) -> str:
+    """The commit the working tree is on."""
+    return _git(repo_root, "rev-parse", "--short", "HEAD")
+
+
+def repo_root(start: Path) -> Path | None:
+    """The top of the working tree, asked of git rather than assumed.
+
+    Every path this loop records — `agents/<slug>@<sha>`, `files_touched` — is
+    relative to the repository, so deriving them from wherever the shell happens
+    to be would make the same command write different rows from different
+    directories.
+    """
+    found = _git(start, "rev-parse", "--show-toplevel")
+    return Path(found) if found else None
+
+
+def tracked(repo_root: Path, path: Path) -> bool:
+    """Whether git is carrying this directory at all.
+
+    `ls-files` rather than `check-ignore`: a path can be un-ignored and still
+    never have been added, and it is being *in a commit* that makes a
+    `source_ref` mean something.
+    """
+    return bool(_git(repo_root, "ls-files", "--", str(path)))
+
+
+def changed(repo_root: Path, before: str, after: str) -> tuple[str, ...]:
+    """Which files moved between two builds.
+
+    Empty when either sha is unknown — a shallow clone, a rebased branch, a
+    build registered before the commit existed. An empty list of files is
+    honest; a list assembled from something else would not be.
+    """
+    if not before or not after or before == after:
+        return ()
+    diff = _git(repo_root, "diff", "--name-only", f"{before}..{after}")
+    return tuple(line for line in diff.splitlines() if line)
+
+
+def _git(repo_root: Path, *args: str) -> str:
+    try:
+        done = subprocess.run(  # noqa: S603 - fixed argv, no shell, no user string as a command
+            ["git", *args],  # noqa: S607 - git resolved from PATH, as every tool here is
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as unavailable:
+        raise NotFoundError(f"git is not usable here: {unavailable}") from unavailable
+    return done.stdout.strip() if done.returncode == 0 else ""

@@ -38,6 +38,17 @@ conversation had about it so far.
                              field that should not be there — nothing in the
                              drawing says which, and that is the question.
   decisions                  choices the drawing made. These may be WRONG.
+  from_the_document          what a written procedure says, attached to the part
+                             of the drawing it is about. Evidence, NOT settled —
+                             somebody wrote it down once and nobody has confirmed
+                             it is still true, so never state it back as fact.
+                             Compare it with what the card actually says: where
+                             the two DISAGREE, or where the document requires
+                             something the drawing is silent about, that is the
+                             strongest question available to you, because it is
+                             the one a person can check rather than argue with.
+                             Quote the document when you ask. Often empty — most
+                             processes have no written procedure at all.
   situations                 walks over the board, and where each one ended
   prior_threads              every question already asked, answered or dismissed
   settled                    what those conversations DECIDED. Already true; never

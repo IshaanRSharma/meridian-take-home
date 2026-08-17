@@ -517,6 +517,36 @@ def test_two_edges_between_one_pair_of_steps_are_told_apart(resubmission: Board)
     assert [s.via for s in illegible.trace] == ["r1", "r5", "r4", "r2", None]
 
 
+def test_several_ways_out_with_nothing_to_choose_between_them_stops_the_walk(resubmission: Board):
+    # How a process owner draws "these both happen, in no particular order" —
+    # and this vocabulary cannot express it. Taking the first edge walked half
+    # the board and called the situation `reached_terminal`, so a scenario named
+    # for a check on the other branch passed without that check ever running.
+    parallel = resubmission.model_copy(
+        update={
+            "edges": (
+                *resubmission.edges,
+                Edge(key="r9", from_key="claim_arrived", to_key="claim_accepted"),
+            )
+        }
+    )
+
+    run = parallel.dry_run({"form_complete": "complete"})
+
+    assert run.result == "undefined_branch"
+    assert [s.key for s in run.trace] == ["claim_arrived"]
+    # The note has to name the real reason. "No unconditional edge" would be a
+    # lie about a step that has two of them.
+    assert run.trace[-1].note == "2 ways out of here and nothing to choose between them"
+
+
+def test_one_way_out_is_still_taken_without_an_outcome(resubmission: Board):
+    # The guard must not fire on the ordinary case: an event with a single
+    # unconditional edge is how every board starts.
+    run = resubmission.dry_run({"form_complete": "complete"})
+    assert run.result == "reached_terminal"
+
+
 def test_a_claim_that_is_never_completed_is_still_reported_as_a_loop(resubmission: Board):
     # The board is identical; only the scenario differs. Per-visit answers must
     # not turn every cycle into a terminal.

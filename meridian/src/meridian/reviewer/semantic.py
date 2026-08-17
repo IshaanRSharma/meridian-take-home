@@ -19,7 +19,7 @@ from meridian.compiler import serialize
 from meridian.core.llm import Task, Transport, structured
 from meridian.domain.graph import Board, DryRunResult
 from meridian.domain.primitives import Severity
-from meridian.domain.review import Anchor, Assertion, Scenario, Thread
+from meridian.domain.review import Anchor, Assertion, DocumentClaim, Scenario, Thread
 from meridian.reviewer import dryrun, prompts, tools
 from meridian.reviewer.dryrun import Walked
 
@@ -104,6 +104,7 @@ async def ask(  # noqa: PLR0913 - a board, what was walked, and three kinds of p
     *,
     threads: tuple[Thread, ...] = (),
     settled: tuple[Assertion, ...] = (),
+    documented: tuple[DocumentClaim, ...] = (),
     round: int = 1,  # noqa: A002 - the review's own word for this
     transport: Transport | None = None,
 ) -> Asked:
@@ -114,7 +115,7 @@ async def ask(  # noqa: PLR0913 - a board, what was walked, and three kinds of p
         Questions,
         prompts.SYSTEM,
         prompts.board_for_review(
-            json.dumps(shown(board, threads, settled), indent=2),
+            json.dumps(shown(board, threads, settled, documented), indent=2),
             dryrun.describe(board, walked),
             "\n".join(anchorable(board)),
         ),
@@ -167,7 +168,10 @@ async def ask(  # noqa: PLR0913 - a board, what was walked, and three kinds of p
 
 
 def shown(
-    board: Board, threads: tuple[Thread, ...] = (), settled: tuple[Assertion, ...] = ()
+    board: Board,
+    threads: tuple[Thread, ...] = (),
+    settled: tuple[Assertion, ...] = (),
+    documented: tuple[DocumentClaim, ...] = (),
 ) -> dict[str, Any]:
     """The board as the model receives it: everything observable, minus the blanks.
 
@@ -183,7 +187,7 @@ def shown(
     these two to each other. A block the model is handed and never told about is
     one it reads as data rather than as part of the job.
     """
-    payload = serialize.review_payload(board, threads, assertions=settled)
+    payload = serialize.review_payload(board, threads, assertions=settled, documented=documented)
     payload.pop("findings", None)
     return payload
 

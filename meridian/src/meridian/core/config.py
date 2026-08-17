@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     )
     test_database_url: str = Field(
         default="postgresql://meridian:meridian@localhost:54329/meridian?sslmode=disable",
-        description="Integration tests only. The container `make db` starts, which has no SSL.",
+        description="Integration tests only. The local Postgres `make db` starts; no SSL.",
     )
     openai_api_key: str = Field(default="")
     openai_model: str = Field(default="")

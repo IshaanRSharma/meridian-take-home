@@ -18,6 +18,16 @@ statement says anything new — was added later and went unchecked, carrying a
 worked example about certificates and product codes. A test that has to be
 updated when the thing it guards grows is a test that will not be.
 
+**A field description is a prompt.** Not documentation: it is serialised into
+the JSON schema and sent with the call, so it reaches the model exactly as the
+system text does, in a different syntax. Walking module-level constants alone
+missed every one of them, and the cost was measurable rather than theoretical —
+`EntityDraft.cardinality_kind` spent its life telling the model that "one per
+<the demo customer's noun>" means `one`, and the test measuring that field fed
+it that same phrase. What it measured was this repository's own prompt. The
+identical sentence in an unseen vertical is the honest version, and it is in
+`tests/authoring/test_mapping_unseen.py`.
+
 Docstrings are deliberately out of scope. They are read by people, they explain
 code against the running example, and no model ever sees them.
 """
@@ -27,6 +37,7 @@ import pkgutil
 import re
 
 import pytest
+from pydantic import BaseModel
 
 import meridian
 from meridian.compiler import serialize
@@ -75,6 +86,34 @@ def prompts() -> list[tuple[str, str]]:
     return sorted(found)
 
 
+def described_fields() -> list[tuple[str, str]]:
+    """Every Pydantic field description in the package.
+
+    No length threshold, unlike above. A module constant might be SQL; a field
+    description is only ever written to be read by a model, so there is nothing
+    here to filter out and a short one leaks as easily as a long one.
+
+    Classes are keyed by where they are defined rather than where they are
+    imported, so a schema re-exported from three modules is checked once.
+    """
+    found: dict[str, str] = {}
+    for module in pkgutil.walk_packages(meridian.__path__, prefix="meridian."):
+        try:
+            loaded = importlib.import_module(module.name)
+        except Exception:  # noqa: S112 - an unimportable module is another test's problem
+            continue
+        for name in dir(loaded):
+            schema = getattr(loaded, name)
+            if not isinstance(schema, type) or not issubclass(schema, BaseModel):
+                continue
+            if not schema.__module__.startswith("meridian."):
+                continue
+            for field, info in schema.model_fields.items():
+                if info.description:
+                    found[f"{schema.__module__}.{schema.__name__}.{field}"] = info.description
+    return sorted(found.items())
+
+
 def test_the_package_actually_has_prompts_to_check() -> None:
     # The one way discovery fails silently: find nothing, pass, and guard
     # nothing. Three exist today — the reviewer's, the distiller's, and the
@@ -82,7 +121,19 @@ def test_the_package_actually_has_prompts_to_check() -> None:
     assert len(prompts()) >= 3
 
 
-@pytest.mark.parametrize(("name", "text"), prompts(), ids=lambda value: str(value)[:60])
+def test_the_field_descriptions_are_discovered_too() -> None:
+    # The same silent failure, one level down. The fill schemas are the reason
+    # this walk exists — they are the one place in the package where the whole
+    # instruction lives in descriptions and there is no constant to find.
+    found = dict(described_fields())
+
+    assert len(found) > 10
+    assert any(name.startswith("meridian.authoring.interpret.") for name in found)
+
+
+@pytest.mark.parametrize(
+    ("name", "text"), prompts() + described_fields(), ids=lambda value: str(value)[:60]
+)
 def test_no_prompt_carries_the_demo_customer_s_vocabulary(name: str, text: str) -> None:
     leaked = sorted({match.group(0).lower() for match in PRE_ALERT.finditer(text)})
 

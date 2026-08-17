@@ -28,7 +28,7 @@ from meridian.compiler.context import context_for
 from meridian.domain.frozen import FrozenSpec, ScopedContext, SpecPrimitive
 from meridian.domain.graph import ActionPrimitive, Board, EventPrimitive, FlowNode
 from meridian.domain.keys import key_for
-from meridian.domain.review import Assertion, Thread
+from meridian.domain.review import Anchor, Assertion, DocumentClaim, Thread
 
 
 def review_payload(
@@ -36,6 +36,7 @@ def review_payload(
     threads: tuple[Thread, ...] = (),
     assertions: tuple[Assertion, ...] = (),
     corpus: dict[str, Any] | None = None,
+    documented: tuple[DocumentClaim, ...] = (),
 ) -> dict[str, Any]:
     """Everything a reviewer needs to ask a good question about this board."""
     payload: dict[str, Any] = {
@@ -113,6 +114,13 @@ def review_payload(
             for assertion in assertions
             if assertion.is_active()
         ],
+        # What a written procedure says, attached to the element it bears on.
+        # Evidence, never a decision: nobody has confirmed the document is still
+        # true, so it can start a conversation and can never be the answer to
+        # one. Grouped by anchor because the value is entirely in the comparison
+        # — beside what the card says, a claim either agrees, disagrees, or
+        # covers something the drawing is silent about.
+        "from_the_document": _documented(documented),
         # Including rejected ones. A question already dismissed must not come
         # back, and knowing *why* it was dismissed stops a near-miss re-ask.
         "prior_threads": [
@@ -128,6 +136,13 @@ def review_payload(
                 "decision_key": thread.decision_key,
                 "scenario_key": thread.scenario_key,
                 "anchors": [str(a) for a in thread.anchors],
+                # Inlined per conversation, not left to be joined. A follow-up is
+                # decided one thread at a time — *did this answer settle it* —
+                # and the strongest reason to press is a procedure that says
+                # something the answer did not address. Flat in
+                # `from_the_document` that is a join the model has to notice; here
+                # it is beside the turns it bears on.
+                "from_the_document": _bearing_on(documented, thread.anchors),
                 "messages": [
                     m.model_dump(mode="json", exclude={"created_at"}) for m in _turns(thread)
                 ],
@@ -138,6 +153,20 @@ def review_payload(
     if corpus is not None:
         payload["corpus"] = corpus
     return payload
+
+
+def _bearing_on(claims: tuple[DocumentClaim, ...], anchors: tuple[Anchor, ...]) -> list[str]:
+    """Document claims about any element this conversation is about."""
+    about = {str(anchor) for anchor in anchors}
+    return [f"[{c.source}] {c.statement}" for c in claims if str(c.anchor) in about]
+
+
+def _documented(claims: tuple[DocumentClaim, ...]) -> dict[str, list[str]]:
+    """Document claims grouped under the element each one is about."""
+    grouped: dict[str, list[str]] = {}
+    for claim in claims:
+        grouped.setdefault(str(claim.anchor), []).append(f"[{claim.source}] {claim.statement}")
+    return grouped
 
 
 def _fields_no_step_uses(board: Board) -> list[str]:

@@ -14,6 +14,7 @@ outside the sandbox, and stays ``None`` for anything in-workflow.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any, Literal
@@ -21,6 +22,28 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 Status = Literal["ok", "failed", "skipped"]
+
+# How many failing rows a step carries into the bundle. Enough to show a
+# pattern — whitespace, case, a prefix — and few enough that the reader still
+# sees the trace underneath them.
+EVIDENCE_LIMIT = 5
+
+
+def _failing(failures: object) -> dict[str, Any]:
+    """A sample of what did not pass, as the values a person would name.
+
+    ``subject`` is the one field every operator fills with the thing the failure
+    is *about*, which is why it can be asked for generically here.
+    """
+    if not isinstance(failures, tuple | list) or not failures:
+        return {}
+    return {
+        "failing": [
+            {"subject": getattr(f, "subject", ""), "reason": getattr(f, "reason", "")}
+            | ({"detail": dict(f.detail)} if getattr(f, "detail", None) else {})
+            for f in failures[:EVIDENCE_LIMIT]
+        ]
+    }
 
 
 class ToolCall(BaseModel):
@@ -77,12 +100,16 @@ class StepRecorder:
     def produced(self, result: object) -> None:
         """Record what the step returned.
 
-        A pydantic result is reduced to its counts rather than dumped whole: the
-        bundle wants ``{outcome, total, passed, failed}``, and every failing row
-        as well would bury the diagnosis it exists to surface.
+        A pydantic result is reduced to its counts plus a **sample of what
+        failed**. Every failing row would bury the diagnosis; none of them
+        buries it just as thoroughly, because ``2 unmatched`` sends somebody to
+        the source documents where ``['UAC25022 ', 'uac25019']`` shows trailing
+        whitespace and case variance in one read. A few are the diagnosis, all
+        of them are a data dump.
         """
         if isinstance(result, BaseModel):
             self._output = result.model_dump(mode="json", exclude={"failures"})
+            self._output |= _failing(getattr(result, "failures", ()))
         elif isinstance(result, Mapping):
             self._output = dict(result)
         else:
@@ -139,6 +166,24 @@ class RunTrace:
     def decline(self, source: str, reason: str) -> None:
         """Record something skipped, so an empty result has a cause beside it."""
         self._declined.append(Declined(source=source, reason=reason))
+
+    def dump(self) -> str:
+        """The whole trace as one JSON string, for the trip out of the sandbox.
+
+        Temporal's payload converter takes concrete types across the workflow
+        boundary, and a tuple of nested models is not one of them. A string is,
+        so the agent puts this on whatever dataclass it returns and the harness
+        reads it back with ``CaseOutcome.from_dump``. One line at each end, and
+        no part of the trace is flattened away in between.
+        """
+        return json.dumps(
+            {
+                "spec_version": self.spec_version,
+                "spec_checksum": self.spec_checksum,
+                "steps": [step.model_dump(mode="json") for step in self._steps],
+                "declined": [gone.model_dump(mode="json") for gone in self._declined],
+            }
+        )
 
     def unrecognised_share(self) -> float:
         """What fraction of everything that arrived was skipped.

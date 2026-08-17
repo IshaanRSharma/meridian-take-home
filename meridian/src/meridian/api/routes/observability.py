@@ -5,7 +5,7 @@ always then asks the other. `events` is the pipeline observing itself — what r
 in what order, how long it took. `evals` is the oracle — what the answers should
 be, per shipment, from a file authored before any of this ran.
 
-**The eval set is a file, not a table.** `fixtures/expected/shipments.json` is
+**The eval set is a file, not a table.** `eval/expected/shipments.json` is
 ground truth supplied with the brief, and ground truth belongs in version control
 where a diff is reviewable, not in a row somebody can UPDATE. It is read fresh
 rather than cached because it changes when a human edits it, and that human is
@@ -32,7 +32,7 @@ router = APIRouter(tags=["observability"])
 # Four levels up from this file is the repo root: routes → api → meridian →
 # src → meridian(project) → root. Resolved once at import so a bad layout fails
 # loudly at startup rather than on the first request to a screen nobody opened.
-_EVAL_SET = Path(__file__).resolve().parents[5] / "fixtures" / "expected" / "shipments.json"
+_EVAL_SET = Path(__file__).resolve().parents[5] / "eval" / "expected" / "shipments.json"
 
 
 @router.get("/events")

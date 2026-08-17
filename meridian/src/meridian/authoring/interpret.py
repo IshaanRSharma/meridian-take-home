@@ -1,42 +1,3 @@
-"""Reading what somebody typed and mapping it onto a card's typed fields.
-
-A process owner writes *"we email the receiving supervisor, and if they haven't
-come back in two days it goes to the ops manager"*. Four fields on that card are
-settled by that sentence and nobody should have to find them in a form.
-
-Three things keep it honest.
-
-**It is a typing accelerator, never an authority.** It returns a patch; the
-caller merges it. Nothing here writes, and nothing here can: this module may not
-import a repository, which `tests/test_layering.py` enforces. And it only fills
-blanks, because overwriting a value somebody typed or picked is the exact moment
-an accelerator becomes an authority.
-
-**The allowlist is the schema, not a filter.** Four response models, one per card
-type, holding only the fields a model may set. A field it is never shown is
-unrepresentable rather than filtered — so the rule cannot rot the way a
-post-filter can. The line is `whiteboard.md` §4's:
-
-    Fill may draft anything lint or `bind check` can verify. Pickers own
-    anything where a wrong-but-valid answer is possible.
-
-Which is why `criteria`, `outcomes`, `inputs`, `captures` and `scope` are absent:
-a bad field path is caught by lint and a bad role by `bind check`, but a bad
-criterion is caught by **nothing** — it resolves, it is well formed, and it tests
-the wrong thing. `is_terminal` is absent for a related reason: it is the only
-field that *suppresses* a blocking finding, and fill may open a gate but never
-close one.
-
-**It is lossy on purpose and the residual is kept.** `instructions` is in none of
-the schemas — this module sets it from what was said, verbatim, so the model
-cannot summarise away the sentence that is really a binding brief. Structured
-fields exist to make linting possible; everything else rides in prose, because
-the consumer downstream is a language model rather than a parser.
-
-The card never sees the board, and cannot: a model that has never been shown a
-key cannot return one.
-"""
-
 import json
 from typing import Any, Literal
 
@@ -140,16 +101,31 @@ class ActionDraft(BaseModel):
 
     name: str = Field(description="a short label for this card, in their words")
     effect: Effect | None = Field(
-        default=None, description="tells someone · writes it down · looks it up · nothing"
+        default=None,
+        description=(
+            "What this step does, and there are five:\n"
+            "  notify  TELLS somebody something. They may still be chased for a "
+            "reply, but the reply is not what picks the next step.\n"
+            "  decide  ASKS somebody something. Their answer is what picks the "
+            "next step — a sign-off, an approval, a call somebody has to make.\n"
+            "  record  writes it down in software.\n"
+            "  lookup  fetches something out of software.\n"
+            "  noop    nothing leaves this step; it is a named end.\n"
+            "Notify and decide both reach a person, and the only thing that "
+            "separates them is whether their answer changes where the process "
+            "goes. Neither is decided by how they are reached — a text, an "
+            "email, a call is `channel` — and either may put somebody on a "
+            "clock."
+        ),
     )
     channel: Channel | None = Field(default=None, description="only when it tells someone")
     system: str | None = Field(default=None, description="their name for the software, free text")
     performed_by: str | None = Field(
         default=None,
         description=(
-            "Who decides, as a role and never a person's name — 'receiving "
-            "supervisor', not 'Dave', and not 'the receiving supervisor'. Drop "
-            "the article: this becomes a key somebody looks up in a file."
+            "Who decides, as a role and never a person's name — 'duty manager', "
+            "not 'Dev', and not 'the duty manager'. Drop the article: this "
+            "becomes a key somebody looks up in a file."
         ),
     )
     recipient_roles: list[str] = Field(
@@ -212,7 +188,20 @@ class CheckDraft(BaseModel):
 
     name: str = Field(description="a short label for this card, in their words")
     on_missing_input: OnFailure | None = Field(
-        default=None, description="what to do while something it reads has not arrived"
+        default=None,
+        description=(
+            "What this check does when something it reads is NOT THERE — and "
+            "only when they said so. Describing the test is not saying this: a "
+            "sentence about cross-checking one thing against another has not "
+            "answered what happens when one of them never turns up, and a "
+            "process that stops and one that carries on both fit it. Leave it "
+            "null and somebody gets asked; guess, and nobody does.\n"
+            "When they DID say, the same field answers late and never:\n"
+            "  wait  hold the case until it turns up.\n"
+            "  fail  the absence IS the check failing. 'if there's none at all, "
+            "that's a fail' is this, however plainly it also sounds like waiting.\n"
+            "  skip  carry on as though this check had not run."
+        ),
     )
 
 
@@ -225,13 +214,17 @@ class EntityDraft(BaseModel):
         default=None,
         description=(
             "How many of these turn up for one case, where a case is one run of "
-            "the process — one shipment, one application, one order.\n"
-            "  one     exactly one per case. 'one per shipment' is THIS, because "
-            "the shipment is the case.\n"
+            "the process — one booking, one application, one order.\n"
+            "Only when they said how many. Naming the thing in the plural is not "
+            "saying how many, and neither is describing where it comes from — "
+            "leave it null, and the card asks.\n"
+            "  one     exactly one per case. Naming the case is the ordinary way "
+            "to say this: 'one per booking' is THIS, because the booking IS the "
+            "case.\n"
             "  many    several per case, and nothing says how many.\n"
-            "  one_per one for each item on a DIFFERENT thing — 'a certificate "
-            "for every batch line on the invoice'. Only when they name what it "
-            "is counted against; somebody picks the exact field afterwards."
+            "  one_per one for each item on a DIFFERENT thing — 'a receipt for "
+            "every night on the booking'. Only when they name what it is counted "
+            "against; somebody picks the exact field afterwards."
         ),
     )
 

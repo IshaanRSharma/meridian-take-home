@@ -38,8 +38,15 @@ MAY_IMPORT: dict[str, set[str]] = {
     # findings the review loop runs on.
     "authoring": {"domain", "repositories"},
     "reviewer": {"domain", "compiler", "repositories"},
-    "codegen": {"domain", "compiler"},
-    "healing": {"domain", "codegen", "repositories"},
+    # There is no `codegen` package and there will not be one: generating an
+    # agent is a skill a human runs, not a service. `healing` reaches `runtime`
+    # instead, and for the same reason `worker` does — it EXECUTES generated
+    # agents and reads the two things they hand back, `CheckResult` and the
+    # trace. Rule 4 asks an agent to keep the trace's shape; validating that on
+    # arrival is what makes it a rule rather than a comment. The arrow points
+    # healing → runtime, so the property this table exists to protect — that
+    # generated code cannot reach the toolchain — is untouched.
+    "healing": {"domain", "repositories", "runtime"},
     # Imported by GENERATED agents, so it may know the types and nothing else.
     "runtime": {"domain"},
     "worker": {"domain", "runtime"},
@@ -49,7 +56,6 @@ MAY_IMPORT: dict[str, set[str]] = {
         "authoring",
         "compiler",
         "reviewer",
-        "codegen",
         "healing",
         "repositories",
     },
@@ -87,7 +93,12 @@ def imported_packages(path: Path) -> set[str]:
     ("package", "path"), packages(), ids=lambda value: getattr(value, "name", value)
 )
 def test_no_package_imports_upward(package: str, path: Path) -> None:
-    allowed = MAY_IMPORT[package] | {package, "core"}
+    # `events` sits beside `core` in the blanket allowance rather than in a row
+    # of its own. Every phase in the table it writes — review, compile, codegen,
+    # eval, repair, deploy, prod — is a different package, so listing it per row
+    # would be listing it everywhere. `domain/` is still held to nothing by the
+    # separate test below, which is the exemption that would have mattered.
+    allowed = MAY_IMPORT[package] | {package, "core", "events"}
     reached = imported_packages(path)
 
     assert reached <= allowed, (

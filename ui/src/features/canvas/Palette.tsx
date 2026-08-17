@@ -13,7 +13,7 @@
  */
 import { useState } from 'react';
 import { Boxes, ChevronDown, CircleDot, GitBranch, Plus, Zap } from 'lucide-react';
-import type { PrimitiveType } from '@/lib/api';
+import type { PrimitiveType, Relation } from '@/lib/api';
 
 const ITEMS: {
   type: PrimitiveType;
@@ -52,7 +52,28 @@ const ITEMS: {
   },
 ];
 
-export default function Palette({ pending }: { pending: boolean }) {
+/** The three kinds of line, in the process owner's words.
+ *
+ * A relation is picked before the line is drawn rather than changed after,
+ * because there is no endpoint to edit an edge in place — and that is not an
+ * oversight. An edge key is what a thread anchors to with no foreign key, so
+ * re-minting one to change its relation would silently orphan every comment
+ * pinned to it. */
+const LINES: { relation: Relation; label: string; hint: string }[] = [
+  { relation: 'normal', label: 'Carries on', hint: 'the usual next step' },
+  { relation: 'exception', label: 'Goes wrong', hint: 'something failed' },
+  { relation: 'repeat', label: 'Comes back', hint: 'loops round again' },
+];
+
+export default function Palette({
+  pending,
+  drawing,
+  onDrawing,
+}: {
+  pending: boolean;
+  drawing: Relation;
+  onDrawing: (relation: Relation) => void;
+}) {
   // Collapsible because it sits on top of the board, and the entity lane is
   // laid out exactly where it covers. A palette you cannot move out of the way
   // is a palette that hides the drawing.
@@ -93,6 +114,32 @@ export default function Palette({ pending }: { pending: boolean }) {
             </p>
           </div>
         ))}
+
+        <div className="mt-1.5 border-t border-(--color-line-soft) px-2 pt-2 pb-1">
+          <p className="mb-1.5 text-[10.5px] text-(--color-ink-faint)">
+            Then drag between cards. This line is a…
+          </p>
+          <div className="flex overflow-hidden rounded-md border border-(--color-line)">
+            {LINES.map(({ relation, label, hint }) => (
+              <button
+                key={relation}
+                title={hint}
+                onClick={() => onDrawing(relation)}
+                className={
+                  'flex-1 border-r border-(--color-line-soft) px-1 py-1 text-[10px] last:border-r-0 transition-colors ' +
+                  (drawing === relation
+                    ? 'bg-(--color-ink) text-white'
+                    : 'text-(--color-ink-dim) hover:bg-(--color-raised)')
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[10.5px] leading-tight text-(--color-ink-faint)">
+            Click a line and press Delete to remove it.
+          </p>
+        </div>
       </div>
     </div>
   );

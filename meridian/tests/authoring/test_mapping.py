@@ -23,6 +23,15 @@ The counterpart to all of this is `test_interpret.py::the model is never offered
 a field it may not set` — together they are the two halves of the claim: the
 schema decides what *may* be filled, and this decides whether it is filled
 *correctly*.
+
+**These five are pre-alert sentences and they are not the measurement any more.**
+They were written beside the prompt, in the one process this system has been
+pointed at, and one of them was answered by the field's own description in the
+demo customer's words until that leak was found and closed. What they are now is
+a **control**: `test_mapping_unseen.py` measures a vertical nothing here has
+seen, and a description edit that sharpens that one can quietly break this one —
+which has happened once already, to `report_coa`'s `on_timeout`, and was
+invisible until both were re-run together. Change the fill prompt, run both.
 """
 
 from typing import Any
@@ -110,6 +119,36 @@ async def test_waiting_for_paperwork_is_not_a_failure() -> None:
 
     assert got["on_missing_input"] == "wait"
     assert got["name"]
+    assert not got.get("criteria"), "criteria is a picker: a plausible wrong rule is undetectable"
+
+
+async def test_a_sentence_from_the_sop_answers_only_what_the_sop_answers() -> None:
+    """The failure mode that matters most, in the customer's own words.
+
+    This is a sentence lifted verbatim from `docs/sop-inbound-pre-alert.pdf`. It
+    describes a test and says nothing whatever about a certificate that has not
+    arrived — and both readings fit it: hold the shipment until the paperwork
+    catches up, or treat the absence as a failure and report it.
+
+    The frozen spec says `wait`, and **it says that because somebody was asked**.
+    Fill answered `fail` four runs in five before this was pinned, which is the
+    one shape of wrong answer the whole design is built to avoid: not a blank —
+    a blank is a finding, a finding is a question, and the question is how the
+    real spec got its value — but a confident value in a field no lint rule can
+    contradict. It freezes clean, it generates clean, and the agent reports a
+    discrepancy on every shipment whose documents are merely still in transit.
+
+    The same edit that taught the field its three values had to teach it when to
+    have no value at all. Both are the field's own description; a check that
+    genuinely states the answer still fills, which is the test above.
+    """
+    got = await _mapped(
+        CheckPrimitive(key="c6"),
+        "Cross-check each batch listed on the invoice with a corresponding COA document.",
+    )
+
+    assert got["name"]
+    assert not got.get("on_missing_input"), "the SOP never says, so nobody may answer but the owner"
     assert not got.get("criteria"), "criteria is a picker: a plausible wrong rule is undetectable"
 
 

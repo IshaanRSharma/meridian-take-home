@@ -36,10 +36,10 @@ from meridian.domain.errors import IncompleteError
 from meridian.domain.graph import Board, BoardFinding
 from meridian.domain.review import Anchor, Assertion, Scenario, Thread
 from meridian.repositories import assertions as assertions_repo
-from meridian.repositories import boards
+from meridian.repositories import boards, reference_docs
 from meridian.repositories import scenarios as scenarios_repo
 from meridian.repositories import threads as threads_repo
-from meridian.reviewer import distill, dryrun, ranking, scenarios, semantic
+from meridian.reviewer import distill, dryrun, ranking, reference, scenarios, semantic
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,8 +81,22 @@ async def review(
     ]
     number = board.review_round + 1
 
+    # What any attached procedure says, aligned onto the elements it bears on.
+    # The only question class where a disagreement is checkable rather than
+    # speculative, and empty on every board that has no document — which is most
+    # of them, and the reason the whiteboard exists.
+    documented = await reference.read(
+        board, await reference_docs.for_board(connection, board_id), transport=transport
+    )
+
     asked = await semantic.ask(
-        board, walked, threads=prior, settled=settled, round=number, transport=transport
+        board,
+        walked,
+        threads=prior,
+        settled=settled,
+        documented=documented,
+        round=number,
+        transport=transport,
     )
     # Six things to read, counting these. A follow-up finishes a conversation
     # rather than starting one, so it takes its slot first.
@@ -145,7 +159,11 @@ async def settle(
     """
     board = await boards.get(connection, board_id)
     prior = await threads_repo.for_board(connection, board_id)
-    already = {a.thread_id for a in await assertions_repo.for_board(connection, board_id)}
+    recorded = await assertions_repo.for_board(connection, board_id)
+    # Kept, not reduced to ids. The distiller has to be shown what the elements
+    # it is about already know, or two conversations settle the same fact onto
+    # one card and the spec inlines the sentence twice.
+    already = {a.thread_id for a in recorded}
     resolved: list[UUID] = []
 
     for comment in prior:
@@ -159,7 +177,7 @@ async def settle(
         # before they edited the canvas.
         statements: tuple[Assertion, ...] = ()
         if comment.id not in already:
-            statements = await distill.distil(board, comment, transport=transport)
+            statements = await distill.distil(board, comment, recorded, transport=transport)
             for statement in statements:
                 await assertions_repo.save(connection, board_id, statement)
 

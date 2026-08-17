@@ -390,3 +390,91 @@ async def test_a_verdict_about_a_statement_that_was_not_given_is_ignored(seed: B
     found = await paraphrases(seed, settled, transport=judging((7, True), (-1, True)))
 
     assert found == ()
+
+
+# --- what the element already knows -----------------------------------------
+
+
+def _shown(fake: FakeTransport) -> str:
+    """The payload the distiller was actually sent."""
+    return str(fake.sent[0]["input"][0]["content"])
+
+
+async def test_the_distiller_is_shown_what_these_elements_already_know(seed: Board):
+    # Two conversations can settle the same fact onto one card, and then
+    # `context_for` inlines the sentence twice into that card's spec entry. The
+    # distiller cannot avoid it without being told what is already recorded.
+    fake = FakeTransport()
+    already = (
+        Assertion(
+            anchor=Anchor.parse("primitive:coas_valid"),
+            kind="terminology",
+            statement="A batch matches after trimming spaces.",
+        ),
+    )
+    thread = Thread(
+        category="ambiguous_rule",
+        question="How do you compare them?",
+        anchors=(Anchor.parse("primitive:coas_valid"),),
+    )
+
+    await distil(seed, thread, already, transport=fake)
+
+    assert "trimming spaces" in _shown(fake)
+
+
+async def test_a_statement_about_an_unrelated_card_is_not_shown(seed: Board):
+    # The safety property. Two subgraphs can hold near-identical rules and BOTH
+    # are needed, because a statement is inlined into every card its anchor
+    # reaches and each generated file needs its own. Shown everything, a model
+    # told not to repeat itself suppresses the second one.
+    fake = FakeTransport()
+    elsewhere = (
+        Assertion(
+            anchor=Anchor.parse("primitive:invoice_complete"),
+            kind="terminology",
+            statement="An identifier matches after trimming spaces.",
+        ),
+    )
+    thread = Thread(
+        category="ambiguous_rule",
+        question="How do you compare them?",
+        anchors=(Anchor.parse("primitive:coas_valid"),),
+    )
+
+    await distil(seed, thread, elsewhere, transport=fake)
+
+    assert "An identifier matches" not in _shown(fake)
+
+
+async def test_a_board_level_statement_reaches_every_conversation(seed: Board):
+    # `reaches` says a board anchor bears on every card, and the distiller has to
+    # agree with the freeze about that or it restates a rule already inlined.
+    fake = FakeTransport()
+    everywhere = (
+        Assertion(
+            anchor=Anchor.parse("board"),
+            kind="rule",
+            statement="One container is one shipment.",
+        ),
+    )
+    thread = Thread(
+        category="ambiguous_rule",
+        question="How do you compare them?",
+        anchors=(Anchor.parse("primitive:coas_valid"),),
+    )
+
+    await distil(seed, thread, everywhere, transport=fake)
+
+    assert "One container is one shipment" in _shown(fake)
+
+
+async def test_nothing_recorded_yet_is_not_an_error(seed: Board):
+    fake = FakeTransport()
+    thread = Thread(
+        category="ambiguous_rule",
+        question="How do you compare them?",
+        anchors=(Anchor.parse("primitive:coas_valid"),),
+    )
+
+    assert await distil(seed, thread, transport=fake) == ()

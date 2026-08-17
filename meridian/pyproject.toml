@@ -122,7 +122,14 @@ asyncio_mode = "auto"
 # Test module names must be unique across directories: pytest imports them by
 # basename, and `--import-mode=importlib` would fix that but stops Temporal's
 # workflow sandbox importing the module a workflow is defined in.
-addopts = "-q --strict-markers --strict-config"
+#
+# `-m "not llm"` is the default rather than a habit at the call site. Those
+# tests spend real money and inherit the model's variance, and `make check` runs
+# plain `pytest` — so the gate was quietly billing on every run and could go red
+# because a sampler wobbled. It did, once, which is how this was found. Asking
+# for them explicitly still works: a second `-m` on the command line replaces
+# this one, so `pytest -m llm` is unchanged.
+addopts = "-q --strict-markers --strict-config -m 'not llm'"
 markers = [
     "db: requires the local Postgres from docker-compose (make db)",
     "llm: makes a real OpenAI call; skipped unless OPENAI_API_KEY is set",

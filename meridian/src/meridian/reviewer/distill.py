@@ -26,7 +26,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-from meridian.compiler import serialize
+from meridian.compiler import context, serialize
 from meridian.core.llm import Task, Transport, structured
 from meridian.domain.graph import Board
 from meridian.domain.review import Anchor, Assertion, Thread
@@ -71,7 +71,13 @@ Each statement carries:
               object literal, e.g. {"pattern": "^\\\\d{7}$"}. Required whenever
               kind is `constraint`, and omitted otherwise.
 
-Say nothing the conversation did not settle.\
+Say nothing the conversation did not settle.
+
+`already_known` is what has been settled about these same elements. Add what is
+NEW. If this conversation only confirmed something already there, say nothing
+about it — but never leave out something new because it sounds similar to
+something already known, because similar is not the same and the difference is
+usually the whole point.\
 """
 
 
@@ -96,20 +102,31 @@ class Distillation(BaseModel):
 
 
 async def distil(
-    board: Board, thread: Thread, *, transport: Transport | None = None
+    board: Board,
+    thread: Thread,
+    recorded: Sequence[Assertion] = (),
+    *,
+    transport: Transport | None = None,
 ) -> tuple[Assertion, ...]:
     """The statements this conversation settled, one element each.
 
     Args:
         board: what the anchors are checked against.
         thread: the conversation, including every turn.
+        recorded: what is already settled. Filtered to the elements this
+            conversation is about before it is shown, so a statement from an
+            unrelated part of the board can never suppress one here.
         transport: the function that talks to OpenAI. Tests pass a fake.
 
     Returns:
         One assertion per statement whose anchor resolves, in the order proposed.
     """
     completed = await structured(
-        Task.DISTIL, Distillation, SYSTEM, _payload(board, thread), transport=transport
+        Task.DISTIL,
+        Distillation,
+        SYSTEM,
+        _payload(board, thread, recorded),
+        transport=transport,
     )
 
     settled: list[Assertion] = []
@@ -274,10 +291,39 @@ def _as_object(literal: str | None) -> dict[str, object] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _payload(board: Board, thread: Thread) -> str:
-    """The conversation, and the elements a statement may be anchored to."""
+def _payload(board: Board, thread: Thread, recorded: Sequence[Assertion] = ()) -> str:
+    """The conversation, what its elements already know, and what may be anchored to.
+
+    ``already_known`` is scoped by ``reaches`` rather than being the whole set,
+    and that is the whole safety property. Two subgraphs can hold near-identical
+    rules — a matching rule on one check and another on a different one — and
+    both are needed, because a statement is inlined into every card its anchor
+    reaches and each generated file needs its own. Shown everything, a model
+    asked not to repeat itself would suppress the second. Shown only what these
+    elements already know, there is nothing to wrongly suppress.
+
+    Framed as *add what is new* rather than *refuse what is similar*, too: a
+    wrong call then writes a restatement, which `paraphrases` already reports and
+    nobody loses. The other framing deletes a settled answer.
+    """
+    about = [
+        board.p(anchor.key)
+        for anchor in thread.anchors
+        if anchor.kind == "primitive" and anchor.key and board.has(anchor.key)
+    ]
+    known = sorted(
+        {
+            f"[{a.kind}] {a.statement}"
+            for a in recorded
+            if a.is_active()
+            and (
+                a.anchor in thread.anchors or any(context.reaches(card, a.anchor) for card in about)
+            )
+        }
+    )
     return json.dumps(
         {
+            "already_known": known,
             "thread": {
                 "category": thread.category,
                 "status": thread.status,

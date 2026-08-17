@@ -365,7 +365,65 @@ def test_a_summary_needs_no_recognition_rule_and_no_cardinality(sound: Board):
         Fill(measure="passed", field=FieldRef(entity="shipment_summary", path="status")),
     )
     for finding in rules.findings(board):
-        assert finding.anchor != "primitive:shipment_summary" or finding.field == "fields"
+        assert finding.anchor != "primitive:shipment_summary" or finding.field.startswith("fields")
+
+
+def test_every_unfilled_column_is_reported_separately(sound: Board):
+    """Two blank columns are two problems, not one.
+
+    `findings` merges on (anchor, field) so that several rules describing one
+    blank collapse into a single line. An unfilled column has to carry its own
+    name into that key, or the second one is dropped — and dropped is worse than
+    unreported, because the first is fixed and the card then looks finished.
+    """
+    board = _with_summary(
+        sound,
+        Fill(measure="checked", field=FieldRef(entity="shipment_summary", path="checked")),
+    )
+
+    reported = {f.field for f in rules.findings(board) if f.anchor == "primitive:shipment_summary"}
+    assert reported == {"fields.failed", "fields.status"}
+
+
+def test_a_summary_nothing_reads_is_not_a_finding(sound: Board):
+    """The row a process produces is consumed outside it, so nobody on the board reads it.
+
+    Distinct from the unread-entity rule it would otherwise trip: an invoice
+    nothing looks at is a card somebody forgot to wire up, while a summary
+    nothing looks at is the normal and only shape an output takes.
+    """
+    filled = CheckPrimitive(
+        key="looks_ok",
+        config=sound.p("looks_ok").config.model_copy(
+            update={
+                "fills": (
+                    Fill(
+                        measure="checked", field=FieldRef(entity="shipment_summary", path="checked")
+                    ),
+                )
+            }
+        ),
+    )
+    board = sound.model_copy(
+        update={
+            "primitives": (
+                sound.primitives[0],
+                sound.primitives[1],
+                filled,
+                *sound.primitives[3:],
+                SUMMARY,
+            )
+        }
+    )
+
+    assert "primitive:shipment_summary:name" not in fired(rules.entities_are_read, board)
+
+
+def test_an_entity_that_is_neither_read_nor_filled_is_still_a_finding(sound: Board):
+    """The exemption is for being filled, not for being an entity."""
+    board = sound.model_copy(update={"primitives": (*sound.primitives, SUMMARY)})
+
+    assert "primitive:shipment_summary:name" in fired(rules.entities_are_read, board)
 
 
 def test_filling_a_field_the_entity_does_not_have_is_blocking(sound: Board):
@@ -549,3 +607,61 @@ def test_a_step_cannot_produce_something_the_board_does_not_have(sound: Board):
 
 def test_a_step_producing_something_that_is_there_is_fine(sound: Board):
     assert fired(rules.produced_entities_exist, sound) == set()
+
+
+# --- a step reading something nothing ever creates ---------------------------
+
+
+def test_a_step_reading_an_entity_nothing_produces_is_reported(sound: Board):
+    # The mirror of `produced_entities_exist`, and the direction nothing covered.
+    # Every other rule passes it — the card is on the board, a step reads it, it
+    # is declared in `inputs` — and `inputs_arrive_before_they_are_read` asks
+    # whether the producer runs early enough, which is vacuously true when there
+    # is no producer. So the board linted exactly as clean as one without it, and
+    # codegen got a Check whose inputs name something that never exists.
+    check = sound.checks()[0]
+    inputs = (*check.config.inputs, "shipment_summary")
+    config = check.config.model_copy(update={"inputs": inputs})
+    reading = check.model_copy(update={"config": config})
+    board = sound.model_copy(
+        update={
+            "primitives": (
+                *(reading if card.key == check.key else card for card in sound.primitives),
+                SUMMARY,
+            )
+        }
+    )
+
+    fired_on = fired(rules.something_produces_what_a_step_reads, board)
+    assert f"primitive:{check.key}:inputs" in fired_on
+
+
+def test_a_step_reading_something_the_process_creates_is_fine(sound: Board):
+    assert fired(rules.something_produces_what_a_step_reads, sound) == set()
+
+
+# --- several ways out of one step --------------------------------------------
+
+
+def test_two_ways_out_with_nothing_to_choose_between_them_is_reported(sound: Board):
+    # This vocabulary is sequential, and two unconditional edges out of one step
+    # is how a process owner draws "these both happen, in no particular order".
+    # Nothing here can express it, so it is said on the card rather than accepted
+    # and then half-walked: before this rule such a board linted clean, reported
+    # every step reachable, and dry-ran down whichever branch was drawn first.
+    event = sound.events()[0]
+    target = sound.checks()[0]
+    board = sound.model_copy(
+        update={
+            "edges": (
+                *sound.edges,
+                Edge(key="parallel", from_key=event.key, to_key=target.key),
+            )
+        }
+    )
+
+    assert f"primitive:{event.key}:outgoing" in fired(rules.one_way_out_of_every_step, board)
+
+
+def test_one_unconditional_way_out_is_how_every_board_starts(sound: Board):
+    assert fired(rules.one_way_out_of_every_step, sound) == set()

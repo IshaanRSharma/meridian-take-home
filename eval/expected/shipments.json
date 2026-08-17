@@ -1,0 +1,174 @@
+{
+  "$comment": [
+    "Ground truth for the eval suite: ten shipments, one row each, as supplied",
+    "by Meridian. This is the expected_output shape the generated agent must",
+    "produce per shipment.",
+    "",
+    "Discipline (Claude.md §9): the SHAPE of this file informs the reviewer's",
+    "questions; the VALUES are the repair loop's oracle. Deriving business rules",
+    "from these numbers and encoding them directly fits the spec to the test set",
+    "rather than to the process. Anything inferred here is a hypothesis to put to",
+    "the process owner, never an answer.",
+    "",
+    "Column names are verbatim from the source table, including the one that",
+    "misnames its own unit — see notes.mismatched_asn_unit."
+  ],
+
+  "source": "Meridian evaluation set, 10 shipments",
+  "unit": "one row per shipment, not per email and not per invoice",
+
+  "shipments": [
+    {
+      "shipment_no": "CAAU4056270",
+      "identifier_kind": "container",
+      "invoices_successful": 0,
+      "invoices_failed": 1,
+      "invoices_total": 1,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 2,
+      "failed_coa": 0,
+      "coa_success": 5,
+      "coa_total": 5,
+      "status": "ACTIVE"
+    },
+    {
+      "shipment_no": "MNBU3974949",
+      "identifier_kind": "container",
+      "invoices_successful": 1,
+      "invoices_failed": 0,
+      "invoices_total": 1,
+      "invoices_mismatched_asn": 14,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 17,
+      "coa_total": 17,
+      "status": "RESOLVED"
+    },
+    {
+      "shipment_no": "176-26926281",
+      "identifier_kind": "air_waybill",
+      "invoices_successful": 1,
+      "invoices_failed": 0,
+      "invoices_total": 1,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 0,
+      "failed_coa": 2,
+      "coa_success": 0,
+      "coa_total": 2,
+      "status": "ACTIVE"
+    },
+    {
+      "shipment_no": "TTNU8982561",
+      "identifier_kind": "container",
+      "invoices_successful": 2,
+      "invoices_failed": 0,
+      "invoices_total": 2,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 7,
+      "coa_total": 7,
+      "status": "RESOLVED"
+    },
+    {
+      "shipment_no": "MNBU4371364",
+      "identifier_kind": "container",
+      "invoices_successful": 3,
+      "invoices_failed": 0,
+      "invoices_total": 3,
+      "invoices_mismatched_asn": 9,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 3,
+      "coa_total": 3,
+      "status": "RESOLVED"
+    },
+    {
+      "shipment_no": "CGMU5630052",
+      "identifier_kind": "container",
+      "invoices_successful": 1,
+      "invoices_failed": 0,
+      "invoices_total": 1,
+      "invoices_mismatched_asn": 2,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 3,
+      "coa_total": 3,
+      "status": "RESOLVED"
+    },
+    {
+      "shipment_no": "MNBU3852977",
+      "identifier_kind": "container",
+      "invoices_successful": 0,
+      "invoices_failed": 3,
+      "invoices_total": 3,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 6,
+      "failed_coa": 0,
+      "coa_success": 6,
+      "coa_total": 6,
+      "status": "ACTIVE"
+    },
+    {
+      "shipment_no": "MNBU4407370",
+      "identifier_kind": "container",
+      "invoices_successful": 7,
+      "invoices_failed": 0,
+      "invoices_total": 7,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 12,
+      "coa_total": 12,
+      "status": "RESOLVED"
+    },
+    {
+      "shipment_no": "HLBU6302759",
+      "identifier_kind": "container",
+      "invoices_successful": 3,
+      "invoices_failed": 0,
+      "invoices_total": 3,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 0,
+      "failed_coa": 0,
+      "coa_success": 9,
+      "coa_total": 9,
+      "status": "RESOLVED"
+    },
+    {
+      "shipment_no": "MCAU6047165",
+      "identifier_kind": "container",
+      "invoices_successful": 11,
+      "invoices_failed": 0,
+      "invoices_total": 11,
+      "invoices_mismatched_asn": 0,
+      "goods_failed": 0,
+      "failed_coa": 1,
+      "coa_success": 13,
+      "coa_total": 14,
+      "status": "ACTIVE"
+    }
+  ],
+
+  "notes": {
+    "two_columns_are_sums": "invoices_successful + invoices_failed == invoices_total, and coa_success + failed_coa == coa_total, on 10 of 10 rows. Neither total is configured anywhere: an invoice enumerates the batches, so coa_total is derived from what arrived rather than from a count somebody set. A generated agent that emits a total it did not derive is guessing.",
+
+    "invoices_per_shipment": "1, 1, 1, 2, 3, 1, 3, 7, 3, 11 — one row can span eleven invoices, so a shipment is many emails and many documents. This is the correlation requirement, stated as data.",
+
+    "mismatched_asn_unit": "MNBU3974949 reports 1 invoice and 14 mismatched ASN; MNBU4371364 reports 3 and 9; CGMU5630052 reports 1 and 2. Three rows where the count exceeds the invoice count, so the column named 'Invoices (Mismatched ASN)' is not counting invoices. Most likely line items. A question for the process owner, not something to infer.",
+
+    "asn_does_not_block": "All three shipments with ASN mismatches (14, 9, 2) are RESOLVED, and no ACTIVE row has any. ASN mismatch is non-blocking. Settles Claude.md §8's open item on three independent data points.",
+
+    "asn_has_no_source_in_the_spec": "There is no ASN entity, no ASN check and no ASN field on the frozen board, so nothing can produce this column. The likely source is the per-invoice .xlsx attachments in the mailbox — one spreadsheet per invoice number. That is a round-2 corpus-grounded finding for the reviewer, not something codegen may invent.",
+
+    "goods_is_line_items_and_an_invoice_fails_with_any": "The two rows with goods_failed > 0 are the only two with invoices_failed > 0: CAAU4056270 has 2 goods / 1 invoice, MNBU3852977 has 6 goods / 3 invoices. Goods counts line items, an invoice fails when any of its line items does, and the same check therefore reports at two grains. Exactly the case domain.Fill was written for.",
+
+    "status_follows_the_unresolved_discrepancy": "ACTIVE on every row where goods_failed or failed_coa is non-zero; RESOLVED otherwise, with ASN excluded. Fits 10 of 10. MCAU6047165 is the decisive row: all 11 invoices pass and it is still ACTIVE, on a single failed COA — so status tracks any open discrepancy rather than invoice completeness alone. Strong enough for codegen to implement and for the sweep to falsify; still a hypothesis, because only the process owner can say what closes a shipment and the SOP ends at 'report the discrepancy'.",
+
+    "identifier_kind_varies": "Nine rows are ISO container numbers; 176-26926281 is an air waybill. The shipment key depends on mode of transport, which the SOP never mentions. Both forms appear in the mail subject line — 'Container No: MNBU0458316' and 'MAWB:020-07721814' — so the correlation key is recoverable without opening an attachment.",
+
+    "176_26926281_is_not_in_the_mailbox": "Verified against the live inbox on 2026-08-17: 14 messages, 11 distinct shipments, and this key appears in none of them. The row has no input, so it is carried as split=holdout and excluded from the denominator rather than counted as nine permanent failures. Named here so the gap is documented rather than silently absorbed.",
+
+    "the_mailbox_holds_more_than_the_eval_set": "Two shipments in the inbox are scored by no row — container MNBU0458316 and air waybill 020-07721814. An agent that processes everything it finds is not wrong, but the suite measures nine of the eleven, and a sweep reporting eleven rows has miscounted rather than over-delivered."
+  }
+}
