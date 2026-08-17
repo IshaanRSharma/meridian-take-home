@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
   readonly VITE_SUPABASE_URL?: string;
+  readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
+  /** Legacy JWT form, still accepted. Supabase replaced it with the above. */
   readonly VITE_SUPABASE_ANON_KEY?: string;
 }
 interface ImportMeta {
