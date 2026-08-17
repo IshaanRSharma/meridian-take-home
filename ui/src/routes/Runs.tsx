@@ -268,6 +268,25 @@ function EvalTable({ evals }: { evals: Evals }) {
  * is named there, by filename, rather than silently scoring zero. **Errored** is
  * the message, and only an errored run has one.
  */
+/**
+ * One value from a step's output, as something a person can read.
+ *
+ * `String()` on the values a trace carries is not enough: the interesting ones
+ * are lists and objects — the batch that failed beside the batches it was
+ * matched against, the invoice each document was named by — and those render as
+ * `[object Object]`, which is worse than omitting them because it looks like a
+ * value rather than a bug.
+ */
+function readable(value: unknown): string {
+  if (Array.isArray(value)) return value.map(readable).join(', ');
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([name, inner]) => `${name} ${readable(inner)}`)
+      .join(' ');
+  }
+  return String(value);
+}
+
 function Row({ row }: { row: EvalRow }) {
   const [open, setOpen] = useState(false);
   const actual = row.actual ?? null;
@@ -350,7 +369,7 @@ function Row({ row }: { row: EvalRow }) {
                         {step.error ??
                           (step.output
                             ? Object.entries(step.output)
-                                .map(([k, v]) => `${k}: ${String(v)}`)
+                                .map(([k, v]) => `${k}: ${readable(v)}`)
                                 .join('  ·  ')
                             : '')}
                       </span>
