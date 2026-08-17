@@ -16,16 +16,18 @@ from typing import Any
 
 from meridian.domain.primitives import Scope
 from meridian.runtime.check.counting import Tally
+from meridian.runtime.outcome import Failure
 
-_MEASURES = {"checked": "total", "passed": "passed", "failed": "failed"}
+_COUNTS = {"checked": "total", "passed": "passed", "failed": "failed"}
 
 
 def apply_fills(
-    row: MutableMapping[str, int],
+    row: MutableMapping[str, Any],
     fills: Sequence[Mapping[str, Any]],
     tallies: Mapping[str, Tally],
     scope: Scope,
-) -> MutableMapping[str, int]:
+    failures: Sequence[Failure] = (),
+) -> MutableMapping[str, Any]:
     """Write each fill's count into the output row.
 
     ``tallies`` is keyed by grain — the Check's own scope, and any coarser grain
@@ -36,10 +38,20 @@ def apply_fills(
     ``per`` defaults to the Check's own scope, so the ordinary case says nothing.
     """
     for fill in fills:
+        if fill["measure"] == "failing":
+            # Not a count. The distinct things that failed, in the order they
+            # were found, so an email can name them rather than tally them.
+            seen: dict[str, None] = {}
+            for failure in failures:
+                if failure.subject:
+                    seen.setdefault(failure.subject, None)
+            row[fill["field"]["path"]] = list(seen)
+            continue
+
         grain = fill.get("per") or scope
         tally = tallies.get(grain)
         if tally is None:
             msg = f"fill wants a count {grain!r} but this check only produced {sorted(tallies)}"
             raise KeyError(msg)
-        row[fill["field"]["path"]] = getattr(tally, _MEASURES[fill["measure"]])
+        row[fill["field"]["path"]] = getattr(tally, _COUNTS[fill["measure"]])
     return row

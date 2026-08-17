@@ -40,6 +40,15 @@ class Failure(RuntimeModel):
     grain: Scope
     locator: str
     reason: str
+    subject: str = ""
+    """What this failure is ABOUT, in one value a person would name.
+
+    Every operator knows this and each stored it under a different key —
+    ``present`` under ``field``, ``each_has_matching`` under ``value`` — so
+    nothing generic could ask for it. Naming it once is what lets a Check report
+    *which* things failed rather than only how many, and the SOP asks for exactly
+    that twice: the missing information type, and the batch numbers.
+    """
     detail: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -7,6 +7,7 @@ Four criteria over five line items is five things checked, not twenty.
 
 from meridian.runtime.check.counting import Tally, roll_up, rows_failed, satisfied, tally
 from meridian.runtime.check.criteria import each_has_matching, present
+from meridian.runtime.check.fills import apply_fills
 from meridian.runtime.check.paths import resolve
 
 # Two line items incomplete, and one of them missing TWO codes — which is the
@@ -88,3 +89,64 @@ def test_the_quantifier_decides_what_satisfied_means():
     assert satisfied("any", held=1, total=3)
     assert satisfied("none", held=0, total=3)
     assert not satisfied("none", held=1, total=3)
+
+
+# --- naming what failed, not just counting it --------------------------------
+
+
+def test_a_missing_field_names_itself():
+    # The SOP: "log an error mentioning the Invoice Number, Drug Description,
+    # and Missing Information Type." The type IS the field that was absent.
+    rows = resolve("ci", INVOICE, "line_items[].hts_number")
+    assert [f.subject for f in present(rows, "per_line_item")] == ["hts_number"]
+
+
+def test_an_unmatched_value_names_itself():
+    # The SOP: "reported via email with the Invoice Number, Batch Number(s)".
+    # The batch numbers ARE the unmatched values.
+    invoice = [{"line_items": [{"batch_no": "UAC25022"}, {"batch_no": "UAC25019"}]}]
+    rows = resolve("ci", invoice, "line_items[].batch_no")
+    failures = each_has_matching(rows, ["UAC25019"], "per_line_item")
+    assert [f.subject for f in failures] == ["UAC25022"]
+
+
+def test_a_fill_can_write_which_ones_rather_than_how_many():
+    rows = resolve("ci", INVOICE, "line_items[].hts_number")
+    failures = present(rows, "per_line_item")
+    row: dict = {}
+    apply_fills(
+        row,
+        [
+            {"measure": "failed", "field": {"path": "goods_failed"}},
+            {"measure": "failing", "field": {"path": "missing_information"}},
+        ],
+        {"per_line_item": tally(rows, rows_failed(rows, failures))},
+        "per_line_item",
+        failures=failures,
+    )
+    assert row["goods_failed"] == 1
+    assert row["missing_information"] == ["hts_number"]
+
+
+def test_the_same_thing_failing_twice_is_named_once():
+    # Two line items missing the same code is one KIND of missing information.
+    # An email listing "hts_number, hts_number" reads as a bug.
+    invoice = [{"line_items": [{"hts_number": None}, {"hts_number": None}]}]
+    rows = resolve("ci", invoice, "line_items[].hts_number")
+    failures = present(rows, "per_line_item")
+
+    row: dict = {}
+    apply_fills(
+        row,
+        [{"measure": "failing", "field": {"path": "missing"}}],
+        {},
+        "per_line_item",
+        failures=failures,
+    )
+    assert row["missing"] == ["hts_number"]
+
+
+def test_nothing_failing_names_nothing():
+    row: dict = {}
+    apply_fills(row, [{"measure": "failing", "field": {"path": "missing"}}], {}, "per_line_item")
+    assert row["missing"] == []

@@ -38,6 +38,8 @@ def present(rows: Sequence[Row], grain: Scope) -> list[Failure]:
             grain=grain,
             locator=row.locator,
             reason="required, and this does not carry it",
+            # The missing thing is the FIELD: "hts_number", "anda_number".
+            subject=row.locator.rsplit(".", 1)[-1],
             detail={"field": row.locator.rsplit(".", 1)[-1]},
         )
         for row in rows
@@ -67,6 +69,7 @@ def compare(rows: Sequence[Row], operator: str, against: Any, grain: Scope) -> l
                     grain=grain,
                     locator=row.locator,
                     reason=f"is not {operator} {against!r}",
+                    subject=str(row.value),
                     detail={"actual": row.value, "expected": against},
                 )
             )
@@ -88,6 +91,8 @@ def each_has_matching(
             grain=grain,
             locator=row.locator,
             reason="nothing on the other side carries this value",
+            # The unmatched thing is the VALUE: a batch number.
+            subject=str(row.value),
             detail={"value": row.value, "available": sorted(map(str, index))},
         )
         for row in rows

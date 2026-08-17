@@ -50,7 +50,11 @@ Effect = Literal["notify", "record", "lookup", "decide", "noop"]
 Operator = Literal["eq", "ne", "gt", "gte", "lt", "lte", "matches", "in"]
 OnFailure = Literal["fail", "wait", "skip"]
 Scope = Literal["per_case", "per_document", "per_line_item"]
-Measure = Literal["checked", "passed", "failed"]
+# `failing` is not a count. The other three answer "how many"; this one answers
+# "which ones", which is what the running SOP asks for twice — the missing
+# information TYPE on an invoice error, and the batch NUMBERS on a certificate
+# report. A count cannot carry either.
+Measure = Literal["checked", "passed", "failed", "failing"]
 
 # The effects that put a person on the other end, and so the only ones a
 # `channel` carries anything for. A decision is delivered exactly as a
