@@ -376,7 +376,33 @@ Beyond those four: module names, how you split helpers, whether entities are a
 module or a package, how many files a check takes — **yours**. A layout that
 reads well for this process beats one that matches an example.
 
-### Names come from the spec, not from you
+### Nothing leaves the building, and the artefact lands where the suite can see it
+
+**Default every capability to a recorder.** `tools.RecordingProvider` performs
+nothing and remembers everything, and the harness wires it for every capability
+the spec declares. The graded artefact is the row the process produces — which
+the workflow *returns* — so scoring a case needs no I/O at all, and a recorded
+call is better evidence than a performed one because it is assertable where a
+delivered message is a screenshot.
+
+That is a mode, not a fork. One flag swaps the recorder for the live provider,
+so the demo path and the eval path are the same code.
+
+**When the deliverable is the outward action itself, write it down locally.**
+Some processes produce no row — the whole point of the last step is that
+something was sent, filed or posted. Scoring those on a return value measures
+nothing, so the terminal capability writes its record to a file under
+`eval/runs/` instead, and the eval compares the file. `tools.CsvProvider` exists
+for exactly this: same interface, no network, one record per line.
+
+```
+returns a row      compare the return value.        no I/O needed
+produces an action compare what the recorder wrote. eval/runs/<build>.csv
+```
+
+**Never write into the eval set.** `eval/expected/` and `eval/cases/` are the
+oracle. A run that writes where it is measured has stopped being measured — and
+the failure is silent, because everything agrees.
 
 Every identifier a human will later grep for should be traceable to the spec:
 

@@ -149,9 +149,16 @@ async def test_every_case_writes_an_event_carrying_its_key(
         "select case_key, status from events where cycle_id = $1 and kind = 'case' order by id",
         cycle,
     )
+    # Two events per case, and the order is the point: `started` lands before
+    # the case runs, so a watcher can tell a slow sweep from a wedged one. With
+    # only the terminal event, nothing at all appears until the first case
+    # finishes — which on a live suite is minutes of silence.
     assert [(r["case_key"], r["status"]) for r in rows] == [
+        ("CAAU4056270", "started"),
         ("CAAU4056270", "ok"),
+        ("MNBU3974949", "started"),
         ("MNBU3974949", "failed"),
+        ("TTNU8982561", "started"),
         ("TTNU8982561", "failed"),
     ]
 

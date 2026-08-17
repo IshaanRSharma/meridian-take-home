@@ -143,16 +143,25 @@ def _assumptions(agents_root: Path | None, build: Build, primitive: str | None) 
         # A build that recorded none is a worse build, not a broken one.
         return []
 
-    relevant = [
-        entry
-        for entry in body.get("assumptions") or []
-        if entry.get("prompted_by") is None
-        or (primitive and primitive in str(entry.get("prompted_by")))
-    ]
+    anchored, unanchored = [], []
+    for entry in body.get("assumptions") or []:
+        if primitive and primitive in str(entry.get("prompted_by") or ""):
+            anchored.append(entry)
+        elif entry.get("prompted_by") is None:
+            unanchored.append(entry)
+
+    # Anchored first, and it matters: an assumption about the step that failed
+    # is a candidate cause, while an unanchored one is a candidate cause of
+    # anything and appears in every bundle. Ordering by the file would put
+    # whichever the generator happened to write first at the top, which is the
+    # one thing about a paste target that must not be arbitrary.
+    relevant = anchored + unanchored
     if not relevant:
         return []
 
     lines = ["ASSUMPTIONS THAT COULD EXPLAIN THIS"]
+    if anchored and unanchored:
+        lines.append(f"  ({len(anchored)} about this step, then {len(unanchored)} unanchored)")
     for entry in relevant:
         anchor = entry.get("prompted_by") or "nothing in the spec"
         lines.append(f"  [{entry.get('id')}] {entry.get('decision')}")

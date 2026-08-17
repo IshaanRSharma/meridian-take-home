@@ -154,7 +154,7 @@ class InboundPreAlertValidation:
             gathered: Gathered = await workflow.execute_activity_method(
                 Ingestion.read_documents,
                 list(self._arrivals),
-                start_to_close_timeout=timedelta(minutes=10),
+                start_to_close_timeout=timedelta(minutes=4),
                 retry_policy=RetryPolicy(maximum_attempts=3),
             )
             instances = gathered.entities()

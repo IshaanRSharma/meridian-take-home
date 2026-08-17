@@ -362,3 +362,19 @@ async def test_no_assumptions_file_is_not_an_error(
     text = await rendered(connection, build, agents_root=agent_dir.parent)
 
     assert "FAILING SIGNATURE" in text
+
+
+async def test_assumptions_about_the_failing_step_come_first(
+    connection: asyncpg.Connection, build: Build, agent_dir: Path, swept
+):
+    """An unanchored assumption appears in every bundle; an anchored one does not.
+
+    Ordering by the file would put whichever the generator happened to write
+    first at the top. On a paste target the first thing read has to be the most
+    specific thing known, or the reader skims past it.
+    """
+    _with_assumptions(agent_dir)
+
+    text = await rendered(connection, build, agents_root=agent_dir.parent)
+
+    assert text.index("batch_matching_is_normalised") < text.index("confidence_floor")

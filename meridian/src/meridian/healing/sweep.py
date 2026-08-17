@@ -150,6 +150,21 @@ async def _one(  # noqa: PLR0913 - one case needs everything the sweep was given
     case_timeout: float,
     rejected: list[str],
 ) -> Comparison:
+    # Emitted before the case runs, not after. A live case takes as long as a
+    # mailbox and a model take, and with only a completion event a watcher sees
+    # nothing at all until the first one lands — which is indistinguishable from
+    # a sweep that has wedged. This is what makes a progress view a progress
+    # view rather than a slowly-filling results table.
+    await events.emit(
+        connection,
+        cycle_id=cycle_id,
+        phase="eval",
+        kind="case",
+        status="started",
+        build_id=build.identity,
+        case_key=case.key,
+    )
+
     outcome, errored = await _execute(run_case, case, case_timeout)
     result = compare(case.key, case.expected_output, outcome.output, errored=errored)
 

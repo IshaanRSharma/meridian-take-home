@@ -133,9 +133,7 @@ class Gmail:
     def __init__(self, api_key: str, user_id: str) -> None:
         """Build a version-pinned client for one connected mailbox."""
         os.environ["COMPOSIO_API_KEY"] = api_key
-        from composio import (
-            Composio,
-        )
+        from composio import Composio  # noqa: PLC0415
 
         self._client = Composio(toolkit_versions={"gmail": TOOLKIT_VERSION})
         self._user = user_id

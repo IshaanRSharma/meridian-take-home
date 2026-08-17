@@ -38,7 +38,13 @@ from meridian.runtime.tools.dispatch import Tool, Tools
 from meridian.runtime.tools.providers import RecordingProvider
 
 TASK_QUEUE = "inbound-pre-alert"
-CASE_TIMEOUT_SECONDS = 900.0
+CASE_TIMEOUT_SECONDS = 300.0
+"""How long one case may take before it is called a hang.
+
+Every layer has to be strictly tighter than the one outside it, or the inner
+bound is dead code and a slow case is reported as a hang by whichever outer
+timer fires first. Innermost out: the ingestion activity, then this, then
+`meridian eval sweep --timeout`, which must exceed it."""
 
 _INBOX: dict[str, tuple[mail.Message, ...]] = {}
 
@@ -52,9 +58,7 @@ def gmail() -> mail.Gmail:
 
 def model_client() -> Any:
     """The model this build classifies and extracts with."""
-    from openai import (
-        OpenAI,
-    )
+    from openai import OpenAI  # noqa: PLC0415
 
     return OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
