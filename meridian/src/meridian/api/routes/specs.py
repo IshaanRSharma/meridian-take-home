@@ -11,7 +11,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 
-from meridian.api.deps import Connection
+from meridian.api.dependencies import Connection
 from meridian.compiler import freeze as freeze_
 from meridian.domain.frozen import FrozenSpec
 from meridian.repositories import assertions as assertions_repo

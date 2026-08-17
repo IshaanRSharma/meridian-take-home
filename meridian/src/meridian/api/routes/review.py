@@ -2,7 +2,7 @@
 
 A round is a transaction over a board, and the request is that transaction —
 threads, situations and settled statements are written together or none of them
-are, because `deps.connection` yields inside one and rolls back if the handler
+are, because `dependencies.connection` yields inside one and rolls back if the handler
 raises.
 
 Synchronous, which is a deliberate deviation from `Claude.md` §18. It has this
@@ -16,7 +16,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, status
 
-from meridian.api.deps import Connection
+from meridian.api.dependencies import Connection
 from meridian.api.schemas import MessageCreate, ThreadUpdate
 from meridian.domain.review import Thread
 from meridian.repositories import threads as threads_repo

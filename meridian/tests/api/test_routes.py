@@ -26,7 +26,7 @@ import asyncpg
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from meridian.api import deps
+from meridian.api import dependencies
 from meridian.api.main import app
 from meridian.core.config import settings
 from meridian.reviewer.distill import Distillation
@@ -60,12 +60,12 @@ async def client(connection: asyncpg.Connection) -> AsyncIterator[AsyncClient]:
     """A client whose requests run inside one rolled-back transaction.
 
     The override is doing two jobs. It points the API at the test container —
-    without it `deps.connection` reaches for `requires_database()`, which is the
+    without it `dependencies.connection` reaches for `requires_database()`, which is the
     *production* DSN, and the suite would be writing to Supabase. And it hands
     every request the same connection, so data written by one request is visible
     to the next while nothing is ever committed.
     """
-    app.dependency_overrides[deps.connection] = lambda: connection
+    app.dependency_overrides[dependencies.connection] = lambda: connection
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as talking:
         yield talking

@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, status
 
-from meridian.api.deps import Connection
+from meridian.api.dependencies import Connection
 from meridian.api.schemas import (
     BoardCreate,
     Described,
