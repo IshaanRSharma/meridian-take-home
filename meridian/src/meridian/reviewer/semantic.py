@@ -7,6 +7,7 @@ and how to put it in words they can answer.
 """
 
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -246,7 +247,19 @@ def _checked(
         origin="semantic",
         round=round,
         question=proposed.question,
-        reason=proposed.reason,
+        # A reason may describe a walk only if a walk is attached. The model
+        # writes the situation, decides how each check comes out, and then
+        # narrates the result as something it observed — so "I walked a case
+        # where one line matched and one had no COA" is prose, not a record,
+        # and it reads as the strongest evidence in the thread. Measured before
+        # this landed: 30 semantic threads, 5 citing a scenario, two unbacked
+        # walk claims among them.
+        #
+        # The question survives; only the claim goes. It is usually a good
+        # question — what is unsupported is the sentence saying it was seen
+        # rather than reasoned, and a citation nobody can follow is worse than
+        # no citation at all.
+        reason=None if cited is None and _claims_a_walk(proposed.reason) else proposed.reason,
         anchors=anchors,
         # An identity is derived from the graph or it is not one. Letting the
         # model mint a key would let it collide with a real question and silence
@@ -255,6 +268,17 @@ def _checked(
         scenario_key=cited[0].key if cited else None,
         evidence=dryrun.evidence_for(*cited) if cited else None,
     ), ""
+
+
+# First person plus a verb of traversal. Narrow on purpose: "the walk ended at
+# the report" is a claim about a walk somebody can check, while "nothing says
+# what happens when this is walked" is a claim about the board.
+_WALKED = re.compile(r"\bI (walk|walked|traced|followed|ran|simulated|stepped)\b", re.IGNORECASE)
+
+
+def _claims_a_walk(reason: str | None) -> bool:
+    """Whether this reason says the model saw a situation play out."""
+    return bool(reason and _WALKED.search(reason))
 
 
 def _parsed(ref: str) -> Anchor | None:

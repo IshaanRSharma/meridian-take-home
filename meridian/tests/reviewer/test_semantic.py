@@ -329,3 +329,70 @@ async def test_a_round_reports_which_tools_it_actually_used(seed: Board):
     asked = await semantic.ask(seed, walked, transport=transport)
 
     assert asked.consulted == {"where_values_meet": 1}
+
+
+# --- a claim about a walk needs a walk --------------------------------------
+
+
+def test_a_reason_may_not_describe_a_walk_it_did_not_take() -> None:
+    """The model writes the situation, the outcomes and the narration.
+
+    So "I walked a case where one line matched and one had no COA" reads as the
+    strongest evidence in a thread and is prose. When no scenario is attached
+    there is nothing to check it against, and a citation nobody can follow is
+    worse than none — the question stays, the claim goes.
+    """
+    assert semantic._claims_a_walk("I walked a case with one matching line and it passed.")
+    assert semantic._claims_a_walk("I traced the mismatch and it ended at the report.")
+    assert semantic._claims_a_walk("I ran the case where the COA never arrives.")
+
+
+def test_a_claim_about_the_board_is_not_a_claim_about_a_walk() -> None:
+    """Narrow on purpose, or every reason mentioning a path loses its reason."""
+    assert not semantic._claims_a_walk("Nothing says what happens when this is walked.")
+    assert not semantic._claims_a_walk("The walk from the check has no path for a mixed result.")
+    assert not semantic._claims_a_walk("The board does not say whether one bad line fails it.")
+    assert not semantic._claims_a_walk(None)
+
+
+def test_the_question_survives_when_the_claim_is_stripped() -> None:
+    """Only the unsupported sentence goes. The question is usually a good one —
+    what is unsupported is the claim it was *seen* rather than reasoned."""
+    board = Board.model_validate(
+        {
+            "name": "t",
+            "primitives": [
+                {"key": "it_arrives", "primitive_type": "event", "config": {"name": "It arrives"}},
+                {
+                    "key": "all_done",
+                    "primitive_type": "action",
+                    "config": {"name": "Done", "effect": "noop", "is_terminal": True},
+                },
+            ],
+            "edges": [
+                {
+                    "key": "e1",
+                    "from_key": "it_arrives",
+                    "to_key": "all_done",
+                    "relation": "normal",
+                    "on_outcomes": [],
+                }
+            ],
+            "layout": {},
+        }
+    )
+    proposed = semantic.Proposed(
+        category="spec_gap",
+        severity="important",
+        question="If only some lines match, what happens to the shipment?",
+        reason="I walked a case with one matching line and it went to the all-clear path.",
+        anchors=["primitive:it_arrives"],
+        scenario_key="a_probe_that_does_not_exist",
+    )
+
+    comment, why = semantic._checked(board, proposed, set(), {}, 1)
+
+    assert comment is not None, why
+    assert comment.question == proposed.question
+    assert comment.reason is None
+    assert comment.scenario_key is None
