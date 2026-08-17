@@ -378,3 +378,40 @@ async def test_assumptions_about_the_failing_step_come_first(
     text = await rendered(connection, build, agents_root=agent_dir.parent)
 
     assert text.index("batch_matching_is_normalised") < text.index("confidence_floor")
+
+
+# --- what a human told the loop between iterations ------------------------
+
+
+async def test_a_hint_about_the_failing_step_is_carried(
+    connection: asyncpg.Connection, build: Build, agent_dir: Path, swept
+):
+    """The channel for context a person adds mid-loop, without touching the spec.
+
+    An engineer who learns something while reading a failure has nowhere to put
+    it: the spec is checksummed and the code is what is being judged. `hints`
+    is that place, and it only helps if the next bundle carries it.
+    """
+    (agent_dir / "hints.json").write_text(
+        json.dumps(
+            {
+                "coas_valid": ["certificates print the batch without the invoice's suffix"],
+                "invoice_complete": ["irrelevant to this signature"],
+                "*": ["applies to every step"],
+            }
+        )
+    )
+
+    text = await rendered(connection, build, agents_root=agent_dir.parent)
+
+    assert "certificates print the batch without the invoice's suffix" in text
+    assert "applies to every step" in text
+    assert "irrelevant to this signature" not in text
+
+
+async def test_no_hints_file_is_not_an_error(
+    connection: asyncpg.Connection, build: Build, agent_dir: Path, swept
+):
+    text = await rendered(connection, build, agents_root=agent_dir.parent)
+
+    assert "FAILING SIGNATURE" in text

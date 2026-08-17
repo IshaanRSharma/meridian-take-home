@@ -462,10 +462,6 @@ class ActionConfig(DomainModel):
     timeout: Duration | None = None
     on_failure: OnFailure | None = None
     recipients: tuple[Recipient, ...] = ()
-    # What this step sends outward. A notify puts them in the message; a lookup
-    # puts them in the query — *search by licence number and the licensee's last
-    # name* — and without them a generator has a capability to call and nothing
-    # to call it with. One field, because both are the same act.
     payload_fields: tuple[FieldRef, ...] = ()
     outcomes: tuple[Outcome, ...] = ()
     timing: Timing | None = None

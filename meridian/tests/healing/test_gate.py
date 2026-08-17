@@ -263,3 +263,52 @@ async def test_a_build_with_no_sweep_is_refused_rather_than_treated_as_perfect(
 
     assert not verdict.accepted
     assert "no sweep" in verdict.reason
+
+
+async def test_a_narrower_sweep_is_refused_rather_than_read_as_no_regression(
+    connection: asyncpg.Connection, build: Build, spec_id, agent_dir: Path
+):
+    """Measuring fewer cases than the baseline is not evidence of no regression.
+
+    Working case by case is the right way to run this loop — each eval case is a
+    different shape, and sweeping all of them averages the shapes together. But
+    it only stays safe while the set grows. A case dropped from the new sweep is
+    absent rather than failing, and absent reads as "did not regress", so a
+    patch measured on one case could sail past a baseline of nine.
+
+    The gate refuses instead of trusting whoever ran it, because the whole point
+    of the gate is that it does not depend on discipline.
+    """
+    old = await evals_repo.save_case(
+        connection,
+        spec_id,
+        EvalCase(key="CAAU4056270", input={"produce": EXPECTED}, expected_output=EXPECTED),
+    )
+    other = await evals_repo.save_case(
+        connection,
+        spec_id,
+        EvalCase(key="MNBU3974949", input={"produce": EXPECTED}, expected_output=EXPECTED),
+    )
+    await sweep_.sweep(
+        connection,
+        build=build,
+        spec=a_spec(),
+        cases=[old, other],
+        agents_root=agent_dir.parent,
+        cycle_id=uuid4(),
+    )
+
+    after = await a_build(connection, spec_id)
+    await sweep_.sweep(
+        connection,
+        build=after,
+        spec=a_spec(),
+        cases=[old],
+        agents_root=agent_dir.parent,
+        cycle_id=uuid4(),
+    )
+
+    verdict = await gate(connection, before=build, after=after, signature=TARGET)
+
+    assert not verdict.accepted
+    assert "MNBU3974949" in verdict.reason

@@ -512,7 +512,12 @@ def spec_export(
         typer.echo("nothing frozen yet")
         raise typer.Exit(1)
 
-    where = into / sealed.slug / "spec.lock.json"
+    # Resolved from the repo root, like `--agents` on sweep and bundle. The two
+    # used to disagree: this one was relative to the working directory, so
+    # running it from `meridian/` — which you must, because `.env` lives there —
+    # wrote `meridian/agents/`, a directory nothing reads and codegen never
+    # commits. One rule for where agents live beats two.
+    where = (into if into.is_absolute() else _repo_root() / into) / sealed.slug / "spec.lock.json"
     where.parent.mkdir(parents=True, exist_ok=True)
     where.write_text(
         json.dumps(

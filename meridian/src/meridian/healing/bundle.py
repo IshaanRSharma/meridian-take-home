@@ -117,9 +117,43 @@ async def _bucket(  # noqa: PLR0913, PLR0917 - one section, and it needs the who
         lines += [f"ALSO FAILING  {rest}", ""]
 
     lines += _context(spec, primitive)
+    lines += _hints(agents_root, build, primitive)
     lines += _assumptions(agents_root, build, primitive)
     lines += await _history(connection, signature, spec)
     return lines
+
+
+def _hints(agents_root: Path | None, build: Build, primitive: str | None) -> list[str]:
+    """What a person told this loop between iterations.
+
+    The one place human context can enter a repair without touching the spec.
+    An engineer who works something out while reading a failure has nowhere
+    else to put it: `spec.lock.json` is checksummed and approved by somebody
+    else, and the code is the thing being judged. A hint is neither — it is
+    implementation guidance, owned by whoever is repairing, and deliberately
+    outside the checksum so writing one does not drift the build from the
+    contract it claims to implement.
+
+    **A hint is not an answer to a business question.** If a person had to
+    decide something two competent people could disagree about, that belongs on
+    a thread and comes back as an assertion in the spec. The test is the same
+    one the classifier uses, and putting a business decision here would launder
+    it into code with nobody's approval on it.
+
+    Keyed by primitive, with `*` for anything that applies everywhere.
+    """
+    if agents_root is None:
+        return []
+    try:
+        body = json.loads((agents_root / build.slug() / "hints.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    written = [*body.get("*", []), *(body.get(primitive, []) if primitive else [])]
+    if not written:
+        return []
+
+    return ["HINTS SOMEBODY LEFT FOR THIS", *(f"  {hint}" for hint in written), ""]
 
 
 def _assumptions(agents_root: Path | None, build: Build, primitive: str | None) -> list[str]:

@@ -186,15 +186,44 @@ def _distinct(instances: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     agree on everything they both saw, while two genuinely different documents
     differ on the field that names them.
 
-    Where two agree, the fuller reading wins — a fragment carries strictly less
-    of the same document, and keeping it would discard rows the check needs.
+    Where two agree, they are **combined, not ranked**. Documents are split for
+    reading before anything knows where one ends, so a document whose rows run
+    past a page break is read as two, and each reading holds the rows on its own
+    pages. Keeping the longer one discards the other's rows — which is invisible,
+    because the count that drops is the count of things the check was supposed
+    to examine, and a check that examines fewer rows reports fewer failures.
     """
-    best: dict[str, dict[str, Any]] = {}
+    merged: dict[str, dict[str, Any]] = {}
     for instance in instances:
         key = _identity(instance)
-        if key not in best or _filled(instance) > _filled(best[key]):
-            best[key] = dict(instance)
-    return list(best.values())
+        merged[key] = _combine(merged[key], instance) if key in merged else dict(instance)
+    return list(merged.values())
+
+
+def _combine(into: Mapping[str, Any], addition: Mapping[str, Any]) -> dict[str, Any]:
+    """Two readings of one document, as everything either of them saw.
+
+    Lists are appended, dropping rows already present, because a row appearing
+    in both readings is one row seen twice and a row in only one is a row the
+    other's pages did not cover. Scalars keep the first non-empty value: they
+    agree by construction, since agreeing on them is what made these one
+    document.
+    """
+    combined = dict(into)
+    for name, value in addition.items():
+        if isinstance(value, list):
+            existing = combined.get(name)
+            rows = list(existing) if isinstance(existing, list) else []
+            seen = {json.dumps(row, sort_keys=True, default=str) for row in rows}
+            for row in value:
+                stamp = json.dumps(row, sort_keys=True, default=str)
+                if stamp not in seen:
+                    seen.add(stamp)
+                    rows.append(row)
+            combined[name] = rows
+        elif not combined.get(name) and value is not None:
+            combined[name] = value
+    return combined
 
 
 def _identity(instance: Mapping[str, Any]) -> str:
@@ -212,26 +241,6 @@ def _identity(instance: Mapping[str, Any]) -> str:
     return json.dumps(scalars, sort_keys=True, default=str)
 
 
-def _filled(instance: Mapping[str, Any]) -> int:
-    """How much of a document one reading actually recovered.
-
-    Counts values rather than fields, so five line items beat one. This is only
-    ever compared between readings that already agree on identity, so it is
-    choosing the better look at one document and never between two documents.
-    """
-    total = 0
-    for value in instance.values():
-        if isinstance(value, list):
-            total += sum(
-                1
-                for row in value
-                if isinstance(row, dict)
-                for cell in row.values()
-                if cell is not None and str(cell).strip()
-            )
-        elif value is not None and str(value).strip():
-            total += 1
-    return total
 
 
 @dataclass(frozen=True)

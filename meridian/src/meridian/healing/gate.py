@@ -53,6 +53,27 @@ async def gate(
         # true of a build nobody measured, and together they accept anything.
         return Verdict(accepted=False, reason=f"no sweep on build {after.iteration} to judge")
 
+    # Working case by case is the right way to run this loop, and it is only
+    # safe while the set grows. A case dropped from the later sweep is absent
+    # rather than failing, and absent reads as "did not regress" — so a patch
+    # measured on one case would clear a baseline of nine. Refuse rather than
+    # rely on whoever ran it having remembered.
+    dropped = tuple(
+        sorted(
+            {case for (case, _), agreed in was.items() if agreed}
+            - {case for case, _ in now}
+        )
+    )
+    if dropped:
+        return Verdict(
+            accepted=False,
+            reason=(
+                f"build {after.iteration} was measured on fewer cases than build "
+                f"{before.iteration}: {', '.join(dropped)} passed before and did not run. "
+                "Sweep at least what the earlier build swept."
+            ),
+        )
+
     still_failing = await evals_repo.failures_for(connection, after.identity, signature=signature)
     # Only a column that PASSED before and fails now. Counting one that was
     # already broken would make every partial fix look like a regression, and
