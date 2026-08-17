@@ -29,7 +29,27 @@ convenience:
 | | |
 |---|---|
 | `outcome` · `trace` · `context` | **contracts** — the eval harness and the healing loop read these |
-| `check/*` · `ingest` · `routing` · `policy` · `duration` | **helpers** — use, extend, or replace |
+| `tools/*` | **contract** — reaching the world by capability key is rule 2 |
+| `check/*` · `ingest` · `entities` · `routing` · `policy` · `duration` | **helpers** — use, extend, or replace |
+
+What is in there, so you are not rebuilding it:
+
+```
+entities.EntityStore     instances keyed by entity, plus what was DECLINED
+ingest.ingest            sources -> classify -> extract -> store
+check.resolve            a FieldRef into rows, with (document, indices)
+check.present/compare/each_has_matching       the criterion kernels
+check.tally/roll_up      counts at a grain, and one grain coarser
+check.apply_fills        counts and failing subjects into the output row
+routing.Routes           (step, outcome) -> next step
+temporal.await_inputs    a deadline that returns False instead of raising
+temporal.Capabilities    the ONE activity every tool call goes through
+tools.Tools              capability key -> provider action
+tools.RecordingProvider  performs nothing, remembers everything     (default)
+tools.TableProvider      answers a READ by filtering a table
+tools.CsvProvider        writes a record to a file — the eval artifact
+tools.ComposioProvider   the live one. Pin the toolkit version.
+```
 
 A Check written against `check/*` is shorter and gets the counting right. A
 Check that ignores it entirely and returns a correct `CheckResult` is equally
@@ -114,7 +134,10 @@ effect: notify   → capability from channel. recipients are ROLES:
                    ctx.bindings.role("receiving_supervisor"). Never an address.
 effect: record   → system.write. `system` is free text naming the customer's system.
 effect: lookup   → system.read, and it PRODUCES an entity (`produces`).
-                   Honour `timeout` and `on_failure`.
+                   The result is an entity instance like any other:
+                       store.add(card["config"]["produces"], result)
+                   after which a Check reads it through `resolve` exactly as it
+                   reads an extracted document. Honour `timeout` and `on_failure`.
 effect: decide   → block on a human signal, with `timing` as the SLA and
                    `on_timeout` as the branch when nobody answers.
 effect: noop     → no activity at all. A named end state: record the outcome
@@ -153,6 +176,11 @@ fills         where the counts land
 *coarser* than the scope is a roll-up: a document passes exactly when every line
 item under it passes. That is how one rule produces both `goods_failed` (line
 items) and `invoices_failed` (the documents containing them).
+
+**`fills[].measure`** is `checked` · `passed` · `failed` · **`failing`**. The
+first three are counts; `failing` writes the *list of things that failed*,
+deduplicated, from `Failure.subject`. That is how an email says *"UAC25022 and
+UAC25019 are missing"* rather than *"2 failed"* — which the SOP asks for by name.
 
 **`on_missing_input` absent** and an input has not arrived: **stop and ask.**
 Waiting, failing and skipping give different eval rows, the spec does not say

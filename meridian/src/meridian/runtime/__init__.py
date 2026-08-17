@@ -19,9 +19,21 @@ The whole package is free of module-level mutable state and does no I/O at
 import, which is what makes it safe to pass through the sandbox:
 
     with workflow.unsafe.imports_passed_through():
-        from meridian.runtime import CheckResult, RunTrace
+        import pydantic_core                    # pydantic loads it lazily
+        from meridian.runtime import CheckResult, Failure, RunTrace
+        from meridian.runtime.check import present, resolve, tally
+        from meridian.runtime.temporal.activities import Capabilities
 
-Without that, every workflow run reloads the entire check engine.
+**Every** ``meridian`` import goes inside that block, including the activity
+one. Leave a single import outside and it loads this package sandboxed first,
+after which ``Failure`` from ``check.criteria`` and ``Failure`` from here are two
+different classes — pydantic rejects one as not an instance of the other, the
+workflow task fails, and Temporal retries it forever. That last part matters:
+an exception in workflow code presents as a **hang**, not an error.
+
+``pydantic_core`` is named explicitly because pydantic loads it lazily on first
+model construction, which happens inside the sandbox. Without it every run pays
+a reload of the entire check engine.
 """
 
 from meridian.runtime.context import (
