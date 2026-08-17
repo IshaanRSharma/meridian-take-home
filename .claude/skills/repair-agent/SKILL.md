@@ -459,8 +459,7 @@ stopped     spec gap, skeleton defect, or three attempts with no progress
 that keeps the next session from spending its budget re-deriving what you
 already found. Say what you concluded and what would change the answer.
 
-`meridian repair record` reads this directory into the `repairs` table; git carries it
-either way, since `agents/` is committed. Write the file even if you fixed
+`meridian repair record` reads this directory into the `repairs` table. Write the file even if you fixed
 nothing — an attempt that failed is history, and history is what stops the loop
 going in circles.
 

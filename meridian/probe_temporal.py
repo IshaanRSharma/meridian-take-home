@@ -12,7 +12,7 @@ async def main() -> None:
     try:
         async with await WorkflowEnvironment.start_time_skipping() as env:
             print("time-skipping OK", env.client.namespace)  # noqa: T201
-    except Exception as error:  # noqa: BLE001
+    except Exception as error:
         print("time-skipping FAILED", type(error).__name__, error)  # noqa: T201
 
 

@@ -48,3 +48,8 @@ eval/runs/*.csv
 test_toy_agents/
 
 demo/.cache/
+
+# Generated output and local working material.
+agents/
+demo/
+fixtures/

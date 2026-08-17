@@ -112,9 +112,7 @@ async def text_of(path: Path, *, transport: Transport | None = None) -> str:
     return await text_of_bytes(raw, path.name, transport=transport)
 
 
-async def text_of_bytes(
-    raw: bytes, filename: str, *, transport: Transport | None = None
-) -> str:
+async def text_of_bytes(raw: bytes, filename: str, *, transport: Transport | None = None) -> str:
     """The same, for a file that never touched the disk.
 
     An HTTP upload arrives in memory, and writing it to a temporary path just to

@@ -635,7 +635,7 @@ T20               No `print()`. Use `workflow.logger` in workflow code, which is
 
 PTH               `pathlib`, never `os.path`.
 
-ERA               No commented-out code. Delete it; git remembers.
+ERA               No commented-out code. Delete it.
 
 S   bandit        No `assert` for control flow, no shell=True, no bare `except`.
 
@@ -662,7 +662,7 @@ person's.
 
 ```bash
 make check                                        # ruff · mypy --strict · tests
-meridian build register <board> --from-git        # the code becomes a build
+meridian build register <board>                   # the code becomes a build
 meridian eval case <board> <KEY> --build <n>      # one case, end to end
 meridian eval sweep <board> --case <each>         # the working set
 meridian verify --agent <slug>                    # imports · conformance

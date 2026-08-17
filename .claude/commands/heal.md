@@ -60,19 +60,17 @@ refusal costs you the iteration.
 
 4  Use the repair-agent skill on the bundle. ONE file, the one FILE names.
 
-5  git add -A && git commit    (agents/ is the diff; every repair is reviewable)
-
-6  meridian build register $1 --from-git
+5  meridian build register $1
    Prints the new iteration. Use it below.
 
-7  meridian eval sweep $1 --case <the whole working set> --build <new>
+6  meridian eval sweep $1 --case <the whole working set> --build <new>
 
-8  meridian repair record $1 --build <new> --signature <the one you fixed> \
+7  meridian repair record $1 --build <new> --signature <the one you fixed> \
        --class implementation_defect --summary "<what changed and why>"
    The gate compares the two sweeps per column and answers accepted or
    regressed. It can only reject; you may not override it.
 
-9  Regressed → revert the commit and go back to 3 with what you learned.
+8  Regressed → undo the edit and go back to 3 with what you learned.
    Accepted  → back to 1.
 ```
 
