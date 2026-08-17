@@ -116,6 +116,23 @@ found two boxes with no home — worth recording, because both are load-bearing:
   product (§21), the thing that assembles step trace, tool results, inputs and
   outputs is not a side effect of step execution — it is its own concern.
 
+### `step.py` was planned and is not being built
+
+It would have been `run_step(name, fn)` — invoke, normalise the result, trace.
+But `RunTrace.step()` already is that, as a context manager, and normalising a
+`CheckResult` belongs to the check engine. Building it would create two ways to
+do one thing and a seam for them to disagree. Recorded because deleting a
+planned module is a decision, not an omission.
+
+### Every Temporal import lives in `runtime/temporal/`
+
+An earlier draft called it `workflow/`, which was wrong twice: it holds no
+workflows — the workflow is generated into `agents/<slug>/workflow.py` — and the
+name hid what actually matters, which is that this is the only subpackage that
+imports `temporalio`. Confining it means the type layer and the whole check
+engine stay testable with nothing installed, and swapping the durable-execution
+engine touches one directory.
+
 ### The harness lives outside `runtime/`
 
 Generated agents may import `meridian.runtime.*` and their own directory. If the
@@ -154,22 +171,21 @@ meridian/src/meridian/runtime/     ← generated agents import ONLY this
   policy.py       error class → retry configuration
   trace.py        RunTrace: steps · tool calls · inputs/outputs · spec version
   state.py        WorkflowState: arrivals · entities · the output row
-  step.py         run_step(name, fn) — invoke, normalise, trace
   check/
     paths.py      resolve(entity, "line_items[].batch_no") → [(value, grain)]
     criteria.py   present · compare · each_has_matching kernels
     counting.py   tally · roll_up across grains
     fills.py      apply_fills(row, fills, result)
     engine.py     the seven steps above, in order
-  workflow/
+  temporal/       EVERY temporalio import lives here and nowhere else
     waits.py      await_data(pred, deadline) · await_decision(signal, sla)
     routing.py    (step, outcome) → next step, from the edge table
+    activities.py extract · lookup · invoke_capability
   tools/
     adapter.py    capability key → provider. never an address, never an action
     bindings.py   role → recipient, loaded at worker start
     composio.py   the live provider
     fixtures.py   same interface; records calls instead of sending
-  activities.py   extract · lookup · invoke_capability
 
 meridian/src/meridian/harness/     ← tests import this. agents cannot.
   env.py          time-skipping environment
@@ -181,10 +197,10 @@ Every box in the PRD diagram now has exactly one home:
 
 | diagram box | files |
 |---|---|
-| entry + Temporal workflow | `workflow/waits.py` · `workflow/routing.py` · `state.py` |
-| step executor | `step.py` |
+| entry + Temporal workflow | `temporal/waits.py` · `temporal/routing.py` · `state.py` |
+| step executor | `trace.py` — `RunTrace.step()` is the named unit of work |
 | business logic | `check/*` here, plus generated `agents/<slug>/checks/` |
-| Temporal activities | `activities.py` |
+| Temporal activities | `temporal/activities.py` |
 | tool adapter | `tools/*` |
 | error + retry policy | `errors.py` · `policy.py` |
 | observability | `trace.py` |
