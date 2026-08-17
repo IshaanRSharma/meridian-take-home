@@ -48,7 +48,7 @@ export default function Documents({ boardId }: { boardId: string }) {
     <div className="border-b border-(--color-line) px-3 py-2.5">
       <div className="flex items-center gap-2">
         <span className="text-[11.5px] font-medium text-(--color-ink-dim)">
-          Written procedure
+          Attach relevant documents
         </span>
         {attached.length > 0 && (
           <span className="font-mono text-[10.5px] text-(--color-ink-faint)">
@@ -58,7 +58,7 @@ export default function Documents({ boardId }: { boardId: string }) {
         <button
           onClick={() => picker.current?.click()}
           disabled={upload.isPending}
-          title="Attach an SOP, policy or email so the reviewer can read it"
+          title="PDF, markdown, text or a photo of a printed page"
           className={cx(
             'ml-auto grid size-6 place-items-center rounded-md border border-(--color-line-soft)',
             'text-(--color-ink-faint) transition-colors',
@@ -82,9 +82,7 @@ export default function Documents({ boardId }: { boardId: string }) {
       </div>
 
       {upload.isPending && (
-        <p className="mt-1.5 text-[11px] text-(--color-ink-faint)">
-          Reading it… a scan goes to a model, so this takes a few seconds.
-        </p>
+        <p className="mt-1.5 text-[11px] text-(--color-ink-faint)">Reading it…</p>
       )}
 
       {upload.error && (
@@ -94,13 +92,6 @@ export default function Documents({ boardId }: { boardId: string }) {
             body={upload.error instanceof Error ? upload.error.message : String(upload.error)}
           />
         </div>
-      )}
-
-      {attached.length === 0 && !upload.isPending && (
-        <p className="mt-1 text-[11px] leading-snug text-(--color-ink-faint)">
-          Attach the SOP and the reviewer can ask where the drawing and the procedure
-          disagree — not just where the drawing is silent.
-        </p>
       )}
 
       {attached.length > 0 && (

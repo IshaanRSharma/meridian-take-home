@@ -34,17 +34,12 @@ def rank(
     candidates: Sequence[Thread], priors: Sequence[Thread], cap: int = CAP
 ) -> tuple[Thread, ...]:
     """The questions worth asking this round, best first."""
-    # A question the model invented has no structural identity, so its key is
-    # None — and "neither of these has a key" must never read as "these are the
-    # same question", or every semantic finding in the round collapses into one.
-    # Keeping None out of `seen` is what guarantees that, on both sides.
-    seen = {prior.decision_key for prior in priors if prior.decision_key}
+    seen = {_identity(prior) for prior in priors}
     fresh: list[Thread] = []
     for candidate in candidates:
-        if candidate.decision_key in seen:
+        if _identity(candidate) in seen:
             continue
-        if candidate.decision_key:
-            seen.add(candidate.decision_key)
+        seen.add(_identity(candidate))
         fresh.append(candidate)
 
     chosen: list[Thread] = []
@@ -75,6 +70,31 @@ def _alternating(provable: list[Thread], found: list[Thread]) -> list[Thread]:
     for one, other in zip_longest(provable, found):
         taken += [comment for comment in (one, other) if comment is not None]
     return taken
+
+
+def _identity(comment: Thread) -> str:
+    """What makes two questions the same question across rounds.
+
+    A lint question is derived from the graph, so it has a `decision_key` and
+    that key is the identity — which is why round one's blanks never came back.
+
+    A question the model invented has none: letting it mint one would let it
+    collide with a derived key and silence a real question, or invent one
+    nothing else produces so its own never returns. So `decision_key` is None,
+    and for a while nothing recognised those at all — three rounds over an
+    unedited board asked the same six questions three times each, word for word,
+    and every duplicate was an open thread standing between that board and its
+    freeze.
+
+    The text is the fallback, and only because these were **character-identical**.
+    Two invented questions in one round say different things and keep their own
+    identities, which is the property that must survive; the same question next
+    round is the same string. Casing and spacing are normalised because the
+    sentence is regenerated rather than stored. Nothing cleverer belongs here —
+    a genuine paraphrase needs a model to recognise it, which is `unasked()`,
+    and `distill.paraphrases` is already the shape for it.
+    """
+    return comment.decision_key or " ".join(comment.question.casefold().split())
 
 
 def _worth(comment: Thread) -> tuple[int, int, str]:

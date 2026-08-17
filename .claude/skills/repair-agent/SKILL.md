@@ -70,6 +70,53 @@ completely different fixes.
 **Check `REPAIR HISTORY`.** Do not retry an approach already rejected. Without
 this, the same failed idea gets tried across sessions.
 
+### The file named is where the number went wrong, not where the mistake was
+
+`file_map` resolves a failing column to the step that filled it. That is the
+right default and it is confidently wrong in one whole class of failure: a step
+can only be as correct as what it was handed, so a mistake made upstream
+surfaces as a wrong number downstream, and the bundle points at the one file
+where the bug definitely is not.
+
+Two readings of `TRACE` separate the two, and both are in front of you:
+
+**Did the step examine anything?** `total: 0` is not a failure of the criterion,
+it is the criterion never running. A check that reports `pass` over zero rows
+found nothing to disagree with. Look at what the step *before* it produced: if
+ingestion reported no instances of an entity the check reads, the fix is in
+reading or recognition, and `DECLINED` usually names it.
+
+**Is the number a multiple rather than a difference?** `2` where `1` is
+expected, `6` where `3` is, `10` where `5` is — a count that is a small integer
+multiple of the truth is almost never arithmetic. It is the same thing counted
+once per delivery, or per file, or per page: a grouping mistake, upstream of
+every check that reports it. An off-by-one or a wrong threshold looks nothing
+like this, and telling them apart costs one glance.
+
+Both are questions about **whether the step was given the right inputs**, asked
+before touching how it uses them. Ask them first; they cost seconds and they are
+the difference between patching a symptom and patching a cause.
+
+**Then check the card for a field the code never reads.** Every field on a
+primitive drives a behaviour — that is why it is a field and not prose — so one
+the generator skipped is a behaviour the process asked for and did not get. Read
+the card in `spec.lock.json` beside the file and account for each field. A fix
+that restores a declared field is the best kind available: it is authorised
+already, so it is neither a guess nor a spec gap.
+
+### Some things a failure cannot tell you, and saying so is the deliverable
+
+A suite scores the answer, not the reasoning. Where the answer is wrong for a
+reason nothing in the trace records, no amount of reading the bundle reaches it
+— which is why the corpus, not the sweep, is what catches a wrong grouping or a
+key read from the wrong place.
+
+When you suspect that, **say what evidence would settle it and stop.** A note
+saying *"every case under-counts by exactly the number of deliveries; the eval
+cannot see grouping, so a case that splits one unit across two inputs would
+catch it"* is worth more than a patch that makes the number match. Naming the
+case the suite is missing is a contribution to the suite.
+
 ## 2. Classify before you patch
 
 Three outcomes, and only one of them is yours.

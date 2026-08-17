@@ -35,8 +35,8 @@
       "id": "correlation_key_read_from_the_body",
       "decision": "took the container number from the message body under a `Container No` label, falling back to a bare ISO container pattern",
       "prompted_by": "primitives.prealert_received.correlation_key",
-      "because": "the spec names commercial_invoice.container_no, which is true of the finished data and unavailable at trigger time \u2014 correlating is what decides which workflow an attachment belongs to, and extraction has not run yet. Both readings agree on all thirteen messages that name a container",
-      "falsified_if": "two shipments merge into one workflow, or one splits across two"
+      "because": "the spec names commercial_invoice.container_no, which is true of the finished data and unavailable at trigger time \u2014 correlating is what decides which workflow an attachment belongs to, and extraction has not run yet. The body carries it in 13 of 14 messages; the subject in 1 and a filename in 5. Three shipments arrive as two emails split by document type, one carrying the certificates and the other the invoice, and the certificate-only email names the container nowhere but the body \u2014 so any other reading orphans those certificates and reports them missing while they sit in the inbox",
+      "falsified_if": "two shipments merge into one workflow, one splits across two, or a message whose body names no container is silently dropped rather than reported"
     },
     {
       "id": "air_waybill_shipments_are_not_correlated",
@@ -49,7 +49,7 @@
       "id": "batch_matching_is_normalised",
       "decision": "compared batch numbers after trimming whitespace and folding case",
       "prompted_by": "primitives.coas_valid.context.inherited[0]",
-      "because": "the card carries a settled assertion \u2014 'Batch numbers are matched after trimming spaces and ignoring case'. That is approved knowledge, so normalising implements the spec. The criterion kernel compares exactly by default and is left alone; the folding is applied to its inputs and the failures are restored to the printed values",
+      "because": "the card carries a settled assertion \u2014 'Batch numbers are matched after trimming spaces and ignoring case'. That is approved knowledge, so normalising implements the spec. The criterion kernel compares exactly by default and is left alone; the folding is applied to its inputs and the failures are restored to the printed values. Content deduplication is what makes repeated documents collapse: the two emails for one shipment share almost no filenames, so the same certificate arrives under different names and only its content identifies it",
       "falsified_if": "two genuinely different batches are treated as one"
     },
     {

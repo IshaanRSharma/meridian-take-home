@@ -65,6 +65,31 @@ def test_questions_nobody_derived_are_never_confused_with_each_other():
     assert len(ranking.rank(invented, [prior_without_a_key])) == 2
 
 
+def test_a_question_nobody_derived_is_still_not_asked_word_for_word_twice():
+    # The other half of the test above, and the half that was missing. A key is
+    # how a question is recognised next round, and a semantic question has none —
+    # so nothing recognised it, and three rounds over an unedited board asked the
+    # same six questions three times each, character-identical.
+    #
+    # It is not untidiness. Every duplicate is an open thread and open threads
+    # block the freeze, so a board reviewed three times could not be frozen until
+    # somebody answered the same question three times.
+    same = "Who receives the report when the supervisor is away?"
+    prior = asked(None, question=same, status="answered")
+
+    assert ranking.rank([asked(None, question=same)], [prior]) == ()
+
+
+def test_the_same_question_typed_differently_is_still_the_same_question():
+    # Only what is free and certain. Casing and spacing vary run to run because
+    # the sentence is regenerated, not stored — but a genuine paraphrase gets
+    # through, and catching those is `unasked()`'s job, not this one's.
+    prior = asked(None, question="Who receives the report?", status="rejected")
+    respaced = asked(None, question="  who   receives the report?  ")
+
+    assert ranking.rank([respaced], [prior]) == ()
+
+
 def test_a_new_question_still_gets_through():
     prior = asked("entry:primitive:prealert_received")
     survived = ranking.rank([asked("termination:edge:e5")], [prior])
