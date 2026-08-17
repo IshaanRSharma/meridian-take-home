@@ -33,7 +33,7 @@ from pydantic import ValidationError
 from meridian.authoring import create, delete, edit, interpret, layout
 from meridian.compiler import freeze as freeze_
 from meridian.compiler import rules
-from meridian.core.db import close_pool, transaction
+from meridian.core.db import close_pool, pool, transaction
 from meridian.core.llm import LLMError
 from meridian.domain.build import Build, EvalCase, Repair, RunResult
 from meridian.domain.errors import ConflictingStateError, IncompleteError, NotFoundError
@@ -723,15 +723,23 @@ def eval_sweep(  # noqa: PLR0913, PLR0917 - what to run, against which build, fo
             raise NotFoundError(
                 f"no eval cases for this spec — `meridian eval load {board_id} --from <file>`"
             )
-        return await sweep_.sweep(
-            connection,
-            build=built,
-            spec=spec,
-            cases=cases,
-            agents_root=_repo_root() / agents,
-            cycle_id=sweep_.new_cycle(),
-            case_timeout=seconds,
-        )
+        # A second connection, outside the sweep's transaction, carrying the
+        # per-case events only. Without it a watcher sees nothing until the
+        # whole run commits, which on a live suite is the entire run.
+        watcher = await (await pool()).acquire()
+        try:
+            return await sweep_.sweep(
+                connection,
+                build=built,
+                spec=spec,
+                cases=cases,
+                agents_root=_repo_root() / agents,
+                cycle_id=sweep_.new_cycle(),
+                case_timeout=seconds,
+                progress=watcher,
+            )
+        finally:
+            await (await pool()).release(watcher)
 
     _sweep_report(_run(work), split)
 

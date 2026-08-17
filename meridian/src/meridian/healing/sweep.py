@@ -101,8 +101,21 @@ async def sweep(  # noqa: PLR0913 - a sweep names what it runs, against what, fo
     cycle_id: UUID,
     mode: evals_repo.Mode = "sandbox",
     case_timeout: float = CASE_TIMEOUT_SECONDS,
+    progress: asyncpg.Connection | None = None,
 ) -> Swept:
-    """Run the suite against one build and record every case."""
+    """Run the suite against one build and record every case.
+
+    `progress` is a second connection, outside this sweep's transaction, for the
+    per-case events only. Results and observability want opposite things from
+    durability: a partial sweep must never be visible, because the gate would
+    score it as a complete measurement, while progress is worthless unless it is
+    visible *while* the thing is still running. Sharing one connection means
+    picking one, and picking atomicity — which is the right pick — leaves a
+    watcher staring at nothing for the length of the run.
+
+    Optional, so a caller that has no second connection still works and simply
+    sees the events at the end, as before.
+    """
     await evals_repo.clear_runs(connection, build.identity)
 
     results: list[Comparison] = []
@@ -122,6 +135,7 @@ async def sweep(  # noqa: PLR0913 - a sweep names what it runs, against what, fo
                     mode=mode,
                     case_timeout=case_timeout,
                     rejected=rejected,
+                    progress=progress,
                 )
                 results.append(result)
 
@@ -149,6 +163,7 @@ async def _one(  # noqa: PLR0913 - one case needs everything the sweep was given
     mode: evals_repo.Mode,
     case_timeout: float,
     rejected: list[str],
+    progress: asyncpg.Connection | None = None,
 ) -> Comparison:
     # Emitted before the case runs, not after. A live case takes as long as a
     # mailbox and a model take, and with only a completion event a watcher sees
@@ -156,7 +171,7 @@ async def _one(  # noqa: PLR0913 - one case needs everything the sweep was given
     # a sweep that has wedged. This is what makes a progress view a progress
     # view rather than a slowly-filling results table.
     await events.emit(
-        connection,
+        progress or connection,
         cycle_id=cycle_id,
         phase="eval",
         kind="case",
@@ -190,7 +205,7 @@ async def _one(  # noqa: PLR0913 - one case needs everything the sweep was given
         )
 
     await events.emit(
-        connection,
+        progress or connection,
         cycle_id=cycle_id,
         phase="eval",
         kind="case",
