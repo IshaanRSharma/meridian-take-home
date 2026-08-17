@@ -71,11 +71,34 @@ Three outcomes, and only one of them is yours.
 implementation_defect   nobody would disagree about the answer      → patch it
 spec_gap                two competent people would disagree, and    → STOP
                         the customer would care which you picked
-skeleton_defect         one signature spans several primitives      → STOP,
-                        so the fix is in runtime/, not this agent      say which
+skeleton_defect         the agent has no seam to express the fix    → STOP,
+                        through                                        say what
+                                                                       is missing
 ```
 
-The test is **who owns the decision**, never where the file lives.
+The first test is **who owns the decision**, never where the file lives. If a
+person has to choose, it is a spec gap however easy the code would be.
+
+The second test is **whether you can express the fix at all**, and it is asked
+second because it only matters once you know the decision is yours:
+
+> Can I make this work by changing something under `agents/<slug>/`?
+
+Almost always yes, because the scaffold injects its moving parts rather than
+importing them. A reader, a classifier, an extractor, a provider, a comparison —
+all of these arrive as arguments, so the agent can pass a different one without
+anybody editing `runtime/`. **Wrapping or replacing an injected component is an
+ordinary patch, not a skeleton defect.**
+
+It is a skeleton defect only when there is **no seam** — when the behaviour is
+hard-wired somewhere the agent cannot reach, and the only way to change it is to
+edit code shared by every agent. Say which seam is missing, because that is the
+fix: usually the answer is to make the thing injectable rather than to change
+what it does.
+
+**Do not classify by where the code currently lives.** Two agents hitting the
+same wall is evidence, not proof — one signature spanning several primitives
+means look harder for a seam, not that one is absent.
 
 | failure | class |
 |---|---|
@@ -89,7 +112,32 @@ The test is **who owns the decision**, never where the file lives.
 A bucket covering **100% of cases** is evidence in itself: a per-check bug fails
 some cases, an infrastructure bug fails all of them the same way.
 
-## 3. Localisation lies in one specific way
+## 3. When there is nothing to compare
+
+A sweep can fail without producing a single comparison: zero runs, or every case
+erroring identically. There is no expected-versus-actual, so the bundle you were
+handed is nearly empty — and that emptiness **is** the diagnosis.
+
+It means the failure is **upstream of everything the eval measures**. Nothing
+reached the checks, so nothing could disagree with the expected output.
+
+Work forwards from the entry point rather than backwards from a failure:
+
+```
+did the trigger fire at all?         zero runs -> the entry condition matched
+                                     nothing. Read what it was given, not what
+                                     it decided.
+did any input arrive?                counts of zero across the board, and
+                                     DECLINED naming everything that turned up
+did one case error, or all of them?   ALL identical = infrastructure.
+                                     SOME = a real per-case bug.
+```
+
+A sweep of zero is also the one situation where **the fix is often not in a file
+the bundle names**, because no primitive got far enough to be named. Expect to
+be working in the entry point, the reader, or whatever assembles inputs.
+
+## 4. Localisation lies in one specific way
 
 `primitive_key` names where the failure was **detected**, not where it was
 **caused**. A check reporting `0 passed` may be perfect while its input never
@@ -109,7 +157,7 @@ the agent. If the bundle names a file that does not exist, the map is stale —
 say so rather than guessing at a path, because a patch applied to the wrong file
 passes the gate for the wrong reason.
 
-## 4. Patch
+## 5. Patch
 
 **You are writing code, not editing configuration.** If the right fix is a
 parser, a normalisation table, a lookup, a second pass over ambiguous rows —
@@ -143,7 +191,7 @@ attachments sit two levels down.
 **Classification.** If `DECLINED` names something that should have been read, the
 recognition rule or the reader is wrong — not the check.
 
-## 5. Working inside a Temporal workflow
+## 6. Working inside a Temporal workflow
 
 **An exception in workflow code is a HANG, not an error.** Temporal treats it as
 a workflow task failure and retries forever: no traceback, no exit, just silence.
@@ -160,7 +208,7 @@ presents as a hang.
 anything set from outside the workflow is invisible inside it. Data travels on
 the signal or the input.
 
-## 6. Verify, in this order
+## 7. Verify, in this order
 
 ```bash
 mvp eval case <KEY> --build <n>            # the target case
@@ -171,7 +219,7 @@ mvp verify --agent <slug>                  # imports · conformance
 The gate is **target passes AND no regression**. It can only reject; a human
 overrides, never approves.
 
-## 7. Review the patch before you report
+## 8. Review the patch before you report
 
 Read the diff back and ask the two questions that matter:
 
@@ -187,7 +235,19 @@ bug into a business outcome, a normalisation applied where the spec asked for an
 exact match, and a fix in the file the bundle named when the trace showed the
 cause upstream.
 
-## 8. Report
+## 9. Know when to stop trying
+
+Three attempts on one signature with no improvement is not persistence, it is a
+misdiagnosis. Stop and report what you learned rather than trying a fourth
+variation of the same idea — the loop has a budget, and a signature that resists
+three honest attempts is usually one of the two things you are not allowed to
+decide.
+
+The same applies to a patch the gate rejects twice for regressions. Two
+different attempts breaking two different sets of previously-passing cases means
+the thing you are changing is load-bearing in a way the failure did not reveal.
+
+## 10. Report
 
 - what changed, in one sentence, and **why that was the cause**
 - **which assumption this falsified**, if any — and update `assumptions.json`,

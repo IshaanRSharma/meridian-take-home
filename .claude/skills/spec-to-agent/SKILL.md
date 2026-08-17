@@ -442,6 +442,31 @@ so `store.decline(source, reason)` every time.
 reads almost exactly like a certificate of analysis. Extracting against the wrong
 schema yields fields that look right and are not, which is worse than declining.
 
+### Leave seams where a repair will need them
+
+Whatever you write, build 1 will be wrong about something — not through
+carelessness, but because a spec describes a process and real inputs are messier
+than any description of them. The question is whether the next person can fix it
+by changing **one thing**, or has to unpick a function.
+
+So inject what you cannot be sure about, rather than calling it directly:
+
+```
+how a source is READ            a scan, a nested attachment, an unusual encoding
+how something is CLASSIFIED     two document types that read almost alike
+how values are COMPARED         formatting differences nobody mentioned
+what a THRESHOLD is             every number you picked yourself
+```
+
+Each of those is a place where reality reliably differs from a description of
+it. Passed as an argument, a repair swaps one function. Buried in a loop, the
+same repair is a rewrite — and the repair loop is explicitly told to prefer
+patches it can make inside `agents/<slug>/`, so a missing seam is what forces it
+to stop and escalate.
+
+The scaffold does this for itself — `ingest` takes a `Pipeline`, `Tools` takes
+providers — and the reason is the same one.
+
 ### The numbers here are yours to choose
 
 `confidence_floor` defaults to `0.6`. Nobody approved that — it is a starting
