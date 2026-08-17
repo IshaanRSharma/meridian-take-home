@@ -141,7 +141,7 @@ create table threads (
 create index on threads (board_id, status);
 
 -- A conversation ranges over several elements at once, so anchors are a table.
-create table thread_anchors (
+create table comment_anchors (
   thread_id   uuid not null references threads(id) on delete cascade,
   anchor_kind text not null check (anchor_kind in
               ('board', 'group', 'primitive', 'edge', 'entity_field')),
@@ -150,9 +150,9 @@ create table thread_anchors (
   primary key (thread_id, anchor_kind, anchor_key),
   check ((anchor_kind = 'board') = (anchor_key is null))
 );
-create index on thread_anchors (anchor_kind, anchor_key);
+create index on comment_anchors (anchor_kind, anchor_key);
 
-create table thread_messages (
+create table comment_messages (
   id         uuid primary key default gen_random_uuid(),
   thread_id  uuid not null references threads(id) on delete cascade,
   seq        int  not null,
@@ -244,7 +244,7 @@ create table agent_builds (
   prompt_version  text,
   temperature     numeric(3, 2),
   -- primitive_key → file. Codegen writes it, localisation reads it. Without it
-  -- the mapping depends on a comment convention that fails silently on rename.
+  -- the mapping depends on a thread convention that fails silently on rename.
   file_map        jsonb not null default '{}',
   created_at      timestamptz not null default now(),
   unique (spec_id, iteration)
@@ -388,7 +388,7 @@ declare t text;
 begin
   foreach t in array array[
     'boards', 'primitives', 'edges', 'reference_docs', 'scenarios',
-    'threads', 'thread_anchors', 'thread_messages', 'assertions', 'specs',
+    'threads', 'comment_anchors', 'comment_messages', 'assertions', 'specs',
     'tools', 'agent_builds', 'eval_cases', 'runs', 'run_steps', 'failures',
     'repairs', 'deployments', 'events'
   ]

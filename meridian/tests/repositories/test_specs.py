@@ -69,7 +69,7 @@ async def test_a_spec_read_back_still_verifies_itself(
     connection: asyncpg.Connection, complete: Board
 ):
     board_id = await boards.save(connection, complete)
-    spec = freeze.freeze(complete.model_copy(update={"id": board_id}))
+    spec = freeze.freeze(complete.model_copy(update={"id": board_id}), (), ())
 
     await specs.save(connection, spec)
     loaded = await specs.latest(connection, board_id)
@@ -90,7 +90,9 @@ async def test_the_column_holds_what_a_generator_reads_and_nothing_else(
     # inside the blob beside the authoritative column, and would undo the null
     # stripping that exists so a generator reads only what someone filled in.
     board_id = await boards.save(connection, complete)
-    await specs.save(connection, freeze.freeze(complete.model_copy(update={"id": board_id})))
+    await specs.save(
+        connection, freeze.freeze(complete.model_copy(update={"id": board_id}), (), ())
+    )
 
     raw = await connection.fetchval("select payload from specs where board_id = $1", board_id)
     stored = json.loads(raw) if isinstance(raw, str) else raw
@@ -121,7 +123,7 @@ async def test_versions_accumulate_rather_than_replace(
     board_id = await boards.save(connection, complete)
     board = complete.model_copy(update={"id": board_id})
 
-    first = freeze.freeze(board)
+    first = freeze.freeze(board, (), ())
     await specs.save(connection, first)
 
     # Renaming the board would not do — a board's name is not part of its spec,
@@ -139,7 +141,7 @@ async def test_versions_accumulate_rather_than_replace(
             )
         }
     )
-    second = freeze.freeze(answered, previous=first)
+    second = freeze.freeze(answered, (), (), previous=first)
     await specs.save(connection, second)
 
     assert (await specs.latest(connection, board_id)).version == 2  # type: ignore[union-attr]
@@ -153,7 +155,9 @@ async def test_the_database_refuses_to_edit_a_spec(connection: asyncpg.Connectio
     # approved, and a build claims conformance to it — an UPDATE would rewrite
     # history that other rows already point at.
     board_id = await boards.save(connection, complete)
-    await specs.save(connection, freeze.freeze(complete.model_copy(update={"id": board_id})))
+    await specs.save(
+        connection, freeze.freeze(complete.model_copy(update={"id": board_id}), (), ())
+    )
 
     # Each inside its own savepoint: the first raise aborts the surrounding
     # transaction, and without one the second statement fails for the wrong

@@ -121,6 +121,16 @@ async def mark_submitted(connection: asyncpg.Connection, board_id: UUID) -> None
     await connection.execute("update boards set status = 'submitted' where id = $1", board_id)
 
 
+async def set_review_round(connection: asyncpg.Connection, board_id: UUID, number: int) -> None:
+    """Record that another round has happened.
+
+    The only column the reviewer is allowed to write. If it could touch a card
+    or an edge it would be marking its own homework, and `resolved` would stop
+    meaning anything.
+    """
+    await connection.execute("update boards set review_round = $2 where id = $1", board_id, number)
+
+
 def _primitive(row: asyncpg.Record) -> Primitive:
     return _PRIMITIVE.validate_python(
         {
