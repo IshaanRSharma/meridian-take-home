@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from meridian.domain.primitives import OnFailure
 from meridian.runtime.errors import BindingError, NeedsHumanError, RetryableError, TerminalError
 
 Disposition = Literal["retry", "route", "escalate"]
@@ -31,7 +32,7 @@ _DISPOSITIONS: dict[type[BaseException], Disposition] = {
 # `wait` keeps trying because the process owner said the answer is worth waiting
 # for; `fail` gives up at once because they said it is not. `skip` continues
 # without the answer, so one attempt is all it gets.
-_ATTEMPTS: dict[str, int] = {"fail": 1, "skip": 1, "wait": 8}
+_ATTEMPTS: dict[OnFailure, int] = {"fail": 1, "skip": 1, "wait": 8}
 _DEFAULT_ATTEMPTS = 3
 
 
@@ -58,14 +59,14 @@ def disposition_of(error: BaseException) -> Disposition:
     return "retry"
 
 
-def retry_policy(on_failure: str | None = None) -> RetryPolicy:
+def retry_policy(on_failure: OnFailure | None = None) -> RetryPolicy:
     """The policy for a step, derived from what the process owner chose.
 
     ``BindingError`` is never retried at any setting: every case would fail the
     same way, so attempts are spent proving something already known.
     """
     return RetryPolicy(
-        max_attempts=_ATTEMPTS.get(on_failure or "", _DEFAULT_ATTEMPTS),
+        max_attempts=_DEFAULT_ATTEMPTS if on_failure is None else _ATTEMPTS[on_failure],
         initial_interval_s=1.0,
         backoff=2.0,
         non_retryable=(BindingError.__name__, TerminalError.__name__, NeedsHumanError.__name__),

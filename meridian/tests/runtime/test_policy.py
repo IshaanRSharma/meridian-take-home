@@ -5,8 +5,11 @@ differently to a human; the dispositions exist because there are only three
 things a running process can do about a failure.
 """
 
+from typing import get_args
+
 import pytest
 
+from meridian.domain.primitives import OnFailure
 from meridian.runtime.errors import (
     AgentError,
     BindingError,
@@ -62,3 +65,11 @@ def test_on_failure_fail_does_not_retry_at_all():
 
 def test_the_default_policy_backs_off_rather_than_hammering():
     assert retry_policy().backoff > 1.0
+
+
+def test_the_vocabulary_is_the_one_the_process_owner_chose_from():
+    # `on_failure` is a closed set on the card. Taking a bare `str` here meant a
+    # typo silently produced the default policy instead of the one asked for.
+    assert set(get_args(OnFailure)) == {"fail", "wait", "skip"}
+    for value in get_args(OnFailure):
+        assert retry_policy(value).max_attempts >= 1

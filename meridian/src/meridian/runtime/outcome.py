@@ -14,6 +14,8 @@ from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from meridian.domain.primitives import Scope
+
 
 class RuntimeModel(BaseModel):
     """Frozen and closed, like the domain types this mirrors.
@@ -35,7 +37,7 @@ class Failure(RuntimeModel):
     and case variance without anybody explaining it.
     """
 
-    grain: str
+    grain: Scope
     locator: str
     reason: str
     detail: dict[str, Any] = Field(default_factory=dict)
