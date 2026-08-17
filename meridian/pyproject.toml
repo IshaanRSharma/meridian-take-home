@@ -12,6 +12,7 @@ dependencies = [
     "composio>=0.8.0",
     "fastapi>=0.141.1",
     "openai>=3.1.0",
+    "pymupdf>=1.24.0",
     "pypdf>=5.1.0",
     "pydantic>=2.9",
     "pydantic-settings>=2.15.0",

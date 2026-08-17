@@ -21,7 +21,7 @@ from typing import Any
 
 import mail
 import spec
-from reading import Classifier, Document, Extractor, read_pages, split
+from reading import Classifier, Document, Extractor, read_pages, readable, split
 from temporalio import activity
 
 from meridian.runtime.ingest import Pipeline, candidates_from, ingest
@@ -111,6 +111,9 @@ class Ingestion:
 
         for arrival in arrivals:
             for attachment in arrival.attachments:
+                if not readable(attachment.filename, attachment.media_type):
+                    declined.append((attachment.filename, "not a format this build reads"))
+                    continue
                 try:
                     data = self._gmail.download(mail.Attachment(**vars(attachment)))
                     pages = read_pages(data, self._model)

@@ -40,6 +40,12 @@ reason to raise this, and that is a tuning decision with an oracle."""
 VISION_MODEL = "gpt-4o"
 """The fallback for a page with no text layer, which needs to see the page."""
 
+MAX_VISION_PAGES = 12
+"""How many pages of one scanned document to render.
+
+A bound on cost, not a judgement about documents. A scan longer than this is
+worth reporting rather than paying for silently."""
+
 MIN_TEXT_CHARACTERS = 40
 """Below this a page is treated as having no usable text layer. A header and a
 page number clear 40 characters; a genuinely blank extraction does not."""
@@ -223,21 +229,58 @@ class Extractor:
         return _instances(answer.choices[0].message.content or "{}")
 
 
-def read_pages(data: bytes, client: Any, pages: Pages = pdf_pages) -> Sequence[str]:
-    """Page text, falling back to the model for pages with no text layer.
+def readable(filename: str, media_type: str) -> bool:
+    """Whether this build can read this file at all.
 
-    The fallback is per page rather than per file because the corpus is mixed:
-    sending a whole native document to a vision model would be slow and worse,
-    and refusing the one scanned bundle would lose a whole shipment.
+    A spreadsheet and a signature image are not documents this agent knows how
+    to open, and handing them to a PDF parser produces `Stream has ended
+    unexpectedly` — an error about parsing, from a file that was never going to
+    be parsed, which reads like a bug in the reader. Deciding before opening
+    keeps the decline honest: *not a format this build reads*, which is a
+    coverage statement somebody can act on.
+    """
+    return filename.lower().endswith(".pdf") or media_type.lower() == "application/pdf"
+
+
+def page_images(data: bytes, dpi: int = 150) -> list[bytes]:
+    """Each page rendered to a PNG.
+
+    Needed because a scanned page has to be *seen*. 150 dpi is the point where
+    small print on a certificate stays legible without the payload growing
+    faster than the accuracy does.
+    """
+    import pymupdf  # noqa: PLC0415 - kept beside the one function that rasterises
+
+    # pymupdf ships no py.typed marker, so `open` reads as untyped here.
+    with pymupdf.open(stream=data, filetype="pdf") as document:  # type: ignore[no-untyped-call]
+        return [
+            page.get_pixmap(dpi=dpi).tobytes("png")
+            for page in document.pages(0, min(document.page_count, MAX_VISION_PAGES))
+        ]
+
+
+def read_pages(data: bytes, client: Any, pages: Pages = pdf_pages) -> Sequence[str]:
+    """Page text, falling back to the model for a document with no text layer.
+
+    The corpus is mixed: most documents are native PDF and free to read, and a
+    few are pure image. Rendering every page of every file would be slow and no
+    more accurate, so the fallback fires only when the text layer yields nothing
+    at all.
     """
     text = list(pages(data))
     if any(len(page.strip()) >= MIN_TEXT_CHARACTERS for page in text):
         return text
-    return [_seen(data, client)]
+    return [_seen(image, client) for image in page_images(data)]
 
 
-def _seen(data: bytes, client: Any) -> str:
-    """What a model reads off a document that carries no text at all."""
+def _seen(image: bytes, client: Any) -> str:
+    """What a model reads off one rendered page.
+
+    A page at a time, and as an **image**. A PDF handed to an image parameter is
+    refused — *"Invalid MIME type. Only image types are supported."* — and the
+    whole attachment is then declined for what reads like a fetch problem. Every
+    scanned certificate in the corpus was lost that way.
+    """
     answer = client.chat.completions.create(
         model=VISION_MODEL,
         temperature=0,
@@ -245,11 +288,11 @@ def _seen(data: bytes, client: Any) -> str:
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Transcribe this document, preserving layout."},
+                    {"type": "text", "text": "Transcribe this page, preserving layout."},
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:application/pdf;base64,{base64.b64encode(data).decode()}"
+                            "url": f"data:image/png;base64,{base64.b64encode(image).decode()}"
                         },
                     },
                 ],
