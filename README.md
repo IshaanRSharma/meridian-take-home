@@ -1,24 +1,7 @@
-# Meridian
+# TAKE HOME
 
-A pipeline that turns tacit process knowledge into a running, self-repairing agent.
+self-healing agents
 
-```
-whiteboard  →  AI review loop  →  frozen spec  →  codegen  →  Temporal  →  self-heal
- (mutable)      (human oracle)     (immutable)     (agent)    (durable)   (eval oracle)
-```
-
-Two loops, split by the freeze. Before it, ground truth lives in a person's head,
-so the loop asks a human. After it, ground truth lives in the eval suite, so the
-loop asks a test suite. **The freeze is where authority transfers from a person
-to a test suite.**
-
-The running example is validating inbound pre-alert documentation for a pharma
-distributor: Commercial Invoices and Certificates of Analysis arrive by email
-before a container lands, and the agent checks completeness and consistency
-across a shipment.
-
-The two human-in-the-loop steps — spec to agent, and agent to better agent —
-are run by a person with a coding agent, using checked-in skills:
 
 ```bash
 codex                                     # or claude
