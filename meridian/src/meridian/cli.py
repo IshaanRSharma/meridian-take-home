@@ -732,7 +732,7 @@ def eval_sweep(  # noqa: PLR0913, PLR0917 - what to run, against which build, fo
     because the wait is the whole cost of a bad build.
     """
 
-    async def work(connection: asyncpg.Connection) -> sweep_.Swept:
+    async def work(connection: asyncpg.Connection) -> tuple[sweep_.Swept, FrozenSpec]:
         spec, spec_id = await _spec(connection, board_id)
         built = await _build(connection, spec_id, iteration)
         cases = await evals_repo.cases_for(connection, spec_id, split=split, keys=case)
@@ -745,7 +745,7 @@ def eval_sweep(  # noqa: PLR0913, PLR0917 - what to run, against which build, fo
         # whole run commits, which on a live suite is the entire run.
         watcher = await (await pool()).acquire()
         try:
-            return await sweep_.sweep(
+            swept = await sweep_.sweep(
                 connection,
                 build=built,
                 spec=spec,
@@ -755,10 +755,12 @@ def eval_sweep(  # noqa: PLR0913, PLR0917 - what to run, against which build, fo
                 case_timeout=seconds,
                 progress=watcher,
             )
+            return swept, spec
         finally:
             await (await pool()).release(watcher)
 
-    _sweep_report(_run(work), split)
+    swept, spec = _run(work)
+    _sweep_report(swept, split, spec)
 
 
 @eval_app.command("case")
@@ -982,7 +984,30 @@ def _repo_root() -> Path:
 # ── rendering ────────────────────────────────────────────────────────────────
 
 
-def _sweep_report(swept: sweep_.Swept, split: str | None) -> None:
+def _ceiling(spec: FrozenSpec, swept: sweep_.Swept) -> tuple[int, set[str]]:
+    """How many columns this spec could produce even if the code were perfect.
+
+    A Check declares what it writes with `fills`. A column no Check fills is not
+    a bug in the agent — nothing on the board claims to produce it, so no patch
+    can, and a repair loop aimed at it burns iterations against a number it can
+    never reach.
+
+    This is the line between the two halves of the product. Below the ceiling is
+    the code's problem and the eval suite is the oracle. At the ceiling, the
+    board is missing a card and the answer is a review round.
+    """
+    fills = {
+        fill["field"]["path"] if isinstance(fill, dict) else fill.field.path
+        for card in spec.primitives.values()
+        for fill in (card.config.fills if hasattr(card.config, "fills") else [])
+    }
+    wanted = {column for result in swept.results for column in result.expected}
+    return len(wanted & fills), wanted - fills
+
+
+def _sweep_report(
+    swept: sweep_.Swept, split: str | None, spec: FrozenSpec | None = None
+) -> None:
     errored = swept.errored()
     scope = f" · {split}" if split else ""
     typer.echo(
@@ -995,6 +1020,17 @@ def _sweep_report(swept: sweep_.Swept, split: str | None) -> None:
         typer.echo(
             f"  {state:5}  {result.key:16} {len(result.matched)}/{result.columns()}  {detail}"
         )
+
+    if spec is not None and swept.results:
+        per_case, unfillable = _ceiling(spec, swept)
+        reachable = per_case * len(swept.results)
+        if unfillable:
+            typer.echo(
+                f"\n  CEILING {reachable}/{swept.total} — nothing on the board fills "
+                f"{', '.join(sorted(unfillable))}.\n"
+                "  Those columns are a review round, not a repair: no patch can produce\n"
+                "  a number the spec never claims to write."
+            )
 
     if swept.rejected_steps:
         # Rule 4: a trace step is named after a card. One that is not cannot be
