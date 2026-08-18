@@ -1,0 +1,27 @@
+{
+  "spec_version": 1,
+  "spec_checksum": "927c19a144c7db3d96aeb5b58b8cdbdd053c760b5aecba725d02d26ed8e51461",
+  "entry_point": "src/harness.py",
+  "created_by": "codegen",
+  "model": "gpt-4o-mini",
+  "prompt_version": "spec-to-agent@2026-08-17",
+  "temperature": 0.0,
+  "file_map": {
+    "prealert_received": "src/mail.py",
+    "invoice_complete": "src/checks/invoice_complete.py",
+    "coas_valid": "src/checks/coas_valid.py",
+    "report_invoice_discrepancy": "src/actions/report_invoice_discrepancy.py",
+    "report_coa_discrepancy": "src/actions/report_coa_discrepancy.py"
+  },
+  "$comment": [
+    "file_map names leaf files only. A failure bundle resolves primitive_key to a",
+    "file from here, and pointing one at workflow.py would send every repair at",
+    "the shell all the cards share.",
+    "",
+    "documentation_validated has no entry: effect=noop with is_terminal, so there",
+    "is nothing to implement and nothing a repair could open.",
+    "",
+    ".superseded/ holds an earlier, independent generation of this same agent",
+    "from a concurrent session. Kept rather than deleted; safe to remove."
+  ]
+}

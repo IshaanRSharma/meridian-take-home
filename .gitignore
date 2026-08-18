@@ -36,6 +36,9 @@ docs/
 # source_ref name a commit that does not contain the code it points at. Their
 # bytecode is not ours to carry, though.
 agents/**/__pycache__/
+# Transcribed page text — derived from the mailbox, rebuilt on demand, and large.
+agents/**/.cache/
+agents/**/.superseded/
 
 # Agent worktrees — transient, never committed.
 .claude/worktrees/
@@ -49,7 +52,9 @@ test_toy_agents/
 
 demo/.cache/
 
-# Generated output and local working material.
-agents/
+# Generated output and local working material. `agents/` is NOT here: a build is
+# a commit, `agent_builds.source_ref` is `agents/<slug>@<sha>`, and `meridian
+# build register` refuses an untracked directory because the sha would name a
+# commit that does not contain the code it points at.
 demo/
 fixtures/
