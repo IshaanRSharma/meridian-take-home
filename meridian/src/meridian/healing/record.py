@@ -475,8 +475,20 @@ def repo_root(start: Path) -> Path | None:
     relative to the repository, so deriving them from wherever the shell happens
     to be would make the same command write different rows from different
     directories.
+
+    **No git is no repository, not an error.** The deployed API image carries
+    `src/` and `db/` and neither git nor `agents/`, because it serves a database
+    and never registers a build — so asking it for a repository root is a
+    question with the honest answer "there isn't one". Raising instead turned a
+    panel that reads assumptions off disk into a 500 for the whole endpoint,
+    taking the scoreboard and the curve down with it. Every caller already
+    handles None; the ones that genuinely need a repository, like
+    `build register`, refuse on None and say why.
     """
-    found = _git(start, "rev-parse", "--show-toplevel")
+    try:
+        found = _git(start, "rev-parse", "--show-toplevel")
+    except NotFoundError:
+        return None
     return Path(found) if found else None
 
 
