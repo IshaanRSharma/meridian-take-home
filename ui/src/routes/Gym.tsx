@@ -17,8 +17,8 @@
  * The screen reads and never writes, except for the trigger — which asks the
  * agent to process mail that arrived rather than changing anything about it.
  */
-import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { api, type Gym, type TriggerRun } from '@/lib/api';
 import { Badge, Button, Empty, Panel, PanelHeader, Problem, Spinner } from '@/components/ui';
@@ -153,18 +153,32 @@ function Progress({ gym }: { gym: Gym }) {
 }
 
 function TriggerPanel({ boardId }: { boardId: string }) {
-  const cache = useQueryClient();
+  // How many runs there were when Run was pressed. The trigger answers 202 the
+  // instant it is asked and does the work afterwards, so refetching on success
+  // reads the mailbox as it was BEFORE the run and then never looks again —
+  // which is a button that appears to do nothing. Polling until the count moves
+  // past this mark is what turns the answer into something you can watch.
+  const [awaiting, setAwaiting] = useState<number | null>(null);
+
   const triggered = useQuery({
     queryKey: ['triggered', boardId],
     queryFn: () => api.observability.triggered(boardId),
     enabled: Boolean(boardId),
+    refetchInterval: awaiting === null ? false : 3000,
   });
   const fire = useMutation({
     mutationFn: () => api.pipeline.trigger(boardId),
-    onSuccess: () => cache.invalidateQueries({ queryKey: ['triggered', boardId] }),
+    onSuccess: () => setAwaiting(triggered.data?.runs.length ?? 0),
   });
 
   const runs = triggered.data?.runs ?? [];
+  const running = awaiting !== null && runs.length <= awaiting;
+
+  // Stopping the poll is an effect, not a render-time assignment: setting state
+  // while rendering re-enters the render and React warns about it.
+  useEffect(() => {
+    if (awaiting !== null && runs.length > awaiting) setAwaiting(null);
+  }, [awaiting, runs.length]);
 
   return (
     <Panel>
@@ -172,13 +186,20 @@ function TriggerPanel({ boardId }: { boardId: string }) {
         title="Trigger"
         hint="live mail, no expected answer"
         right={
-          <Button onClick={() => fire.mutate()} disabled={fire.isPending}>
-            {fire.isPending ? 'running' : 'Run'}
-          </Button>
+          <div className="flex items-center gap-2.5">
+            {running && (
+              <span className="font-mono text-[11.5px] text-(--color-ink-faint)">
+                reading the mailbox…
+              </span>
+            )}
+            <Button onClick={() => fire.mutate()} disabled={fire.isPending || running}>
+              {running ? 'running' : 'Run'}
+            </Button>
+          </div>
         }
       />
       {runs.length === 0 ? (
-        <Empty title="nothing triggered yet" />
+        <Empty title={running ? 'reading the mailbox…' : 'nothing triggered yet'} />
       ) : (
         <ul className="divide-y divide-(--color-line-soft)">
           {runs.map((run) => (

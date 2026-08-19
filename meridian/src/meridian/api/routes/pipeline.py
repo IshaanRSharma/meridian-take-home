@@ -39,7 +39,7 @@ from pydantic import BaseModel
 
 from meridian import events
 from meridian.api.dependencies import Connection
-from meridian.core.db import transaction
+from meridian.core.db import pool, transaction
 from meridian.domain.build import Build
 from meridian.domain.errors import NotFoundError
 from meridian.domain.primitives import BOARD_KEY
@@ -111,13 +111,44 @@ async def _runnable(connection: asyncpg.Connection, board_id: UUID) -> Build:
 
 
 async def poll_mailbox(board_id: UUID, built: Build, cycle_id: UUID) -> None:
-    """One pass of the mailbox, recorded as it goes.
+    """One pass of the mailbox, with progress visible while it runs.
 
     Its own transaction, because the request's has already been committed and
-    returned by the time this runs. Each shipment is recorded as it finishes
-    rather than at the end: a poll is minutes long and a watcher with nothing to
-    look at cannot tell it from a poll that has wedged.
+    returned by the time this runs.
+
+    **Progress goes on a second connection, outside that transaction.** Results
+    and observability want opposite things from durability: a half-recorded poll
+    must never be visible, while progress is worthless unless it can be seen
+    *while* the thing is still going. Sharing one connection means picking, and
+    picking atomicity — which is right — leaves a watcher staring at nothing for
+    the length of the run. This is the same split `healing.sweep` makes, for the
+    same reason.
+
+    The window that matters is before `_poll` returns. The agent owns the whole
+    pass, so between "started" and the first recorded shipment there is nothing
+    to report but the fact that it began — and a button that looks like it did
+    nothing is indistinguishable from one that failed.
     """
+    watcher = await (await pool()).acquire()
+    try:
+        await events.emit(
+            watcher,
+            cycle_id=cycle_id,
+            phase="prod",
+            kind="trigger",
+            status="started",
+            build_id=built.identity,
+            detail={"says": "reading the mailbox"},
+        )
+        await _poll_recording(board_id, built, cycle_id, watcher)
+    finally:
+        await (await pool()).release(watcher)
+
+
+async def _poll_recording(
+    board_id: UUID, built: Build, cycle_id: UUID, watcher: asyncpg.Connection
+) -> None:
+    """The pass itself, atomic, reporting each shipment on `watcher` as it lands."""
     async with transaction() as connection, events.during(
         connection,
         cycle_id=cycle_id,
@@ -127,6 +158,16 @@ async def poll_mailbox(board_id: UUID, built: Build, cycle_id: UUID) -> None:
     ) as detail:
         seen = await _already_processed(connection, built)
         polled = await _poll(built, seen)
+        for done in polled.processed:
+            await events.emit(
+                watcher,
+                cycle_id=cycle_id,
+                phase="prod",
+                kind="shipment",
+                status="ok" if done.trustworthy() else "failed",
+                build_id=built.identity,
+                detail={"shipment": done.shipment},
+            )
 
         for done in polled.processed:
             await _record_shipment(connection, built, cycle_id, done)
