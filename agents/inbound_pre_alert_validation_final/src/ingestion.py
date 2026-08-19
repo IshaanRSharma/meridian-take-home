@@ -492,7 +492,29 @@ def _same_document(one: Mapping[str, Any], other: Mapping[str, Any]) -> bool:
     HLBU6302759 in the earlier agent.
     """
     mine, theirs = _scalars(one), _scalars(other)
-    return all(mine[field] == theirs[field] for field in mine.keys() & theirs.keys())
+    return all(_agree(mine[field], theirs[field]) for field in mine.keys() & theirs.keys())
+
+
+def _agree(one: Any, other: Any) -> bool:
+    """Whether two readings of one field can be readings of the same value.
+
+    Equal, or one is the other with more printed after it at a word boundary.
+    The page reads `INVOICE NO : U07/25-26/4729  DT. 25-FEB-26` and extraction
+    stops at the number on one pass and keeps going on the next, so the same
+    invoice arrives as `U07/25-26/4729` and `U07/25-26/4729  DT. 25-FEB-26` and
+    counts as two — three invoices became four on MNBU3852977 between two builds
+    of identical code, because extraction is a model call and is not cached.
+
+    A truncation is not a contradiction, which is the same reason a field only
+    one side saw is silent. **The word boundary is what keeps this safe:**
+    `U07/25-26/472` would otherwise pass as a prefix of `U07/25-26/4729`, and
+    those are two different invoices rather than one read twice.
+    """
+    mine, theirs = str(one).strip(), str(other).strip()
+    if mine == theirs:
+        return True
+    short, long = sorted((mine, theirs), key=len)
+    return long.startswith(short) and long[len(short) :][:1].isspace()
 
 
 @dataclass(frozen=True)
