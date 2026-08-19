@@ -27,6 +27,7 @@ whole check."*
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -123,6 +124,14 @@ class InboundPreAlertValidation:
         """Start with nothing arrived and nothing reported."""
         self._pending: list[Arrival] = []
         self._store = EntityStore()
+        self._documents: dict[str, list[dict[str, Any]]] = {}
+        """Merged readings, the authority the store is projected from.
+
+        A document read across two page ranges arrives as two instances, so the
+        store cannot be the place they are merged — it appends. These are folded
+        as they arrive and the store is rebuilt from them, which keeps the merge
+        out of the scaffold's internals.
+        """
         self._seen: set[str] = set()
         self._reported: set[str] = set()
         self._summary: dict[str, int] = {}
@@ -303,9 +312,10 @@ class InboundPreAlertValidation:
                 if fingerprint in self._seen:
                     continue
                 self._seen.add(fingerprint)
-                self._store.add(instance.entity, instance.values)
+                self._file(instance.entity, dict(instance.values))
             for gone in arrival.declined:
                 self._trace.decline(gone.source, gone.reason)
+        self._project()
 
         with self._trace.step(EVENT_KEY) as recorder:
             recorder.produced(
@@ -317,6 +327,30 @@ class InboundPreAlertValidation:
                 }
                 | self._names()
             )
+
+    def _file(self, entity: str, values: dict[str, Any]) -> None:
+        """Keep this reading, folded into the document it continues."""
+        kept = self._documents.setdefault(entity, [])
+        for stored in kept:
+            if _same_document(stored, values):
+                _combine(stored, values)
+                return
+        kept.append(values)
+
+    def _project(self) -> None:
+        """Rebuild the store from the merged documents.
+
+        Rebuilt rather than mutated in place: ``instances()`` hands back the
+        stored mappings themselves, so editing one would work by aliasing the
+        scaffold's internals — which is true today and is not a promise it made.
+        Re-adding costs nothing at a mailbox's worth of documents.
+        """
+        rebuilt = EntityStore()
+        for entity, documents in self._documents.items():
+            for values in documents:
+                rebuilt.add(entity, values)
+        rebuilt.skipped.extend(self._store.skipped)
+        self._store = rebuilt
 
     def _names(self) -> dict[str, Any]:
         """What each instance is named by, so a count can be checked against a value.
@@ -337,3 +371,54 @@ class InboundPreAlertValidation:
 def _fingerprint(entity: str, values: dict[str, Any]) -> str:
     """A stable identity for one extracted instance, from its content."""
     return f"{entity}:{json.dumps(values, sort_keys=True, default=str)}"
+
+
+def _scalars(values: Mapping[str, Any]) -> dict[str, Any]:
+    """The fields that name a document, as opposed to the rows it carries."""
+    return {
+        field: value
+        for field, value in values.items()
+        if value is not None and not isinstance(value, list | dict) and str(value).strip()
+    }
+
+
+def _same_document(one: Mapping[str, Any], other: Mapping[str, Any]) -> bool:
+    """Whether two readings describe one document.
+
+    They do when they agree on every naming field they *both* filled, and there
+    is at least one such field. A document is split across page ranges for
+    reading, so one reading carries the invoice number and three line items and
+    another carries the same number and the next four — comparing whole contents
+    made those two invoices, and a shipment reported four where two arrived.
+
+    Requiring a shared field is what keeps this from over-merging: agreeing on
+    nothing is not agreement, and two readings that name nothing in common are
+    left alone rather than collapsed into one.
+    """
+    mine, theirs = _scalars(one), _scalars(other)
+    shared = mine.keys() & theirs.keys()
+    return bool(shared) and all(mine[field] == theirs[field] for field in shared)
+
+
+def _combine(into: dict[str, Any], addition: Mapping[str, Any]) -> None:
+    """Fold a second reading of one document into the first.
+
+    Rows are appended and exact repeats dropped, because a row in both readings
+    is one row seen twice while a row in only one is a row the other's pages did
+    not cover. Keeping the longer reading instead would discard the rows only
+    the shorter one saw — invisibly, because what falls is the count of things a
+    Check was meant to examine.
+    """
+    for name, value in addition.items():
+        if isinstance(value, list):
+            rows = into.get(name)
+            rows = list(rows) if isinstance(rows, list) else []
+            seen = {json.dumps(row, sort_keys=True, default=str) for row in rows}
+            for row in value:
+                stamp = json.dumps(row, sort_keys=True, default=str)
+                if stamp not in seen:
+                    seen.add(stamp)
+                    rows.append(row)
+            into[name] = rows
+        elif not _scalars(into).get(name) and value is not None:
+            into[name] = value
