@@ -44,7 +44,7 @@ from meridian.domain.build import Build
 from meridian.domain.errors import NotFoundError
 from meridian.domain.primitives import BOARD_KEY
 from meridian.healing import record
-from meridian.healing.sweep import agent_loaded
+from meridian.healing.sweep import AgentNotRunnableError, agent_loaded
 from meridian.repositories import builds as builds_repo
 from meridian.repositories import evals as evals_repo
 from meridian.repositories import specs as specs_repo
@@ -169,7 +169,24 @@ async def _poll(built: Build, seen: Collection[str]) -> Any:
         # type checker cannot find and, worse, would bind whichever agent
         # happened to be loaded first for the life of the process.
         found = importlib.import_module("trigger")
-        polled: Any = await found.poll(seen)
+        poll = getattr(found, "poll", None)
+        if poll is None or not callable(poll):
+            # Checked here rather than trusted, because the alternative is a
+            # TypeError raised inside a BackgroundTasks job — after the caller
+            # already has a 202 and a cycle id, and where nothing surfaces it
+            # but the server log. `runtime.harness.TriggerPoll` is the shape.
+            raise AgentNotRunnableError(
+                f"{built.slug()} exposes no callable `poll` — see "
+                "meridian.runtime.harness.TriggerPoll for the contract"
+            )
+        try:
+            polled: Any = await poll(seen)
+        except TypeError as wrong:
+            raise AgentNotRunnableError(
+                f"{built.slug()}.poll does not take the contract's arguments: {wrong}. "
+                "It is `poll(seen: Collection[str] = ()) -> Polled`; see "
+                "meridian.runtime.harness.TriggerPoll"
+            ) from wrong
         return polled
 
 

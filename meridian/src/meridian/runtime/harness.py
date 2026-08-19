@@ -24,8 +24,8 @@ end, because a JSON string crosses the boundary where a model would not.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Collection, Mapping
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -64,3 +64,56 @@ class CaseOutcome(BaseModel):
         bundle with a hole in it.
         """
         return cls.model_validate(dict(json.loads(dump)) | {"output": dict(output)})
+
+
+@runtime_checkable
+class Polled(Protocol):
+    """What one pass over the mailbox produced.
+
+    Structural rather than a base class: a generated agent names its own types
+    for what it ran and what it could not key, and inheriting from ours would
+    make the scaffold a framework instead of a scaffold.
+    """
+
+    @property
+    def processed(self) -> tuple[Any, ...]:
+        """Shipments this pass ran to completion."""
+        ...
+
+    @property
+    def uncorrelated(self) -> tuple[Any, ...]:
+        """Messages that matched the process and named no shipment.
+
+        Reported rather than dropped. A pre-alert nobody can key is a gap in the
+        process model, and a poll that silently skipped it would report a clean
+        pass over a mailbox holding unexamined work.
+        """
+        ...
+
+    @property
+    def already_seen(self) -> tuple[str, ...]:
+        """Shipments skipped because the platform already has a row for them."""
+        ...
+
+
+@runtime_checkable
+class TriggerPoll(Protocol):
+    """The second thing a generated agent exposes, beside ``run_case``.
+
+    Declared here for the reason ``RunCase`` is: it was not, and two authors
+    wrote the same seam independently — one taking ``(client, messages,
+    task_queue)`` and returning handles, the other taking ``seen`` and running
+    each shipment to completion. Neither was wrong; they simply never agreed,
+    and the mismatch surfaced as a background task that answered 202 and did
+    nothing. An entry point's shape is a contract, not a preference.
+
+    **The agent owns the whole pass** — fetching the mailbox, running each
+    shipment, reporting what happened. ``seen`` is handed in rather than read,
+    because what counts as already processed is the platform's record; an agent
+    keeping its own ledger would disagree with the database the first time
+    either was restored from a backup.
+    """
+
+    def __call__(self, seen: Collection[str] = ()) -> Any:
+        """Run every shipment in the mailbox that is not in ``seen``."""
+        ...
