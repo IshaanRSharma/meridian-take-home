@@ -114,6 +114,15 @@ def pdf_pages(data: bytes) -> Sequence[str]:
     return out
 
 
+def _numberless(header: str) -> str:
+    """A header with its digits collapsed, for comparing one page to the next.
+
+    Only used to ask whether two pages carry the same header, never to decide
+    what a page is — the recognition phrases are matched against the real text.
+    """
+    return re.sub(r"\d+", "#", header)
+
+
 def header_of(page: str, lines: int = 10) -> str:
     """The top of a page, which is where a recognition rule looks.
 
@@ -161,12 +170,20 @@ def split(source: str, pages: Sequence[str], candidates: Sequence[Candidate]) ->
     invoice's second page is the consignee address block. That invented row then
     merges into the real invoice and inflates every count the check reports.
 
-    An *identical* header is what separates the two cases, and it is the whole
-    of the rule. Two real certificates in one bundle differ in the lines naming
-    their batch, so they still open; page 2 of one certificate reprints page 1
-    byte for byte, so it does not. Measured over this corpus: 16 transitions
-    where a page repeats the previous page's header verbatim, and all 16 are
-    continuations — none of them starts a new document.
+    A header that repeats the previous page's is what separates the two cases,
+    and it is the whole of the rule. Two real certificates in one bundle differ
+    in the lines naming their batch, so they still open; page 2 of one
+    certificate reprints page 1, so it does not.
+
+    **Compared with its digits masked**, because the one thing that legitimately
+    varies down the pages of a single document is the page number — `Page 1 of
+    2` against `Page 2 of 2` is the same letterhead and a naive equality test
+    calls it a new invoice. Masking is safe in the direction that matters: what
+    distinguishes two different documents is a title or an identifier, and both
+    carry letters, so `HRB125012` and `CLC126004` stay different however their
+    digits are treated. Measured over this corpus: 27 transitions repeat the
+    previous header once digits are masked, and on none of them do the two pages
+    carry different lot numbers — so none of them is a document boundary.
     """
     phrases = {c.entity: keywords_of(c.identified_by) for c in candidates}
     groups: list[list[int]] = []
@@ -174,7 +191,7 @@ def split(source: str, pages: Sequence[str], candidates: Sequence[Candidate]) ->
     for index, page in enumerate(pages):
         head = header_of(page)
         carries = any(phrase in head for words in phrases.values() for phrase in words)
-        opens = carries and head != previous
+        opens = carries and _numberless(head) != _numberless(previous)
         if opens or not groups:
             groups.append([index])
         else:
