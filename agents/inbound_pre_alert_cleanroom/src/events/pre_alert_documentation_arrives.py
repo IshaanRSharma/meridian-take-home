@@ -494,6 +494,54 @@ class Survey:
     """
 
 
+async def survey_newest(tools: ToolBox, model: Model) -> Survey:
+    """Read only the message that arrived most recently.
+
+    `survey` downloads and reads every message before it can say which shipment
+    each names — which is right when the question is "what is outstanding" and
+    absurd when it is "what just came in". Fifteen messages of attachments is
+    minutes; one is seconds, and a person watching a button will not wait for
+    the first.
+
+    The listing already carries `received_at`, so choosing the newest costs one
+    API call and no downloads. Lexicographic comparison on an ISO-8601 timestamp
+    is chronological, so nothing has to parse a date the mailbox has already
+    formatted.
+
+    `unkeyed` reports only what this pass looked at. Saying nothing about the
+    other fourteen is honest — they were not examined — where carrying them
+    would claim a judgement this never made.
+    """
+    inbox = await messages(tools)
+    if not inbox:
+        return Survey()
+
+    newest = max(inbox, key=lambda one: one.received_at or "")
+    downloads = asyncio.Semaphore(_DOWNLOADS)
+    readers = asyncio.Semaphore(_READERS)
+    files = await _download(tools, newest, downloads)
+    _, recognised = await _read(newest, files, model, readers)
+
+    correlation = spec.config(KEY)["correlation_key"]
+    found = _correlation_values(recognised, correlation, newest)
+    if not found:
+        return Survey(
+            unkeyed=(
+                Unkeyed(
+                    message_id=newest.message_id,
+                    subject=newest.subject,
+                    sender=newest.sender,
+                    received_at=newest.received_at,
+                    attachments=tuple(one.filename for one in newest.attachments),
+                ),
+            ),
+            matched=len(inbox),
+        )
+
+    keyed = sorted(found)[0]
+    return Survey(shipments=(keyed,), matched=len(inbox), latest=keyed)
+
+
 async def survey(tools: ToolBox, model: Model) -> Survey:
     """Read the mailbox once and say what is in it, keyed and unkeyable.
 

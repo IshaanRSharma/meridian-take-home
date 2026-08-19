@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import spec
-from events.pre_alert_documentation_arrives import KEY, Unkeyed, survey
+from events.pre_alert_documentation_arrives import KEY, Unkeyed, survey_newest
 from ingestion.recognition import openai_model
 from wiring import tools
 
@@ -231,7 +231,7 @@ async def poll(seen: Collection[str] = ()) -> Polled:
     from entry import run_case  # noqa: PLC0415 - importable only once the agent is on sys.path
 
     box = tools()
-    found = await survey(box, openai_model())
+    found = await survey_newest(box, openai_model())
 
     # The most recently received message, and only that one.
     #
