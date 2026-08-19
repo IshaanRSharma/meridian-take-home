@@ -460,6 +460,79 @@ async def _read(
     )
 
 
+@dataclass(frozen=True)
+class Unkeyed:
+    """A pre-alert this board cannot file, with enough to act on it.
+
+    The message id alone is what ``Gathered`` carries, and it is enough to say
+    *something was skipped* while being useless to the person who has to decide
+    what to do about it. A finding that cannot be acted on is noise, so this
+    carries what an operator reads: who sent it, what it says it is, and what
+    came attached.
+    """
+
+    message_id: str
+    subject: str
+    sender: str
+    received_at: str
+    attachments: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Survey:
+    """What one pass over the mailbox found, before anything has been run."""
+
+    shipments: tuple[str, ...] = ()
+    unkeyed: tuple[Unkeyed, ...] = ()
+    matched: int = 0
+
+
+async def survey(tools: ToolBox, model: Model) -> Survey:
+    """Read the mailbox once and say what is in it, keyed and unkeyable.
+
+    One pass rather than two. The shipments and the messages that name none are
+    the same walk over the same emails, and separating them into two functions
+    means reading the mailbox twice to answer one question — which on a cold
+    cache is the whole cost of the operation.
+
+    Nothing is run here. Deciding what to process and processing it are
+    different jobs, and keeping them apart is what lets the caller skip what the
+    platform has already recorded without this having to know what that is.
+    """
+    correlation = spec.config(KEY)["correlation_key"]
+    inbox = await messages(tools)
+    downloads = asyncio.Semaphore(_DOWNLOADS)
+    readers = asyncio.Semaphore(_READERS)
+
+    async def one(message: Message) -> tuple[Message, Recognised]:
+        files = await _download(tools, message, downloads)
+        return await _read(message, files, model, readers)
+
+    read = await asyncio.gather(*(one(message) for message in inbox))
+
+    shipments: set[str] = set()
+    unkeyed: list[Unkeyed] = []
+    for message, recognised in read:
+        found = _correlation_values(recognised, correlation, message)
+        if found:
+            shipments |= found
+            continue
+        unkeyed.append(
+            Unkeyed(
+                message_id=message.message_id,
+                subject=message.subject,
+                sender=message.sender,
+                received_at=message.received_at,
+                attachments=tuple(one.filename for one in message.attachments),
+            )
+        )
+    return Survey(
+        shipments=tuple(sorted(shipments)),
+        unkeyed=tuple(unkeyed),
+        matched=len(inbox),
+    )
+
+
 async def shipments_awaiting(
     tools: ToolBox, model: Model, seen: Sequence[str] = ()
 ) -> tuple[str, ...]:
@@ -476,17 +549,8 @@ async def shipments_awaiting(
     processed is the platform's record; an agent with its own ledger would
     disagree with the database the first time either was restored from a backup.
     """
-    correlation = spec.config(KEY)["correlation_key"]
-    inbox = await messages(tools)
-    downloads = asyncio.Semaphore(_DOWNLOADS)
-    readers = asyncio.Semaphore(_READERS)
-
-    shipments: set[str] = set()
-    for message in inbox:
-        files = await _download(tools, message, downloads)
-        _, recognised = await _read(message, files, model, readers)
-        shipments |= _correlation_values(recognised, correlation, message)
-    return tuple(sorted(shipments - set(seen)))
+    found = await survey(tools, model)
+    return tuple(sorted(set(found.shipments) - set(seen)))
 
 
 async def warm(tools: ToolBox, model: Model) -> dict[str, int]:
