@@ -27,6 +27,26 @@ from meridian.domain.build import Build
 from meridian.healing.gym import Cell, Scoreboard
 
 
+def a_check(seq: int, key: str, total: int, passed: int, failed: int) -> dict[str, Any]:
+    """One trace step carrying counts — which is what makes it a check."""
+    return {
+        "seq": seq,
+        "step": key,
+        "status": "ok",
+        "output": {"total": total, "passed": passed, "failed": failed, "outcome": "pass"},
+        "error": None,
+    }
+
+
+def an_action(seq: int, key: str) -> dict[str, Any]:
+    """A step with no counts. Not a check, and must not be judged as one."""
+    return {"seq": seq, "step": key, "status": "ok", "output": {"ok": True}, "error": None}
+
+
+def held(gates: list[dict[str, Any]], name: str) -> bool:
+    return bool(next(gate["held"] for gate in gates if gate["name"] == name))
+
+
 def a_build() -> Build:
     return Build(
         spec_id=uuid4(),
@@ -169,3 +189,135 @@ def test_the_score_reports_the_ceiling_beside_the_suite() -> None:
     board = a_board({"coa_total", "coa_success"})
     assert board.score() == (1, 3, 2)
     assert board.blocked() == ("status",)
+
+
+# ── the trigger test: judging a row with no answer to check it against ───────
+
+
+def test_a_step_is_a_check_because_it_counts_not_because_of_its_name() -> None:
+    """Recognised by carrying a total.
+
+    A name list would need this route edited every time a board grows a check,
+    and nobody would find out until a screen quietly under-reported. So an
+    action in the trace must not be mistaken for a check that examined nothing.
+    """
+    gates = observability._gates([an_action(1, "report_it"), a_check(2, "coas_valid", 5, 5, 0)], [])
+
+    assert held(gates, "reached a check")
+    assert held(gates, "examined something")
+
+
+def test_a_trace_with_no_check_at_all_reached_nothing() -> None:
+    """Zero checks is not "everything passed" — it is nothing having decided."""
+    gates = observability._gates([an_action(1, "report_it")], [])
+
+    assert not held(gates, "reached a check")
+    assert not held(gates, "examined something")
+
+
+def test_a_check_that_examined_zero_rows_agreed_with_nothing() -> None:
+    """The trap this gate exists for.
+
+    A check over zero rows reports `pass` and has found nothing to disagree
+    with, so a row built from it is all zeros and reads as a clean shipment.
+    Counting it as satisfied is how an empty run passes for the wrong reason.
+    """
+    gates = observability._gates([a_check(1, "coas_valid", 0, 0, 0)], [])
+
+    assert held(gates, "reached a check")
+    assert not held(gates, "examined something")
+
+
+def test_counts_that_do_not_sum_are_caught() -> None:
+    """5 examined, 3 passed, 1 failed — one row landed on neither side."""
+    gates = observability._gates([a_check(1, "coas_valid", 5, 3, 1)], [])
+
+    assert not held(gates, "counts reconcile")
+
+
+def test_declined_attachments_are_reported_and_do_not_decide() -> None:
+    """Skipped attachments make *what arrived* unreliable, not the sums wrong.
+
+    Letting them vote would fail an otherwise correct row for declining a
+    signature image, which is the wrong call and the reason `counts` exists.
+    """
+    trail = [a_check(1, "coas_valid", 5, 5, 0)]
+    gates = observability._gates(trail, [{"source": "image001.gif", "reason": "not a format"}])
+
+    assert not held(gates, "everything was read")
+    assert all(gate["held"] for gate in gates if gate["counts"])
+    assert [gate["name"] for gate in gates if not gate["counts"]] == ["everything was read"]
+
+
+def test_a_run_that_could_not_be_keyed_is_a_finding_and_never_a_row() -> None:
+    """`needs_correlation` is a result, not a failure.
+
+    The message is a real pre-alert, it was read, and the process model has no
+    rule for an air waybill. It carries no gates because there is no row to
+    judge — and `trustworthy` is None rather than False, because "not worth
+    believing" and "there is nothing here to believe" are different states.
+    """
+    row = {
+        "run_id": uuid4(),
+        "iteration": 9,
+        "started_at": None,
+        "declined": [],
+        "output": json.dumps(
+            {
+                "state": "needs_correlation",
+                "subject": "Fwd: FW: Pre-Alerts Documents // EUGIA US LLC",
+                "sender": "prealertaurobindo@lynklabs.io",
+                "received_at": "2026-08-04T13:18:00Z",
+                "attachments": ["530610031850.pdf", "3EL26022 FINAL FP COA.pdf"],
+                "reason": "the correlation key is an ISO container code; this names an air waybill",
+            }
+        ),
+    }
+
+    found = observability._triggered(row, [])
+
+    assert found["state"] == "needs_correlation"
+    assert found["shipment"] is None
+    assert found["trustworthy"] is None
+    assert found["gates"] == []
+    assert found["finding"]["attachments"] == [
+        "530610031850.pdf",
+        "3EL26022 FINAL FP COA.pdf",
+    ]
+    assert "air waybill" in found["finding"]["reason"]
+
+
+def test_a_processed_run_shows_what_it_produced_beside_why_to_doubt_it() -> None:
+    """The row is shown whether or not it is trustworthy.
+
+    Withholding the output of a run nobody can score would leave a verdict and
+    no evidence, which is the opposite of what this panel is for. The shipment
+    number is how the row was filed rather than something a check computed, so
+    it is the heading and not one of the values.
+    """
+    row = {
+        "run_id": uuid4(),
+        "iteration": 9,
+        "started_at": None,
+        "declined": [],
+        "output": json.dumps({"shipment_no": "MMAU1407799", "coa_total": 4, "coa_success": 4}),
+    }
+
+    found = observability._triggered(row, [a_check(1, "coas_valid", 4, 4, 0)])
+
+    assert found["state"] == "processed"
+    assert found["shipment"] == "MMAU1407799"
+    assert found["row"] == {"coa_total": 4, "coa_success": 4}
+    assert found["trustworthy"] is True
+
+
+def test_a_count_that_is_not_a_number_does_not_crash_the_screen() -> None:
+    """A trace is stored jsonb and a malformed step must not take the panel down."""
+    trail = [
+        {"seq": 1, "step": "coas_valid", "status": "ok", "output": {"total": None}, "error": None}
+    ]
+
+    gates = observability._gates(trail, [])
+
+    assert held(gates, "reached a check")
+    assert not held(gates, "examined something")

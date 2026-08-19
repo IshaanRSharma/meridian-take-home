@@ -1,0 +1,28 @@
+{
+  "spec_version": 1,
+  "spec_checksum": "9c2e2ef83e2a7b713c5e558b62bcd25a694ffac6c5259d73d698af6d487c649e",
+  "entry_point": "src/harness.py",
+  "created_by": "codegen",
+  "model": "claude-opus-5",
+  "prompt_version": "spec-to-agent@2026-08-19",
+  "temperature": 0.0,
+  "file_map": {
+    "pre_alert_documentation_arrives": "src/mail.py",
+    "does_every_invoice_line_carry_all_four_codes": "src/checks/does_every_invoice_line_carry_all_four_codes.py",
+    "does_every_batch_have_a_matching_certificate": "src/checks/does_every_batch_have_a_matching_certificate.py",
+    "report_the_discrepancy_to_the_supervisor": "src/actions/report_the_discrepancy_to_the_supervisor.py"
+  },
+  "$comment": [
+    "file_map names leaf files only. A failure bundle resolves primitive_key to a file",
+    "from here, and pointing one at workflow.py would send every repair at the shell",
+    "all the cards share.",
+    "",
+    "pre_alert_documentation_arrives maps to mail.py because that is where the event",
+    "actually is: the match condition and the correlation key. The workflow only waits.",
+    "",
+    "shipment_validated has no entry. effect=noop with is_terminal, so there is nothing",
+    "to send and nothing to build \u2014 the workflow records the end state and returns. No",
+    "fill targets it, so no failing column can ever resolve to it, and a file would be",
+    "somewhere no repair could usefully open."
+  ]
+}

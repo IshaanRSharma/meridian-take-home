@@ -57,6 +57,14 @@ def _status(verdict: Verdict) -> str:
     """
     if verdict.accepted:
         return "proposed"
+    # Unfixed is checked FIRST, and a patch can be both. A signature still
+    # failing is the primary finding — the patch did not do what it claimed —
+    # and calling that `regressed` because one unrelated column also moved
+    # accuses an approach of breaking something it did not break. On a suite
+    # scored by model calls, one column moving between two sweeps of identical
+    # code is ordinary; it must not be able to rename a repair.
+    if verdict.unfixed:
+        return "rejected"
     return "regressed" if verdict.regressed else "rejected"
 
 

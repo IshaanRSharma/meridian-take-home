@@ -331,3 +331,201 @@ def _named(assumption: str, recorded: str) -> bool:
     if not assumption:
         return False
     return re.search(rf"\b{re.escape(assumption)}\b", recorded) is not None
+
+
+# ── what the agent made of mail nobody has scored ────────────────────────────
+
+CHECKED = "total"
+"""What marks a trace step as a check rather than an action.
+
+Recognised by carrying a count, never by a list of names. A board that grows a
+third check would otherwise need this route edited before its runs could be
+read, and nobody would find out until a screen quietly under-reported.
+"""
+
+
+@router.get("/boards/{board_id}/triggered")
+async def read_triggered(
+    board_id: UUID,
+    connection: Connection,
+    limit: int = Query(default=25, le=200),
+) -> dict[str, Any]:
+    """Runs against mail that arrived, where there is no answer to compare to.
+
+    A different question from the scoreboard above it, and it must not be
+    rendered as though it were the same one. The eval suite asks *was this
+    right*; this asks *what did it say* about a shipment nobody has scored — so
+    there is no score here, and a screen that showed one would be inventing the
+    single thing this system exists to measure.
+
+    Read from `runs` where `case_id is null`, which is what the schema means by
+    *null = prod*. Nothing is recomputed that the trigger already decided about
+    a run's outcome; what IS derived here is the four gates, and deliberately —
+    see `_gates`.
+    """
+    spec_id = await specs_repo.latest_id(connection, board_id)
+    if spec_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="nothing frozen yet")
+
+    rows = await connection.fetch(
+        """
+        select r.id as run_id, r.outcome, r.output, r.declined, r.started_at, r.ended_at,
+               b.iteration
+          from runs r
+          join agent_builds b on b.id = r.build_id
+         where b.spec_id = $1 and r.case_id is null
+         order by r.started_at desc
+         limit $2
+        """,
+        spec_id,
+        limit,
+    )
+    trails = await connection.fetch(
+        """
+        select run_id, seq, primitive_key, status, output, error
+          from run_steps
+         where run_id = any($1::uuid[])
+         order by run_id, seq
+        """,
+        [row["run_id"] for row in rows],
+    )
+    steps: dict[Any, list[dict[str, Any]]] = {}
+    for step in trails:
+        steps.setdefault(step["run_id"], []).append(
+            {
+                "seq": step["seq"],
+                "step": step["primitive_key"],
+                "status": step["status"],
+                "output": as_json(step["output"]) or None,
+                "error": step["error"],
+            }
+        )
+
+    return {
+        "asks": "what the agent said about mail nobody has scored — never whether it was right",
+        "runs": [_triggered(row, steps.get(row["run_id"], [])) for row in rows],
+    }
+
+
+def _triggered(row: Any, trail: list[dict[str, Any]]) -> dict[str, Any]:
+    """One triggered run, split by whether the agent could key it at all.
+
+    `needs_correlation` is a **result**, not an error. The message is a real
+    pre-alert, it was read, and the process model has no rule for keying an air
+    waybill — so the agent declined to guess a shipment rather than inventing a
+    unit of work nobody approved. Filing that under the same red as a crash
+    would send somebody to debug code that behaved correctly, and would bury the
+    one thing on this screen that belongs to the process owner.
+    """
+    produced = as_json(row["output"])
+    declined = as_list(row["declined"])
+
+    if produced.get("state") == "needs_correlation":
+        return {
+            "run_id": str(row["run_id"]),
+            "build": row["iteration"],
+            "at": row["started_at"].isoformat() if row["started_at"] else None,
+            "state": "needs_correlation",
+            "shipment": None,
+            "finding": {
+                "subject": produced.get("subject"),
+                "sender": produced.get("sender"),
+                "received_at": produced.get("received_at"),
+                "attachments": produced.get("attachments") or [],
+                "reason": produced.get("reason"),
+            },
+            "row": {},
+            "gates": [],
+            "trustworthy": None,
+            "declined": declined,
+            "steps": trail,
+        }
+
+    gates = _gates(trail, declined)
+    return {
+        "run_id": str(row["run_id"]),
+        "build": row["iteration"],
+        "at": row["started_at"].isoformat() if row["started_at"] else None,
+        "state": "processed",
+        "shipment": produced.get("shipment_no"),
+        "finding": None,
+        # What it is TRYING to produce, field by field. The shipment number is
+        # how the row was filed rather than something a check computed, so it is
+        # shown as the heading and not as one of the values.
+        "row": {k: v for k, v in produced.items() if k != "shipment_no"},
+        "gates": gates,
+        # Every gate that is about the run itself. `declined` is reported beside
+        # them and does not vote: attachments nobody read do not make the
+        # arithmetic wrong, they make "what arrived" unreliable, and conflating
+        # the two would fail a correct row for reading a signature image.
+        "trustworthy": all(gate["held"] for gate in gates if gate["counts"]),
+        "declined": declined,
+        "steps": trail,
+    }
+
+
+def _gates(trail: list[dict[str, Any]], declined: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The four properties a row can be judged on with no answer to check it against.
+
+    **Derived from the stored trajectory, not copied from the run.** The trigger
+    computes the same four before deciding an outcome, and storing its verdict
+    separately would be a second truth about one run — the first time a trace was
+    backfilled or a step dropped, the two would disagree and nothing would say
+    which was right. The trace is the evidence; this reads it.
+
+    A check is a step carrying a count. Reading them by name would need this
+    function edited every time a board grows one.
+    """
+    counted = [
+        step
+        for step in trail
+        if isinstance(step.get("output"), dict) and CHECKED in step["output"]
+    ]
+    examined = [step["output"] for step in counted]
+
+    reached = bool(counted)
+    every = all(_as_int(one.get(CHECKED)) > 0 for one in examined) if examined else False
+    holds = all(
+        _as_int(one.get("passed")) + _as_int(one.get("failed")) == _as_int(one.get(CHECKED))
+        for one in examined
+    )
+    return [
+        {
+            "name": "reached a check",
+            "held": reached,
+            "counts": True,
+            "says": "a check ran"
+            if reached
+            else "no check ran — nothing reached the part that decides",
+        },
+        {
+            "name": "examined something",
+            "held": every,
+            "counts": True,
+            "says": f"{len(counted)} check(s) looked at rows"
+            if every
+            else "a check examined zero rows, so it agreed with nothing",
+        },
+        {
+            "name": "counts reconcile",
+            "held": holds,
+            "counts": True,
+            "says": "passed and failed sum to total"
+            if holds
+            else "a check's passed and failed do not sum to its total",
+        },
+        {
+            "name": "everything was read",
+            # Reported, and deliberately does not vote — see `_triggered`.
+            "counts": False,
+            "held": not declined,
+            "says": "every attachment was read"
+            if not declined
+            else f"{len(declined)} attachment(s) were not read",
+        },
+    ]
+
+
+def _as_int(value: Any) -> int:
+    """A count from a trace, where a missing one is zero rather than a crash."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0

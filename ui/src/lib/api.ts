@@ -300,6 +300,57 @@ export interface Gym {
   beliefs: Belief[];
 }
 
+
+/** One property a row can be judged on when there is no answer to check it
+ *  against.
+ *
+ *  `counts` is whether it votes on `trustworthy`. Attachments nobody read are
+ *  reported and do not vote — they do not make the arithmetic wrong, they make
+ *  "what arrived" unreliable, and failing a correct row for skipping a
+ *  signature image would be the wrong call. */
+export interface TriggerGate {
+  name: string;
+  held: boolean;
+  counts: boolean;
+  says: string;
+}
+
+/** A pre-alert the agent could not key.
+ *
+ *  A result, not an error. The correlation rule reads an ISO container code and
+ *  an air waybill is not one, so the agent declined to guess a unit of work
+ *  nobody approved. That refusal belongs to the process owner. */
+export interface TriggerFinding {
+  subject: string | null;
+  sender: string | null;
+  received_at: string | null;
+  attachments: string[];
+  reason: string | null;
+}
+
+/** One run against mail that arrived, which nobody has scored.
+ *
+ *  `trustworthy` is null when the message was never keyed — there is no row to
+ *  trust or distrust. */
+export interface TriggerRun {
+  run_id: string;
+  build: number;
+  at: string | null;
+  state: 'processed' | 'needs_correlation';
+  shipment: string | null;
+  finding: TriggerFinding | null;
+  row: Record<string, unknown>;
+  gates: TriggerGate[];
+  trustworthy: boolean | null;
+  declined: Declined[];
+  steps: RunStep[];
+}
+
+export interface Triggered {
+  asks: string;
+  runs: TriggerRun[];
+}
+
 // ── failure, as something a screen can render ────────────────────────────────
 
 /** What the API refused, with the parts a screen needs kept separate.
@@ -455,5 +506,16 @@ export const api = {
       request<Evals>(`/evals${boardId ? `?board_id=${boardId}` : ''}`),
     gym: (boardId: string, build?: number) =>
       request<Gym>(`/boards/${boardId}/gym${build ? `?build=${build}` : ''}`),
+    triggered: (boardId: string) => request<Triggered>(`/boards/${boardId}/triggered`),
+  },
+
+  pipeline: {
+    /** Returns a cycle_id and does the work behind it — a poll reads a mailbox
+     *  and drives a workflow per shipment, which is minutes. The screen watches
+     *  `events` on the cycle rather than holding the request open. */
+    trigger: (boardId: string) =>
+      send<{ cycle_id: string; build: number; detail: string }>('POST', '/pipeline/trigger', {
+        board_id: boardId,
+      }),
   },
 };

@@ -406,6 +406,28 @@ bug into a business outcome, a normalisation applied where the spec asked for an
 exact match, and a fix in the file the bundle named when the trace showed the
 cause upstream.
 
+## 8b. The measurement moves on its own, and you must not chase it
+
+Classification and extraction are model calls. **Temperature zero is not
+determinism, so two sweeps of identical code disagree.** Measured on this
+corpus: builds 8 and 9 are the same commit, scored 45/81 and 47/81, and four
+columns on one case flipped — three the right way, one the wrong way. That last
+one was enough to file a working patch as `regressed`.
+
+Two consequences, and both change what you do:
+
+- **A one-column change is not evidence.** If your patch moves a single column
+  you have learned nothing; re-run before believing it. A real fix moves a
+  bucket — the same column across several cases, or several columns on one case.
+- **A one-column regression on a case you did not touch is probably noise.** Ask
+  whether what you changed could plausibly reach that column. If it could not,
+  say so in your report rather than reverting a good patch to chase a flip.
+
+This does not soften the gate. It can still only reject, and a *reproducible*
+regression is still a reason to revert. It means "reproducible" is now carrying
+weight it was not carrying before — and that confirming a regression costs one
+re-sweep of one case, which is seconds.
+
 ## 9. Know when to stop trying
 
 Three attempts on one signature with no improvement is not persistence, it is a

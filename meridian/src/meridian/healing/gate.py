@@ -37,6 +37,16 @@ class Verdict:
     accepted: bool
     fixed: tuple[str, ...] = ()
     regressed: tuple[tuple[str, str], ...] = ()
+    unfixed: tuple[str, ...] = ()
+    """Cases where the signature this patch was aimed at still fails.
+
+    Carried separately from `regressed` because they are different failures with
+    different next steps, and a patch can be both at once. Reading the status off
+    `regressed` alone filed a patch that simply had not finished the job as one
+    that BROKE something — which is the more alarming of the two and the wrong
+    thing to leave in a repair history the next session reads as fact.
+    """
+
     reason: str = ""
 
 
@@ -108,12 +118,13 @@ def _verdict(
     fixed: tuple[str, ...],
 ) -> Verdict:
     if still_failing:
-        keys = ", ".join(sorted({str(row["case_key"]) for row in still_failing}))
+        unfixed = tuple(sorted({str(row["case_key"]) for row in still_failing}))
         return Verdict(
             accepted=False,
             fixed=fixed,
             regressed=regressed,
-            reason=f"{signature} is still failing on {keys}",
+            unfixed=unfixed,
+            reason=f"{signature} is still failing on {', '.join(unfixed)}",
         )
     if regressed:
         broke = ", ".join(f"{case}.{column}" for case, column in regressed)

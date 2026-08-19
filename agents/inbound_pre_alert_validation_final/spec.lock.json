@@ -1,0 +1,538 @@
+{
+  "version": 1,
+  "checksum": "9c2e2ef83e2a7b713c5e558b62bcd25a694ffac6c5259d73d698af6d487c649e",
+  "board_id": "9afcc36e-bb33-4fca-a94e-333803339d5e",
+  "capabilities": [
+    "email.fetch",
+    "email.send"
+  ],
+  "edge_context": {},
+  "edges": [
+    {
+      "from_key": "pre_alert_documentation_arrives",
+      "key": "e1",
+      "on_outcomes": [],
+      "relation": "normal",
+      "to_key": "does_every_invoice_line_carry_all_four_codes"
+    },
+    {
+      "from_key": "does_every_invoice_line_carry_all_four_codes",
+      "key": "e2",
+      "on_outcomes": [
+        "missing_information"
+      ],
+      "relation": "exception",
+      "to_key": "report_the_discrepancy_to_the_supervisor"
+    },
+    {
+      "from_key": "does_every_invoice_line_carry_all_four_codes",
+      "key": "e3",
+      "on_outcomes": [
+        "pass"
+      ],
+      "relation": "normal",
+      "to_key": "does_every_batch_have_a_matching_certificate"
+    },
+    {
+      "from_key": "report_the_discrepancy_to_the_supervisor",
+      "key": "e4",
+      "on_outcomes": [],
+      "relation": "normal",
+      "to_key": "does_every_batch_have_a_matching_certificate"
+    },
+    {
+      "from_key": "does_every_batch_have_a_matching_certificate",
+      "key": "e5",
+      "on_outcomes": [
+        "missing_coa"
+      ],
+      "relation": "exception",
+      "to_key": "report_the_discrepancy_to_the_supervisor"
+    },
+    {
+      "from_key": "does_every_batch_have_a_matching_certificate",
+      "key": "e6",
+      "on_outcomes": [
+        "pass"
+      ],
+      "relation": "normal",
+      "to_key": "shipment_validated"
+    }
+  ],
+  "entities": {
+    "certificate_of_analysis": {
+      "cardinality": {
+        "kind": "one_per",
+        "per": {
+          "entity": "commercial_invoice",
+          "path": "line_items[].batch_no"
+        }
+      },
+      "fields": {
+        "batch_no": {
+          "type": "string"
+        },
+        "product_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "identified_by": "the page header reads \"Certificate of Analysis\"",
+      "instructions": "A certificate for one batch. Its header reads \"Certificate of Analysis\". It carries a batch number and a product code. We expect one for every batch listed across the invoices.",
+      "name": "Certificate of analysis"
+    },
+    "commercial_invoice": {
+      "cardinality": {
+        "kind": "many"
+      },
+      "fields": {
+        "container_no": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "invoice_no": {
+          "type": "string"
+        },
+        "line_items": {
+          "items": {
+            "properties": {
+              "anda_number": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "batch_no": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "drug_description": {
+                "type": "string"
+              },
+              "fda_product_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "hts_number": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ndc_number": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "identified_by": "the page header reads \"Commercial Invoice\"",
+      "instructions": "The invoice. Its header reads \"Commercial Invoice\". Each one carries an invoice number in the top-right corner and a list of line items, and every line item has a drug description, an HTS number, an FDA product code, an NDC number, an ANDA number, and the batch numbers it covers. One shipment can have several invoices.",
+      "name": "Commercial invoice"
+    },
+    "pre_alert_email": {
+      "cardinality": {
+        "kind": "many"
+      },
+      "fields": {
+        "attachment_names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "received_at": {
+          "type": "string"
+        },
+        "sender": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        }
+      },
+      "identified_by": "it arrives in the pre-alert group mailbox the bot has access to",
+      "instructions": "The email the paperwork arrives on. It carries the sender, the subject, when it arrived, and the names of what was attached.",
+      "name": "Pre-alert email"
+    },
+    "shipment_summary": {
+      "cardinality": {
+        "kind": "one"
+      },
+      "fields": {
+        "coa_success": {
+          "type": "integer"
+        },
+        "coa_total": {
+          "type": "integer"
+        },
+        "failed_coa": {
+          "type": "integer"
+        },
+        "goods_failed": {
+          "type": "integer"
+        },
+        "invoices_failed": {
+          "type": "integer"
+        },
+        "invoices_successful": {
+          "type": "integer"
+        },
+        "invoices_total": {
+          "type": "integer"
+        }
+      },
+      "instructions": "One row per shipment — the line the receiving report carries.",
+      "name": "Shipment summary"
+    }
+  },
+  "entity_context": {
+    "certificate_of_analysis": {
+      "inherited": [],
+      "local": [
+        "[rule] If more than one certificate matches the same batch, the process may use any one of them because the duplicates are the same document."
+      ],
+      "negative": [],
+      "provenance": [
+        "39e76d72-c65b-4c9f-b463-0222316b0b8f"
+      ]
+    },
+    "shipment_summary": {
+      "inherited": [],
+      "local": [
+        "[rule] Count failed line items, not failed codes: one line item missing any number of the required codes counts as one goods failure."
+      ],
+      "negative": [],
+      "provenance": [
+        "9d44f09b-c313-4355-91d6-ce558e566009"
+      ]
+    }
+  },
+  "name": "Inbound pre-alert validation (final)",
+  "primitives": {
+    "does_every_batch_have_a_matching_certificate": {
+      "capabilities": [],
+      "config": {
+        "criteria": [
+          {
+            "left": {
+              "entity": "commercial_invoice",
+              "path": "line_items[].batch_no"
+            },
+            "op": "each_has_matching",
+            "reads": [],
+            "right": {
+              "field": {
+                "entity": "certificate_of_analysis",
+                "path": "batch_no"
+              },
+              "kind": "field"
+            }
+          }
+        ],
+        "evidence": [
+          {
+            "entity": "commercial_invoice",
+            "path": "invoice_no"
+          },
+          {
+            "entity": "commercial_invoice",
+            "path": "line_items[].batch_no"
+          }
+        ],
+        "fills": [
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "coa_total"
+            },
+            "measure": "checked"
+          },
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "coa_success"
+            },
+            "measure": "passed"
+          },
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "failed_coa"
+            },
+            "measure": "failed"
+          }
+        ],
+        "inputs": [
+          "commercial_invoice",
+          "certificate_of_analysis"
+        ],
+        "instructions": "For every batch number listed across the commercial invoices, check there is a certificate of analysis with that batch number. Report how many batches we expected, how many had a certificate, and how many did not.",
+        "name": "Does every batch have a matching certificate?",
+        "on_missing_input": "fail",
+        "outcomes": [
+          {
+            "name": "pass",
+            "priority": 0
+          },
+          {
+            "name": "missing_coa",
+            "priority": 1
+          }
+        ],
+        "quantifier": "all",
+        "scope": "per_line_item"
+      },
+      "context": {
+        "inherited": [],
+        "local": [
+          "[rule] A batch number on the invoice and the certificate counts as the same batch when the only difference is a trailing lot suffix letter that is omitted on the certificate."
+        ],
+        "negative": [
+          "A batch whose certificate says something different is not handled as a separate discrepancy; it follows the same missing-certificate failure path and is reported the same way because the paperwork for that batch is not right.",
+          "No other differences are ignored; if the letters, digits, order, or case differ in any other way, it is a different batch and must be reported.",
+          "The process must not count a batch twice just because its certificate arrived more than once; the count is of batches listed on the invoice, not of certificates received."
+        ],
+        "provenance": [
+          "39e76d72-c65b-4c9f-b463-0222316b0b8f",
+          "61422786-a65b-4038-8767-6a363efb1058",
+          "86154e3c-5a1a-435d-9e42-b04dbcdf9210"
+        ]
+      },
+      "key": "does_every_batch_have_a_matching_certificate",
+      "primitive_type": "check"
+    },
+    "does_every_invoice_line_carry_all_four_codes": {
+      "capabilities": [],
+      "config": {
+        "criteria": [
+          {
+            "left": {
+              "entity": "commercial_invoice",
+              "path": "line_items[].hts_number"
+            },
+            "op": "present",
+            "reads": []
+          },
+          {
+            "left": {
+              "entity": "commercial_invoice",
+              "path": "line_items[].fda_product_code"
+            },
+            "op": "present",
+            "reads": []
+          },
+          {
+            "left": {
+              "entity": "commercial_invoice",
+              "path": "line_items[].ndc_number"
+            },
+            "op": "present",
+            "reads": []
+          },
+          {
+            "left": {
+              "entity": "commercial_invoice",
+              "path": "line_items[].anda_number"
+            },
+            "op": "present",
+            "reads": []
+          }
+        ],
+        "evidence": [
+          {
+            "entity": "commercial_invoice",
+            "path": "invoice_no"
+          },
+          {
+            "entity": "commercial_invoice",
+            "path": "line_items[].drug_description"
+          }
+        ],
+        "fills": [
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "goods_failed"
+            },
+            "measure": "failed"
+          },
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "invoices_total"
+            },
+            "measure": "checked",
+            "per": "per_document"
+          },
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "invoices_successful"
+            },
+            "measure": "passed",
+            "per": "per_document"
+          },
+          {
+            "field": {
+              "entity": "shipment_summary",
+              "path": "invoices_failed"
+            },
+            "measure": "failed",
+            "per": "per_document"
+          }
+        ],
+        "inputs": [
+          "commercial_invoice"
+        ],
+        "instructions": "For each line item on each commercial invoice, check it has an HTS number, an FDA product code, an NDC number and an ANDA number. Report how many line items failed and how many invoices failed — an invoice fails if any of its lines does.",
+        "name": "Does every invoice line carry all four codes?",
+        "on_missing_input": "fail",
+        "outcomes": [
+          {
+            "name": "pass",
+            "priority": 0
+          },
+          {
+            "name": "missing_information",
+            "priority": 1
+          }
+        ],
+        "quantifier": "all",
+        "scope": "per_line_item"
+      },
+      "context": {
+        "inherited": [],
+        "local": [],
+        "negative": [],
+        "provenance": []
+      },
+      "key": "does_every_invoice_line_carry_all_four_codes",
+      "primitive_type": "check"
+    },
+    "pre_alert_documentation_arrives": {
+      "capabilities": [
+        "email.fetch"
+      ],
+      "config": {
+        "captures": [
+          "pre_alert_email",
+          "commercial_invoice",
+          "certificate_of_analysis"
+        ],
+        "channel": "email",
+        "correlation_key": {
+          "entity": "commercial_invoice",
+          "path": "container_no"
+        },
+        "instructions": "A pre-alert email arrives in the receiving mailbox. The subject says something like \"Pre-Alert Documents\" or \"APL USA // PRE-ALERT DOCUMENTATION\", though the wording and punctuation vary and it is usually a forward. Everything about one container belongs to the same validation, so several emails days apart are one shipment.",
+        "match_condition": "An email arrives in the receiving mailbox with a subject like \"Pre-Alert Documents\" or \"APL USA // PRE-ALERT DOCUMENTATION\"; wording and punctuation may vary, and it is usually a forward.",
+        "name": "Pre-alert documentation arrives",
+        "outcomes": [],
+        "timing": {
+          "kind": "await",
+          "mode": "on_arrival"
+        }
+      },
+      "context": {
+        "inherited": [],
+        "local": [],
+        "negative": [],
+        "provenance": []
+      },
+      "key": "pre_alert_documentation_arrives",
+      "primitive_type": "event"
+    },
+    "report_the_discrepancy_to_the_supervisor": {
+      "capabilities": [
+        "email.send"
+      ],
+      "config": {
+        "channel": "email",
+        "effect": "notify",
+        "idempotency_key": "container_no + batch_no + discrepancy_kind",
+        "inputs": [
+          "commercial_invoice",
+          "certificate_of_analysis"
+        ],
+        "instructions": "Email the receiving supervisor naming the invoice number, the batch numbers affected and a description of what is wrong. This does not end the validation — we report it and carry on.",
+        "is_terminal": false,
+        "name": "Report the discrepancy to the supervisor",
+        "outcomes": [],
+        "payload_fields": [
+          {
+            "entity": "commercial_invoice",
+            "path": "invoice_no"
+          },
+          {
+            "entity": "commercial_invoice",
+            "path": "line_items[].batch_no"
+          }
+        ],
+        "recipients": [
+          {
+            "kind": "role",
+            "role": "receiving_supervisor"
+          }
+        ]
+      },
+      "context": {
+        "inherited": [],
+        "local": [
+          "[rule] The supervisor gets one email for the whole shipment, and that single message lists every affected invoice number and batch number together.",
+          "[rule] The supervisor is chased the same way for a missing certificate and for a certificate that names a different batch, and the email names the batch and says what was found.",
+          "[rule] When new paperwork lands, the process re-runs the whole check, but a corrected line only stops failing and does not create a new report for the same invoice and batch problem."
+        ],
+        "negative": [
+          "The earlier discrepancy report is not retracted or replaced when corrected paperwork arrives; the same invoice and batch stay one issue, and the supervisor sees one email per distinct discrepancy rather than one per re-check."
+        ],
+        "provenance": [
+          "2adcaf8f-d335-4299-b7c9-9d4b6d5eba74",
+          "61422786-a65b-4038-8767-6a363efb1058",
+          "d9b5cb9e-1b3f-41ea-8ae4-f7e11e9ddfa7"
+        ]
+      },
+      "key": "report_the_discrepancy_to_the_supervisor",
+      "primitive_type": "action"
+    },
+    "shipment_validated": {
+      "capabilities": [],
+      "config": {
+        "effect": "noop",
+        "inputs": [],
+        "instructions": "Nothing outstanding. The shipment is finished and needs no report. This is the end of the process.",
+        "is_terminal": true,
+        "name": "Shipment validated",
+        "outcomes": [],
+        "payload_fields": [],
+        "recipients": []
+      },
+      "context": {
+        "inherited": [],
+        "local": [
+          "[rule] A shipment resolves on its own once the corrected line stops failing."
+        ],
+        "negative": [],
+        "provenance": [
+          "d9b5cb9e-1b3f-41ea-8ae4-f7e11e9ddfa7"
+        ]
+      },
+      "key": "shipment_validated",
+      "primitive_type": "action"
+    }
+  },
+  "slug": "inbound_pre_alert_validation_final"
+}

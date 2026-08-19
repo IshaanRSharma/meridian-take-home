@@ -1,0 +1,120 @@
+{
+  "spec_checksum": "9c2e2ef83e2a7b713c5e558b62bcd25a694ffac6c5259d73d698af6d487c649e",
+  "$comment": [
+    "Every decision the spec did not determine, with a prediction attached. When a",
+    "case fails the first question is which assumption predicted it, rather than what",
+    "this code does.",
+    "",
+    "prompted_by null is the signal: an assumption with no anchor in the spec is the",
+    "most likely gap on the board. The two listed first are the ones a reader should",
+    "check before anything else, because they are about the SHAPE of the documents",
+    "rather than about a threshold, and a wrong answer there is silent."
+  ],
+  "assumptions": [
+    {
+      "id": "batches_come_from_the_declared_block",
+      "decision": "read the invoice's batch numbers off the block labelled `BATCH NOS:` and laid them over the line items, instead of trusting `line_items[].batch_no` as extracted",
+      "prompted_by": null,
+      "because": "the invoice has no batch number per line item — it prints one block listing every lot — and the spec's schema asks for a shape the document does not have. Asked for something absent, the model fills it anyway: right on the page carrying the block, null on continuation pages, and on a totals page whatever number is nearest. Reading the labelled block is taking a field off a page, not deciding what a batch is",
+      "falsified_if": "an invoice whose block disagrees with its line items, or an exporter writing the list under a different label — the block is simply not found, the invented values survive untouched, and the shipment reports certificates missing for batches that never existed. A wrong batch list still produces a self-consistent row, so this failure is silent"
+    },
+    {
+      "id": "batch_shape_has_letters_and_digits",
+      "decision": "the declared list runs until the first token that is not at least six alphanumeric characters carrying both a letter and a digit",
+      "prompted_by": null,
+      "because": "what follows the lots on the page is weights, dates and pack counts, and the shape test is what marks the end of the list rather than a gap in it. Nothing on the board says what a batch number looks like",
+      "falsified_if": "a purely numeric lot, or one shorter than six characters, is silently dropped — the count comes back short and the missing batch is never reported as missing because it was never read as a batch"
+    },
+    {
+      "id": "lot_suffix_stripped_one_way_only",
+      "decision": "a batch matches when the invoice's value is printed exactly on some certificate, or when removing a single trailing letter after a digit makes it so. The certificate's value is never altered",
+      "prompted_by": "primitives.does_every_batch_have_a_matching_certificate.context.local",
+      "because": "the settled rule says the suffix is OMITTED on the certificate, and the settled negative says no other difference is ignored. Stripping both sides would fold FI5026009A and FI5026009B into one batch, and those differ by more than an omission — the negative says that is a different batch and must be reported",
+      "falsified_if": "a certificate that carries the suffix while the invoice omits it, which this would not match and the process owner would say should"
+    },
+    {
+      "id": "no_step_runs_twice",
+      "decision": "the walk enters each step at most once",
+      "prompted_by": "edges.e4,e5",
+      "because": "e4 (report to the certificate check) and e5 (the certificate check to report) form a genuine cycle, and a literal walk never returns. One pass over each step is also what the settled one-email rule means when it reaches the traversal, so this is the rule showing up in the routing rather than a workaround for it",
+      "falsified_if": "a shipment needs a check re-run within one execution — corrected paperwork arriving mid-run, say. Nothing on this board is a `repeat` edge, so the spec currently says it does not"
+    },
+    {
+      "id": "the_report_is_sent_once_at_the_end",
+      "decision": "routing reaching the report marks it needed; the message is built and sent once after both checks have run",
+      "prompted_by": "primitives.report_the_discrepancy_to_the_supervisor.context.local",
+      "because": "the settled rule is one email for the whole shipment listing every affected invoice and batch together, and a message sent the moment routing arrived could only describe the half of the shipment checked so far",
+      "falsified_if": "the process owner wants a discrepancy reported as soon as it is found rather than when the shipment is finished — an urgency question the eval cannot settle, because the row is the same either way"
+    },
+    {
+      "id": "match_condition_orthographic",
+      "decision": "matched the subject phrase case-insensitively, collapsing separators, accepting 'Pre Alerts Documents' and 'Pre-Alert Documentation' alongside the quoted forms",
+      "prompted_by": "primitives.pre_alert_documentation_arrives.match_condition",
+      "because": "the card quotes a phrase and says the wording and punctuation vary. Prose describes recognition, not a byte comparison — read literally the quoted phrase matches nothing in the corpus, because every real subject is plural or separated differently. Same words written differently is the same phrase; different words are a question for the process owner and are left alone",
+      "falsified_if": "a real pre-alert is missed, or something that is not one matches"
+    },
+    {
+      "id": "correlation_key_read_from_the_body",
+      "decision": "took the container number from the message body under a `Container No` label, falling back to a bare ISO container pattern",
+      "prompted_by": "primitives.pre_alert_documentation_arrives.correlation_key",
+      "because": "the card says the key is commercial_invoice.container_no, which is true of the finished data and useless at trigger time — correlating is what decides which workflow the attachments belong to, and extraction has not run yet. The same number appears in the body, under that label, in every message in the corpus",
+      "falsified_if": "two shipments merge into one workflow, one splits across two, or a message whose body names no container is silently dropped rather than reported"
+    },
+    {
+      "id": "air_waybill_shipments_are_reported_not_correlated",
+      "decision": "a pre-alert naming no container comes back as an `Uncorrelated` rather than being keyed on its air waybill or dropped",
+      "prompted_by": "primitives.pre_alert_documentation_arrives.correlation_key",
+      "because": "MAWB, HAWB and invoice number are three defensible keys giving three different units of work, and every count downstream would be internally consistent and wrong together. That is the unit-of-work decision only the process owner can make",
+      "falsified_if": "an air-freight pre-alert has to be processed automatically. There is one such message in the mailbox and it is in no eval row, so nothing currently exercises this"
+    },
+    {
+      "id": "examining_nothing_is_not_passing",
+      "decision": "a check that examined zero rows reports its failing outcome rather than passing",
+      "prompted_by": "primitives.*.on_missing_input",
+      "because": "`all` over zero rows is vacuously satisfied, so an invoice that never arrived would report pass and fill every column with a confident zero — a green row for a shipment nobody read. Both cards say `on_missing_input: fail`, which is exactly this case",
+      "falsified_if": "a shipment legitimately carrying no line items at all is reported as a discrepancy"
+    },
+    {
+      "id": "instances_deduplicated_on_scalar_content",
+      "decision": "collapsed repeated readings of one document on its scalar fields, ignoring lists, and combined rather than ranked where two agree",
+      "prompted_by": null,
+      "because": "a shipment is several emails and the later ones resend the whole set rather than a diff, so counting per arrival multiplies every count by how many times the process woke up — wrong in a way that looks plausible because the numbers stay consistent with each other. Nothing on the board declares an identity for an entity, so content is what 'the same one' can mean",
+      "falsified_if": "two genuinely distinct documents agreeing on every scalar field collapse into one, or a count comes back a small integer multiple of the expected one"
+    },
+    {
+      "id": "confidence_floor",
+      "decision": "0.6, with the header corroborating the model's verdict and halving confidence when it does not support it",
+      "prompted_by": null,
+      "because": "nothing in the spec sets one, and shipping paperwork all reads alike — a certificate of compliance is nearly a certificate of analysis, and a bill of lading was being read as an invoice until the header was checked. `identified_by` says what the header reads, which is a checkable claim that costs nothing to check",
+      "falsified_if": "a document is declined that should have been read, or one is read against the wrong schema and its fields look right"
+    },
+    {
+      "id": "text_layer_before_vision",
+      "decision": "read the PDF text layer, and render to a model only when no page yields 40 characters",
+      "prompted_by": null,
+      "because": "the corpus is mixed — most documents are native and free to read, and rendering every page of every file would be slower and no more accurate",
+      "falsified_if": "a document with a junk text layer is read as text and extracts nothing"
+    },
+    {
+      "id": "max_vision_pages",
+      "decision": "60",
+      "prompted_by": null,
+      "because": "scanned bundles in this corpus run well past 12 pages, and one file holds three shipments' paperwork. A cap still exists because a runaway render is a real cost, but it belongs above the largest document anybody sends rather than below the median bundle",
+      "falsified_if": "a certificate on a page past the cap is reported missing while sitting in the attachment — which is exactly what happened at 12"
+    },
+    {
+      "id": "documents_split_on_recognition_headers",
+      "decision": "a page whose header carries a recognition phrase opens a document; pages after it belong to that document until the next header",
+      "prompted_by": "entities.*.identified_by",
+      "because": "every `identified_by` on this board is page-level — 'the page header reads' — so one attachment can hold an invoice and a dozen certificates, and the same rule handles a bundle and a single-page document without either declaring which it is",
+      "falsified_if": "a document whose first page carries no recognisable header is folded into the one before it, or a continuation page repeating the header is split off as its own document"
+    },
+    {
+      "id": "capabilities_record_rather_than_perform",
+      "decision": "every declared capability resolves to a recorder in the harness; nothing is sent",
+      "prompted_by": null,
+      "because": "the graded artefact is the row this process returns, so scoring needs no I/O — and a recorded call is assertable where a delivered email is a screenshot. One flag swaps in the live provider, so the demo path and the eval path stay the same code",
+      "falsified_if": "the deliverable turns out to be the email itself rather than the row, in which case the eval has to compare what the recorder wrote"
+    }
+  ]
+}
