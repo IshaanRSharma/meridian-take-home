@@ -97,6 +97,14 @@ class Message:
     sender: str
     received_at: str
     attachments: tuple[Attachment, ...]
+    body: str = ""
+    """The message text, kept because the correlation key is legible in it.
+
+    Not a field of any entity the board declares, and carried anyway: see
+    ``_correlation_values``. The envelope entity does not expose it, because the
+    card lists what the email is *about* — sender, subject, arrival, what came
+    attached — and the body is none of those.
+    """
 
     def envelope(self) -> dict[str, Any]:
         """The email itself as an entity instance.
@@ -188,6 +196,7 @@ async def messages(tools: ToolBox, limit: int = 50) -> tuple[Message, ...]:
                 subject=subject,
                 sender=str(raw.get("sender") or ""),
                 received_at=str(raw.get("messageTimestamp") or ""),
+                body=str(raw.get("messageText") or ""),
                 attachments=tuple(
                     Attachment(
                         message_id=str(raw.get("messageId") or ""),
@@ -226,10 +235,11 @@ async def gather(tools: ToolBox, model: Model, shipment_no: str) -> Gathered:
 
     # Emails that can be excluded without a model are excluded. Reading costs a
     # call per attachment and the mailbox holds fifteen shipments' worth, so the
-    # saving is real on a cold cache -- but only exclusions that are *certain*
-    # are taken, because the container still comes from the extracted invoice.
+    # saving is real on a cold cache, and only *certain* exclusions are taken.
     shortlist = [
-        (m, files) for m, files in fetched if _cannot_be_ruled_out(files, shipment_no)
+        (m, files)
+        for m, files in fetched
+        if _might_belong(m, files, shipment_no, str(correlation["path"]))
     ]
 
     read = await asyncio.gather(
@@ -239,7 +249,7 @@ async def gather(tools: ToolBox, model: Model, shipment_no: str) -> Gathered:
     arrivals: list[Arrival] = []
     uncorrelated: list[str] = []
     for message, recognised in read:
-        containers = _containers(recognised, correlation)
+        containers = _correlation_values(recognised, correlation, message)
         if not containers:
             uncorrelated.append(message.message_id)
             continue
@@ -266,14 +276,75 @@ def _arrival(message: Message, recognised: Recognised) -> Arrival:
     )
 
 
-def _containers(recognised: Recognised, correlation: Mapping[str, Any]) -> set[str]:
-    """Every value of the correlation key across what this email carried."""
+def _labelled(text: str, path: str) -> set[str]:
+    """Values written against the correlation key's own label in free text.
+
+    The label is built from the field path rather than spelled here, so this
+    reads whatever the board named: ``container_no`` looks for *container no*,
+    and a board correlating on ``application_id`` would look for *application
+    id* with no change. Separators are anything non-alphanumeric, because the
+    body arrives with markdown emphasis around the label and a colon after it in
+    roughly equal measure.
+
+    The value is the alphanumeric run that follows, which is what stops
+    ``MCAU6047165/40'HC REEFER`` yielding the trailer as part of the number.
+    """
+    label = r"[\W_]+".join(re.escape(word) for word in path.split("_"))
+    return {found.group(1) for found in re.finditer(label + r"[\W_]+([A-Za-z0-9]+)", text, re.I)}
+
+
+def _correlation_values(
+    recognised: Recognised, correlation: Mapping[str, Any], message: Message
+) -> set[str]:
+    """Every value of the correlation key this email offers, from either source.
+
+    **The extracted invoice is not where this number reliably is.** The board
+    names ``commercial_invoice.container_no``, and on this corpus the invoice
+    column is headed *MARKS & NOS./CONTAINER NO.* and mostly holds marks — an
+    address, a booking reference, a carrier. Reading only the invoice found a
+    container on almost nothing, so every shipment came back with no emails and
+    every count was zero.
+
+    The same number is written against its own label in the message body on
+    every message that carries one. So both sources are consulted and unioned.
+
+    This widens where the value is *read from*; it does not loosen what counts
+    as a match. The comparison afterwards is still equality against the
+    shipment, and the identifier is the same identifier the board named — a
+    container number. Which document is authoritative would be a question for
+    the process owner; where a value is legible is a reading decision, and the
+    suite judges it.
+    """
     entity, path = str(correlation["entity"]), str(correlation["path"])
-    return {
+    found = {
         str(values[path]).strip()
         for name, values in recognised.instances
         if name == entity and values.get(path) is not None and str(values[path]).strip()
     }
+    return found | _labelled(message.body, path)
+
+
+def _might_belong(
+    message: Message, files: Sequence[tuple[str, bytes]], shipment_no: str, path: str
+) -> bool:
+    """Whether this email is worth reading for this shipment.
+
+    A pre-filter, never the correlation rule — that is decided afterwards, on
+    what was read. This only skips a model call whose answer is already certain.
+
+    **A body that names a shipment settles it on its own**, in both directions.
+    The label is the most reliable source there is, so an email naming a
+    different container is excluded whatever its attachments happen to mention,
+    and one naming this shipment is read whatever they do not. Requiring the
+    attachments to agree as well is what would drop a shipment whose invoice
+    writes marks in the container column, which is most of them.
+
+    Only when the body names nothing does the attachment test decide.
+    """
+    labelled = _labelled(message.body, path)
+    if labelled:
+        return shipment_no.strip() in labelled
+    return _cannot_be_ruled_out(files, shipment_no)
 
 
 def _cannot_be_ruled_out(files: Sequence[tuple[str, bytes]], shipment_no: str) -> bool:
@@ -414,7 +485,7 @@ async def shipments_awaiting(
     for message in inbox:
         files = await _download(tools, message, downloads)
         _, recognised = await _read(message, files, model, readers)
-        shipments |= _containers(recognised, correlation)
+        shipments |= _correlation_values(recognised, correlation, message)
     return tuple(sorted(shipments - set(seen)))
 
 
@@ -438,7 +509,11 @@ async def warm(tools: ToolBox, model: Model) -> dict[str, int]:
 
     read = await asyncio.gather(*(one(message) for message in inbox))
     correlation = spec.config(KEY)["correlation_key"]
-    shipments = {c for recognised in read for c in _containers(recognised, correlation)}
+    shipments = {
+        c
+        for message, recognised in zip(inbox, read, strict=True)
+        for c in _correlation_values(recognised, correlation, message)
+    }
     return {
         "emails": len(inbox),
         "instances": sum(len(r.instances) for r in read),

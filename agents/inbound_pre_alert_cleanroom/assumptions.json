@@ -231,7 +231,9 @@
       "decision": "the container number is taken only from commercial_invoice.container_no, even though the email subject carries it verbatim ('Container No: MMAU1407799') and the waybill attachment carries it as a field",
       "prompted_by": "primitives.pre_alert_documentation_arrives.config.correlation_key",
       "because": "the spec names one source and reading a second one would be inventing a correlation rule nobody settled - which document is authoritative for a container is exactly the kind of choice two competent people would make differently and the customer would care about. Measured consequence: of fifteen real emails, four yield a clean container from the invoice. Most invoices in this corpus put the value in a combined 'MARKS & NOS. / CONTAINER NO.' column that actually holds marks - an address, a booking reference, a carrier name - so a case keyed on a container whose invoice does not state it finds no paperwork and returns an empty row.",
-      "falsified_if": "cases return empty rows for shipments whose paperwork is plainly in the mailbox, which would mean the board has to name a different source for the correlation key"
+      "falsified_if": "cases return empty rows for shipments whose paperwork is plainly in the mailbox, which would mean the board has to name a different source for the correlation key",
+      "falsified": true,
+      "outcome": "FALSIFIED. All nine cases returned empty rows. The container is read from the message body as well, against the label derived from the field path. See repairs/does_every_batch_have_a_matching_certificate__output_diff__coa_success.jsonl attempt 1."
     },
     {
       "id": "text_read_in_layout_order",
