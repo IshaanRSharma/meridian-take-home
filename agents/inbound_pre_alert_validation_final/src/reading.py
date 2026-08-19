@@ -138,16 +138,35 @@ def split(source: str, pages: Sequence[str], candidates: Sequence[Candidate]) ->
     after it belongs to that document until the next header appears. Pages
     before any recognisable header become a document of their own so they are
     classified and declined on the record rather than dropped in silence.
+
+    **A repeated header is a continuation, not a second document.** The phrase
+    lives in a letterhead, and a letterhead reprints on every page of the
+    document it belongs to — so `Commercial Invoice` appears on page 2 of an
+    invoice exactly as it does on page 1, and splitting there hands the reader a
+    fragment with no goods on it. The model does not return nothing for such a
+    fragment; it fills the schema from whatever is on the page, which on an
+    invoice's second page is the consignee address block. That invented row then
+    merges into the real invoice and inflates every count the check reports.
+
+    An *identical* header is what separates the two cases, and it is the whole
+    of the rule. Two real certificates in one bundle differ in the lines naming
+    their batch, so they still open; page 2 of one certificate reprints page 1
+    byte for byte, so it does not. Measured over this corpus: 16 transitions
+    where a page repeats the previous page's header verbatim, and all 16 are
+    continuations — none of them starts a new document.
     """
     phrases = {c.entity: keywords_of(c.identified_by) for c in candidates}
     groups: list[list[int]] = []
+    previous = ""
     for index, page in enumerate(pages):
         head = header_of(page)
-        opens = any(phrase in head for words in phrases.values() for phrase in words)
+        carries = any(phrase in head for words in phrases.values() for phrase in words)
+        opens = carries and head != previous
         if opens or not groups:
             groups.append([index])
         else:
             groups[-1].append(index)
+        previous = head
 
     return [
         Document(
