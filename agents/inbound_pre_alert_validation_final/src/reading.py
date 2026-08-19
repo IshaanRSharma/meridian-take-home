@@ -114,8 +114,21 @@ def pdf_pages(data: bytes) -> Sequence[str]:
     return out
 
 
-def header_of(page: str, lines: int = 6) -> str:
-    """The top of a page, which is where a recognition rule looks."""
+def header_of(page: str, lines: int = 10) -> str:
+    """The top of a page, which is where a recognition rule looks.
+
+    Ten lines, and the number is measured rather than chosen. A printed
+    letterhead — company name, unit address, logo line, a blank or two — takes
+    the first six on this supplier's certificates, so the title sits on line 9
+    and a six-line window read the address instead. Those pages were declined,
+    and the batches they certify were reported as having no certificate.
+
+    Across the 364 cached pages, a title phrase first appears on lines 1, 4, 5,
+    6, 7, 8 or 9 and never later; 211 of them are inside six lines and the
+    remaining 15 are not. Ten covers every one with a line to spare, and admits
+    nothing else: the 138 pages carrying no title do not mention the phrase
+    anywhere, so widening the window cannot make one of them open a document.
+    """
     return " ".join(page.strip().splitlines()[:lines]).lower()
 
 

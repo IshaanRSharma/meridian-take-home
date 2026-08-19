@@ -151,6 +151,39 @@ numeric lot would be rejected by the letter requirement, and nothing would say
 so — the count would simply come back short."""
 
 
+def unfenced(pages: Sequence[str]) -> list[str]:
+    """Page text with the model's markdown wrapper taken off.
+
+    Asked to transcribe a rendered page, the model returns the transcription
+    inside a fenced block — ```` ```text ```` on the first line and ```` ``` ````
+    on the last. 200 of the 364 cached pages in this corpus start that way,
+    which is every page of every scanned document.
+
+    It is not cosmetic. `header_of` reads the first six lines to decide what a
+    page is, so a fence consumes one of them and pushes the title out of the
+    window — a certificate whose header says so is read as an unrecognised page,
+    declined, and its batch reported as having no certificate. The document
+    boundaries `split` draws come from the same six lines, so the damage is to
+    what counts as a document as well as to what it is.
+
+    Stripped here rather than where the transcription is made, and that is
+    deliberate: the fence is already sitting in 200 cached pages, and re-reading
+    them costs a vision call each for text that is correct apart from a wrapper.
+    A consumer has to be robust to what an earlier reader wrote anyway.
+    """
+    cleaned: list[str] = []
+    for page in pages:
+        lines = page.strip().splitlines()
+        if lines and lines[0].lstrip().startswith("```"):
+            lines = lines[1:]
+            # Only when the fence was opened, so a page that merely ends in a
+            # literal ``` keeps its last line.
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+        cleaned.append("\n".join(lines))
+    return cleaned
+
+
 def declared_batches(text: str) -> list[str]:
     """The batch numbers an invoice states, read off the label that states them.
 
@@ -351,7 +384,7 @@ class Ingestion:
                         reading.VISION_MODEL if via == "vision" else "",
                         reading.MAX_VISION_PAGES,
                     )
-                documents.extend(split(attachment.filename, pages, candidates))
+                documents.extend(split(attachment.filename, unfenced(pages), candidates))
 
         text = {document.as_source().ref: document.text for document in documents}
         store = ingest(
