@@ -417,11 +417,16 @@ def _distinct(instances: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     because the count that drops is the count of things the check was supposed
     to examine, and a check that examines fewer rows reports fewer failures.
     """
-    merged: dict[str, dict[str, Any]] = {}
+    groups: list[dict[str, Any]] = []
     for instance in instances:
-        key = _identity(instance)
-        merged[key] = _combine(merged[key], instance) if key in merged else dict(instance)
-    return list(merged.values())
+        at = next(
+            (n for n, group in enumerate(groups) if _same_document(group, instance)), None
+        )
+        if at is None:
+            groups.append(dict(instance))
+        else:
+            groups[at] = _combine(groups[at], instance)
+    return groups
 
 
 def _combine(into: Mapping[str, Any], addition: Mapping[str, Any]) -> dict[str, Any]:
@@ -450,26 +455,44 @@ def _combine(into: Mapping[str, Any], addition: Mapping[str, Any]) -> dict[str, 
     return combined
 
 
-def _identity(instance: Mapping[str, Any]) -> str:
-    """What two readings of the same document agree on.
+def _scalars(instance: Mapping[str, Any]) -> dict[str, Any]:
+    """The fields of one reading that could name the document it came from.
 
-    Scalars only. A list is where a partial reading differs — one page of line
-    items against five — so including it would make every fragment its own
-    document, which is the behaviour being fixed.
-
-    **An instance with no scalars is still merged**, and that is deliberate.
-    Standing them apart was tried and reverted: at a deep page cap a scanned
-    bundle yields many partial readings that name nothing, and each one became
-    its own document — inflating `coa_total` from 9 to 47 on HLBU6302759. A
-    fragment nothing identifies is far more often another view of a document
-    already seen than a new one.
+    Lists are excluded because a partial reading holds only the rows on its own
+    pages, so including them would make every fragment its own document.
     """
-    scalars = {
+    return {
         field: value
-        for field, value in sorted(instance.items())
+        for field, value in instance.items()
         if value is not None and not isinstance(value, list | dict) and str(value).strip()
     }
-    return json.dumps(scalars, sort_keys=True, default=str)
+
+
+def _same_document(one: Mapping[str, Any], other: Mapping[str, Any]) -> bool:
+    """Whether two readings can be readings of the same document.
+
+    **Agreement on what both populate, not equality of what each captured.**
+    That is what `_distinct` above always claimed to do, and comparing the whole
+    scalar set instead is a different test that fails on the commonest shape in
+    this corpus: an invoice read across two page ranges gives
+    `{invoice_no: "U03/25-26/4790"}` from one and
+    `{invoice_no: "U03/25-26/4790", container_no: "4761"}` from the other. The
+    container number is on the page one reading covered and not the other, so a
+    subset became a different key from its superset, one invoice was counted as
+    two, and `invoices_total`, `invoices_failed`, `goods_failed` and `coa_total`
+    were all wrong by that factor — the check reporting them was never involved.
+
+    A field only one side saw is silent rather than contradicting: absence is
+    what a partial reading is made of. Two genuinely different documents differ
+    on a field they *both* carry, which is exactly what this refuses to merge.
+
+    Sharing nothing is compatible, deliberately — a fragment that names nothing
+    is far more often another view of a document already seen than a new one,
+    and standing those apart is what inflated `coa_total` from 9 to 47 on
+    HLBU6302759 in the earlier agent.
+    """
+    mine, theirs = _scalars(one), _scalars(other)
+    return all(mine[field] == theirs[field] for field in mine.keys() & theirs.keys())
 
 
 @dataclass(frozen=True)

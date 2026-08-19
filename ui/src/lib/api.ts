@@ -298,6 +298,22 @@ export interface Gym {
   resisted: string[];
   steps_to_green: Record<string, number | null>;
   beliefs: Belief[];
+  iterations: GymIteration[];
+}
+
+/** One turn of the loop: who wrote the code, and which shipments came out right.
+ *
+ * `by` is carried because "build" stops being the right word once a repair has
+ * rewritten the code — iteration 1 is generated and the rest are repairs, and a
+ * reader should not have to infer which from a source_ref.
+ */
+export interface GymIteration {
+  iteration: number;
+  by: string;
+  green: string[];
+  cases: string[];
+  passing: number;
+  total: number;
 }
 
 

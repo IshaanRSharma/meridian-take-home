@@ -246,6 +246,23 @@ async def read_gym(
             {"iteration": i, "agreed": a, "measured": m, "reachable": r, "cases": n}
             for i, a, m, r, n in run.curve()
         ],
+        # Per iteration: who wrote it, and which shipments came out right. This
+        # is the loop's actual result — a repair either turned a case green or
+        # it did not, and every other number on this screen is a way of not
+        # saying that. `by` matters because "build" is the wrong word once a
+        # repair has rewritten the code: iteration 1 is generated, the rest are
+        # repairs, and a reader should not have to infer which.
+        "iterations": [
+            {
+                "iteration": board.build.iteration,
+                "by": board.build.created_by,
+                "green": list(board.green()),
+                "cases": list(board.cases()),
+                "passing": len(board.green()),
+                "total": len(board.cases()),
+            }
+            for board in run.boards
+        ],
         "attempts": {key: list(value) for key, value in run.attempts.items()},
         "resisted": list(run.resisted()),
         "steps_to_green": run.steps_to_green(),
