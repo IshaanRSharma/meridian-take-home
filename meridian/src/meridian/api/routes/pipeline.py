@@ -153,9 +153,15 @@ async def _poll(built: Build, seen: Collection[str]) -> Any:
     lives beside it and is reachable once the path is set. Importing it inside
     the context is what keeps the two loaders from being two loaders.
     """
-    root = record.repo_root(Path.cwd())
-    if root is None:
+    inside = record.repo_root(Path.cwd())
+    if inside is None:
         raise NotFoundError("not inside a repository, so `agents/<slug>` has no meaning")
+    # `agent_loaded` joins slug and entry point onto what it is given, so it
+    # wants the directory agents live IN — not the repository root. Every other
+    # caller passes `_repo_root() / "agents"`; passing the root alone resolved
+    # to `<repo>/<slug>/src/harness.py`, a path that has never existed, and the
+    # trigger died in a background task where nobody was watching for it.
+    root = inside / "agents"
 
     with agent_loaded(root, built):
         # Resolved by name rather than imported, because the module only exists
