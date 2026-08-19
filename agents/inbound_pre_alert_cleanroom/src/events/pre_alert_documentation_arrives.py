@@ -485,6 +485,13 @@ class Survey:
     shipments: tuple[str, ...] = ()
     unkeyed: tuple[Unkeyed, ...] = ()
     matched: int = 0
+    latest: str | None = None
+    """The shipment named by the most recently received message, if it names one.
+
+    Carried separately because `shipments` is a set and loses arrival order, and
+    "what just came in" is a different question from "what is outstanding". A
+    trigger fired by hand is almost always asking the first one.
+    """
 
 
 async def survey(tools: ToolBox, model: Model) -> Survey:
@@ -512,10 +519,17 @@ async def survey(tools: ToolBox, model: Model) -> Survey:
 
     shipments: set[str] = set()
     unkeyed: list[Unkeyed] = []
+    newest: tuple[str, str] | None = None
     for message, recognised in read:
         found = _correlation_values(recognised, correlation, message)
         if found:
             shipments |= found
+            # Lexicographic on an ISO-8601 timestamp is chronological, so the
+            # newest message wins without parsing a date the mailbox already
+            # formatted for us.
+            arrived = message.received_at or ""
+            if newest is None or arrived > newest[0]:
+                newest = (arrived, sorted(found)[0])
             continue
         unkeyed.append(
             Unkeyed(
@@ -530,6 +544,7 @@ async def survey(tools: ToolBox, model: Model) -> Survey:
         shipments=tuple(sorted(shipments)),
         unkeyed=tuple(unkeyed),
         matched=len(inbox),
+        latest=newest[1] if newest else None,
     )
 
 

@@ -216,7 +216,7 @@ def _processed(shipment: str, outcome: CaseOutcome) -> Processed:
 
 
 async def poll(seen: Collection[str] = ()) -> Polled:
-    """Run every shipment in the mailbox that is not in ``seen``.
+    """Run the most recently arrived shipment, if it has not been run before.
 
     Args:
         seen: shipments the platform already holds a row for. Handed in rather
@@ -233,8 +233,17 @@ async def poll(seen: Collection[str] = ()) -> Polled:
     box = tools()
     found = await survey(box, openai_model())
 
+    # The most recently received message, and only that one.
+    #
+    # A trigger fired by hand asks "what just arrived", not "reconcile the whole
+    # mailbox" — and the two answers differ by about forty minutes. Processing
+    # everything also meant one transient download failure discarded the entire
+    # pass, since a poll of one has nothing else to lose.
+    #
+    # Everything already recorded is still reported as skipped, so the caller
+    # can see the mailbox holds more than was run.
     already = tuple(sorted(set(found.shipments) & set(seen)))
-    awaiting = [one for one in found.shipments if one not in set(seen)]
+    awaiting = [found.latest] if found.latest and found.latest not in set(seen) else []
 
     # Sequentially, and on purpose. Each shipment stands up its own Temporal
     # environment and reads the mailbox through a shared cache; running them at
