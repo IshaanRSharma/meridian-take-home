@@ -1,0 +1,19 @@
+agent,shipment,invoices_successful__expected,invoices_successful__actual,invoices_successful__match,invoices_failed__expected,invoices_failed__actual,invoices_failed__match,invoices_total__expected,invoices_total__actual,invoices_total__match,invoices_mismatched_asn__expected,invoices_mismatched_asn__actual,invoices_mismatched_asn__match,goods_failed__expected,goods_failed__actual,goods_failed__match,failed_coa__expected,failed_coa__actual,failed_coa__match,coa_success__expected,coa_success__actual,coa_success__match,coa_total__expected,coa_total__actual,coa_total__match,status__expected,status__actual,status__match,columns_matched,columns_measured
+"final (spec v1, build 1)",CAAU4056270,0,0,yes,1,2,no,1,2,no,0,,no,2,3,no,0,2,no,5,5,yes,5,7,no,ACTIVE,,no,2,9
+"final (spec v1, build 1)",CGMU5630052,1,1,yes,0,0,yes,1,1,yes,2,,no,0,0,yes,0,0,yes,3,3,yes,3,3,yes,RESOLVED,,no,7,9
+"final (spec v1, build 1)",HLBU6302759,3,2,no,0,1,no,3,3,yes,0,,no,0,1,no,0,0,yes,9,9,yes,9,9,yes,RESOLVED,,no,4,9
+"final (spec v1, build 1)",MCAU6047165,11,11,yes,0,0,yes,11,11,yes,0,,no,0,0,yes,1,2,no,13,12,no,14,14,yes,ACTIVE,,no,5,9
+"final (spec v1, build 1)",MNBU3852977,0,0,yes,3,3,yes,3,3,yes,0,,no,6,6,yes,0,0,yes,6,6,yes,6,6,yes,ACTIVE,,no,7,9
+"final (spec v1, build 1)",MNBU3974949,1,1,yes,0,1,no,1,2,no,14,,no,0,1,no,0,1,no,17,17,yes,17,18,no,RESOLVED,,no,2,9
+"final (spec v1, build 1)",MNBU4371364,3,3,yes,0,0,yes,3,3,yes,9,,no,0,0,yes,0,0,yes,3,3,yes,3,3,yes,RESOLVED,,no,7,9
+"final (spec v1, build 1)",MNBU4407370,7,7,yes,0,0,yes,7,7,yes,0,,no,0,0,yes,0,1,no,12,11,no,12,12,yes,RESOLVED,,no,5,9
+"final (spec v1, build 1)",TTNU8982561,2,2,yes,0,0,yes,2,2,yes,0,,no,0,0,yes,0,0,yes,7,7,yes,7,7,yes,RESOLVED,,no,7,9
+"original (spec v1, build 9)",CAAU4056270,0,0,yes,1,2,no,1,2,no,0,,no,2,3,no,0,4,no,5,5,yes,5,9,no,ACTIVE,ACTIVE,yes,3,9
+"original (spec v1, build 9)",CGMU5630052,1,1,yes,0,0,yes,1,1,yes,2,,no,0,0,yes,0,0,yes,3,3,yes,3,3,yes,RESOLVED,RESOLVED,yes,8,9
+"original (spec v1, build 9)",HLBU6302759,3,2,no,0,1,no,3,3,yes,0,,no,0,1,no,0,0,yes,9,9,yes,9,9,yes,RESOLVED,ACTIVE,no,4,9
+"original (spec v1, build 9)",MCAU6047165,11,11,yes,0,0,yes,11,11,yes,0,,no,0,0,yes,1,3,no,13,11,no,14,14,yes,ACTIVE,ACTIVE,yes,6,9
+"original (spec v1, build 9)",MNBU3852977,0,0,yes,3,4,no,3,4,no,0,,no,6,7,no,0,3,no,6,6,yes,6,9,no,ACTIVE,ACTIVE,yes,3,9
+"original (spec v1, build 9)",MNBU3974949,1,1,yes,0,1,no,1,2,no,14,,no,0,1,no,0,1,no,17,17,yes,17,18,no,RESOLVED,ACTIVE,no,2,9
+"original (spec v1, build 9)",MNBU4371364,3,3,yes,0,0,yes,3,3,yes,9,,no,0,0,yes,0,0,yes,3,3,yes,3,3,yes,RESOLVED,RESOLVED,yes,8,9
+"original (spec v1, build 9)",MNBU4407370,7,7,yes,0,0,yes,7,7,yes,0,,no,0,0,yes,0,1,no,12,11,no,12,12,yes,RESOLVED,ACTIVE,no,5,9
+"original (spec v1, build 9)",TTNU8982561,2,2,yes,0,0,yes,2,2,yes,0,,no,0,0,yes,0,0,yes,7,7,yes,7,7,yes,RESOLVED,RESOLVED,yes,8,9

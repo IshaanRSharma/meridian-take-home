@@ -1,0 +1,13 @@
+shipment,in_eval_set,trustworthy,state,invoices_successful,invoices_failed,invoices_total,invoices_mismatched_asn,goods_failed,failed_coa,coa_success,coa_total,status,declined,reason,gate__reached a check,gate__examined something,gate__counts reconcile,gate__everything was read
+(uncorrelated),no,,needs_correlation,,,,,,,,,,0,,,,,
+TTNU8982561,yes,True,processed,2,0,2,,0,0,7,7,,5,,FAIL,FAIL,FAIL,FAIL
+CAAU4056270,yes,True,processed,0,2,2,,3,4,5,9,,9,,FAIL,FAIL,FAIL,FAIL
+CGMU5630052,yes,True,processed,1,0,1,,0,0,3,3,,8,,FAIL,FAIL,FAIL,FAIL
+HLBU6302759,yes,True,processed,2,1,3,,1,0,9,9,,6,,FAIL,FAIL,FAIL,FAIL
+MCAU6047165,yes,True,processed,11,0,11,,0,3,11,14,,16,,FAIL,FAIL,FAIL,FAIL
+MMAU1407799,no,True,processed,1,0,1,,0,0,1,1,,4,,FAIL,FAIL,FAIL,FAIL
+MNBU0458316,no,True,processed,1,0,1,,0,1,1,2,,5,,FAIL,FAIL,FAIL,FAIL
+MNBU3852977,yes,True,processed,0,3,3,,6,0,6,6,,8,,FAIL,FAIL,FAIL,FAIL
+MNBU3974949,yes,True,processed,1,1,2,,2,14,17,31,,9,,FAIL,FAIL,FAIL,FAIL
+MNBU4371364,yes,True,processed,3,0,3,,0,0,3,3,,8,,FAIL,FAIL,FAIL,FAIL
+MNBU4407370,yes,True,processed,7,0,7,,0,1,11,12,,10,,FAIL,FAIL,FAIL,FAIL
