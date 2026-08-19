@@ -77,7 +77,9 @@ def does_every_batch_have_a_matching_certificate(
     if absent:
         return _nothing_arrived(card, failing, absent)
 
-    rows = _per_batch(tuple(row for row in rows_for(store, criterion["left"]) if _is_listed(row)))
+    rows = _once_each(
+        _per_batch(tuple(row for row in rows_for(store, criterion["left"]) if _is_listed(row)))
+    )
     certified = _certified(store, criterion["right"])
 
     failures = [
@@ -154,6 +156,34 @@ def _per_batch(rows: Sequence[Row]) -> tuple[Row, ...]:
             for n, value in enumerate(values)
         )
     return tuple(expanded)
+
+
+def _once_each(rows: Sequence[Row]) -> tuple[Row, ...]:
+    """One row per distinct batch, however many line items name it.
+
+    The card counts *"every batch number listed"* and the certificate's
+    cardinality is one per batch, so the unit is the batch — not the mention. A
+    shipment's invoices repeat their batch list across line items, so counting
+    rows reported twenty-one batches where nine were listed and nine
+    certificates covered every one of them.
+
+    The spec says as much from the other side: *"the count is of batches listed
+    on the invoice, not of certificates received"*, and forbids counting a batch
+    twice because its certificate arrived more than once. A batch counted twice
+    because two lines name it is the same error facing the other way.
+
+    First occurrence wins, so the surviving row keeps a locator that points at a
+    real line item and a failure still names where the batch was read.
+    """
+    seen: set[str] = set()
+    kept: list[Row] = []
+    for row in rows:
+        value = str(row.value).strip()
+        if value in seen:
+            continue
+        seen.add(value)
+        kept.append(row)
+    return tuple(kept)
 
 
 def _is_listed(row: Row) -> bool:

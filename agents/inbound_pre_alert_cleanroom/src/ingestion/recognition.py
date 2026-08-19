@@ -40,7 +40,7 @@ from meridian.runtime import Candidate
 # It is part of the cache key, because a cached answer produced under different
 # instructions is a different answer wearing the same name -- which is the way a
 # cache goes quietly wrong rather than loudly.
-PROMPT_VERSION = "cleanroom-2"
+PROMPT_VERSION = "cleanroom-3"
 
 # A provider that is rate limited, timing out or down is transient, and the
 # mailbox is read in bursts of concurrent calls, so this is reached routinely
@@ -65,9 +65,17 @@ CONFIDENCE_FLOOR = 0.6
 # whole thirty-seven page bundle would be mostly line items and mostly noise.
 CLASSIFY_CHARS = 1200
 
-# How many scanned pages are rendered for one call. Beyond this a bundle is
-# classified from its first pages, which is where document boundaries announce
-# themselves.
+# How many scanned pages are rendered per render call. A batch size, not a
+# budget: every scanned page is rendered, in chunks of this many, because a
+# bundle's later pages are documents too.
+#
+# It was a cap, and the cap was silently losing documents. The certificates for
+# a shipment arrive as one scanned bundle — 24 pages for HLBU6302759, 48 for
+# MCAU6047165 — and rendering only the first 16 meant the classifier was asked
+# which documents a file contained while never being shown two thirds of it. It
+# answered for what it saw, so the shipment reported certificates missing for
+# batches whose certificates were in the attachment, eight and thirty-two pages
+# down. Nothing said so: the pages were dropped before the model, not declined.
 VISION_PAGES = 16
 
 Part = tuple[str, str]
@@ -308,9 +316,12 @@ def _parts(
         else:
             scanned.append(number)
 
-    if scanned:
-        rendered = images_of(content, tuple(scanned[:VISION_PAGES]))
-        for number, image in zip(scanned, rendered, strict=False):
+    for start in range(0, len(scanned), VISION_PAGES):
+        batch = tuple(scanned[start : start + VISION_PAGES])
+        # strict: every page asked for comes back, or the count is wrong and a
+        # document goes missing without anything saying so. That silence is what
+        # made this cost a shipment's certificates rather than raising.
+        for number, image in zip(batch, images_of(content, batch), strict=True):
             parts.append(("text", f"--- page {number + 1} (scanned) ---"))
             parts.append(("image", base64.b64encode(image).decode()))
     return parts
