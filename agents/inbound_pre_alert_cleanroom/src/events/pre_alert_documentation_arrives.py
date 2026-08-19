@@ -1,0 +1,447 @@
+"""The way in: a pre-alert email, recognised, read, and keyed to a shipment.
+
+``timing.mode: on_arrival``, so this is a trigger rather than a poll inside the
+workflow, and ``match_condition`` is a predicate here rather than a filter in
+workflow code.
+
+**Recognising the email.** The card quotes two subjects and then says the quiet
+part out loud: *"wording and punctuation vary, and it is usually a forward."*
+That is prose describing recognition, not a byte comparison, and the mailbox
+proves it — the exact phrase *"Pre-Alert Documents"* appears in none of the
+fifteen real messages. They are variously ``Pre-Alerts Documents``, ``Pre Alerts
+Documents`` and ``pre-Alerts Documents``, every one of them forwarded twice. So
+orthographic variation is absorbed: case, separator, and singular against plural.
+Semantic variation is not — a subject naming a different process, or the same
+one cancelled, is a question only the process owner can settle.
+
+**Keying the shipment.** ``correlation_key`` is
+``commercial_invoice.container_no``, a field on a document inside an attachment.
+Nothing can say which shipment an email belongs to until that invoice has been
+read, which is why extraction lives out here and the workflow is signalled with
+instances. An email whose invoices name no container is reported rather than
+dropped: a pre-alert nobody can key is a gap in the process model, and a poll
+that silently skipped it would report a clean pass over unexamined work.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any
+
+import spec
+from arrivals import Arrival, Declination, Instance
+from ingestion import cache
+from ingestion.reading import UnreadableError, pages_of
+from ingestion.recognition import (
+    CONFIDENCE_FLOOR,
+    PROMPT_VERSION,
+    Model,
+    Recognised,
+    recognise,
+)
+
+from meridian.runtime import Candidate, ToolBox
+
+KEY = "pre_alert_documentation_arrives"
+FETCH_CAPABILITY = "email.fetch"
+ATTACHMENT_CAPABILITY = "email.attachment"
+
+# The phrase the subject has to carry once punctuation and case are collapsed,
+# and a word saying it is the paperwork rather than an announcement about it.
+# Both quoted examples satisfy both halves; "Shipment Documents" satisfies
+# neither, which is the point -- it may or may not be this process, and only the
+# process owner can say.
+_SUBJECT_PHRASE = "pre alert"
+_SUBJECT_QUALIFIER = "document"
+
+_NOT_WORD = re.compile(r"[^a-z0-9]+")
+_PLURAL = re.compile(r"\b(alert)s\b")
+
+# How many attachments are downloaded at once. Enough to hide the latency of a
+# hundred-and-fifty-file mailbox, small enough not to be rate limited.
+_DOWNLOADS = 8
+
+# How many attachments are read by a model at once. A cold cache may have to
+# read most of the mailbox to key one shipment, so this trades the first case's
+# latency against a token-per-minute limit that a scanned bundle reaches fast.
+_READERS = 4
+
+PDF = "application/pdf"
+
+# What the transport itself can fill, which is how the envelope entity is found
+# rather than named: the capture whose fields these already cover is the email,
+# and no page could ever satisfy its recognition rule.
+ENVELOPE_FIELDS = ("sender", "subject", "received_at", "attachment_names")
+
+
+@dataclass(frozen=True)
+class Attachment:
+    """One file on one message."""
+
+    message_id: str
+    attachment_id: str
+    filename: str
+    media_type: str
+
+
+@dataclass(frozen=True)
+class Message:
+    """One message in the mailbox, before anything has been read."""
+
+    message_id: str
+    subject: str
+    sender: str
+    received_at: str
+    attachments: tuple[Attachment, ...]
+
+    def envelope(self) -> dict[str, Any]:
+        """The email itself as an entity instance.
+
+        The Event captures the email alongside its attachments, and the email is
+        not a page any recognition rule could match -- its ``identified_by``
+        describes how it arrives. So it is filled from the transport rather than
+        classified, and the fields are the card's, read off the spec.
+        """
+        return {
+            "sender": self.sender,
+            "subject": self.subject,
+            "received_at": self.received_at,
+            "attachment_names": [one.filename for one in self.attachments],
+        }
+
+
+@dataclass(frozen=True)
+class Gathered:
+    """One pass over the mailbox for one shipment."""
+
+    arrivals: tuple[Arrival, ...] = ()
+    uncorrelated: tuple[str, ...] = ()
+    """Messages that matched the process and named no shipment.
+
+    Reported rather than dropped, and carried all the way into the trace. A
+    pre-alert nobody can key is a gap in the process model, and on this corpus
+    it is the most common reason a shipment's row comes back empty -- which
+    without this line looks exactly like a shipment that had no paperwork.
+    """
+    matched: int = 0
+    """How many emails the recognition rule claimed, before any keying."""
+
+
+def matches(subject: str) -> bool:
+    """Whether a subject line is this process's pre-alert.
+
+    Args:
+        subject: the subject as it arrived, forwarding prefixes and all.
+
+    Returns:
+        Whether the paperwork on this message belongs to this process.
+    """
+    return _SUBJECT_PHRASE in _normalised(subject) and _SUBJECT_QUALIFIER in _normalised(subject)
+
+
+def _normalised(subject: str) -> str:
+    """The subject with the variation the card warned about collapsed away.
+
+    Case, punctuation and doubled spacing carry no meaning in a forwarded
+    subject, and neither does the plural: ``Pre-Alerts Documents`` and
+    ``PRE-ALERT DOCUMENTATION`` are the same phrase written twice.
+    """
+    flattened = _NOT_WORD.sub(" ", subject.lower()).strip()
+    return _PLURAL.sub(r"\1", flattened)
+
+
+def candidates() -> tuple[Candidate, ...]:
+    """The closed set an attachment's pages are classified against.
+
+    The envelope entity is excluded because it is the delivery rather than
+    something delivered: no page can satisfy *"it arrives in the pre-alert group
+    mailbox"*, and offering it would invite a match that cannot be right.
+    """
+    envelope = spec.envelope_entity(ENVELOPE_FIELDS)
+    captures = spec.config(KEY)["captures"]
+    return tuple(
+        Candidate(
+            entity=str(name),
+            identified_by=str(spec.entity(str(name))["identified_by"]),
+            fields=spec.entity(str(name))["fields"],
+        )
+        for name in captures
+        if name != envelope and spec.entity(str(name)).get("identified_by")
+    )
+
+
+async def messages(tools: ToolBox, limit: int = 50) -> tuple[Message, ...]:
+    """Every message in the mailbox that this process recognises as its own."""
+    answer = await asyncio.to_thread(tools.call, FETCH_CAPABILITY, {"max_results": limit})
+    found: list[Message] = []
+    for raw in answer.get("messages") or []:
+        subject = str(raw.get("subject") or "")
+        if not matches(subject):
+            continue
+        found.append(
+            Message(
+                message_id=str(raw.get("messageId") or ""),
+                subject=subject,
+                sender=str(raw.get("sender") or ""),
+                received_at=str(raw.get("messageTimestamp") or ""),
+                attachments=tuple(
+                    Attachment(
+                        message_id=str(raw.get("messageId") or ""),
+                        attachment_id=str(one.get("attachmentId") or ""),
+                        filename=str(one.get("filename") or ""),
+                        media_type=str(one.get("mimeType") or ""),
+                    )
+                    for one in raw.get("attachmentList") or []
+                ),
+            )
+        )
+    return tuple(found)
+
+
+async def gather(tools: ToolBox, model: Model, shipment_no: str) -> Gathered:
+    """Everything this shipment's paperwork amounts to, one arrival per email.
+
+    Args:
+        tools: the toolbox, addressed by capability key.
+        model: how a page is classified and read.
+        shipment_no: the container the correlation key has to equal.
+
+    Returns:
+        One arrival per matching email that named this shipment, plus the
+        messages that matched the process and named no shipment at all.
+    """
+    correlation = spec.config(KEY)["correlation_key"]
+    inbox = await messages(tools)
+    downloads = asyncio.Semaphore(_DOWNLOADS)
+    readers = asyncio.Semaphore(_READERS)
+
+    async def one(message: Message) -> tuple[Message, tuple[tuple[str, bytes], ...]]:
+        return message, await _download(tools, message, downloads)
+
+    fetched = await asyncio.gather(*(one(message) for message in inbox))
+
+    # Emails that can be excluded without a model are excluded. Reading costs a
+    # call per attachment and the mailbox holds fifteen shipments' worth, so the
+    # saving is real on a cold cache -- but only exclusions that are *certain*
+    # are taken, because the container still comes from the extracted invoice.
+    shortlist = [
+        (m, files) for m, files in fetched if _cannot_be_ruled_out(files, shipment_no)
+    ]
+
+    read = await asyncio.gather(
+        *(_read(message, files, model, readers) for message, files in shortlist)
+    )
+
+    arrivals: list[Arrival] = []
+    uncorrelated: list[str] = []
+    for message, recognised in read:
+        containers = _containers(recognised, correlation)
+        if not containers:
+            uncorrelated.append(message.message_id)
+            continue
+        if shipment_no.strip() not in containers:
+            continue
+        arrivals.append(_arrival(message, recognised))
+    return Gathered(
+        arrivals=tuple(arrivals), uncorrelated=tuple(uncorrelated), matched=len(inbox)
+    )
+
+
+def _arrival(message: Message, recognised: Recognised) -> Arrival:
+    envelope = spec.envelope_entity(ENVELOPE_FIELDS)
+    instances = [Instance(entity=name, values=values) for name, values in recognised.instances]
+    if envelope:
+        instances.insert(0, Instance(entity=envelope, values=message.envelope()))
+    return Arrival(
+        message_id=message.message_id,
+        subject=message.subject,
+        instances=instances,
+        declined=[
+            Declination(source=one.split(":", 1)[0], reason=one) for one in recognised.declined
+        ],
+    )
+
+
+def _containers(recognised: Recognised, correlation: Mapping[str, Any]) -> set[str]:
+    """Every value of the correlation key across what this email carried."""
+    entity, path = str(correlation["entity"]), str(correlation["path"])
+    return {
+        str(values[path]).strip()
+        for name, values in recognised.instances
+        if name == entity and values.get(path) is not None and str(values[path]).strip()
+    }
+
+
+def _cannot_be_ruled_out(files: Sequence[tuple[str, bytes]], shipment_no: str) -> bool:
+    """Whether this email might belong to this shipment, decided without a model.
+
+    A pre-filter, never the correlation rule: which shipment an email belongs to
+    is still decided by the container number on its extracted invoice. This only
+    skips reading emails that can be *excluded* for certain, which is a saving
+    worth having on a cold cache and free once the mailbox has been read once.
+
+    An email is excluded only when every page of every attachment carries a text
+    layer and none of them names the container. A single scanned page means the
+    container could be sitting in an image, and an email that cannot be ruled out
+    is read — a shipment whose invoice arrived as a scan would otherwise lose all
+    of its paperwork, silently, and the row would look merely small rather than
+    wrong.
+    """
+    for _, content in files:
+        try:
+            pages = pages_of(content)
+        except UnreadableError:
+            # Unopenable is not the same as excluded. Something the reader could
+            # not handle is a repair, and skipping it would hide the case.
+            return True
+        for page in pages:
+            if not page.has_text() or shipment_no in page.text:
+                return True
+    return False
+
+
+async def _download(
+    tools: ToolBox, message: Message, gate: asyncio.Semaphore
+) -> tuple[tuple[str, bytes], ...]:
+    """Every attachment of one message, cached by its provider id.
+
+    Bytes are cached by their provider id and never re-fetched: the mailbox does
+    not change between builds, and a suite that re-downloaded a hundred and fifty
+    attachments per case would cost more to measure a patch than to write one.
+    """
+
+    async def fetch(one: Attachment) -> tuple[str, bytes] | None:
+        if one.media_type != PDF:
+            # Not something this process declared, and a byte of it never has to
+            # be paid for: the corpus carries spreadsheets and signature images.
+            return None
+        key = cache.key_for("attachment", one.message_id, one.attachment_id)
+        stored = cache.read_bytes(key)
+        if stored is not None:
+            return one.filename, stored
+        async with gate:
+            answer = await asyncio.to_thread(
+                tools.call,
+                ATTACHMENT_CAPABILITY,
+                {
+                    "message_id": one.message_id,
+                    "attachment_id": one.attachment_id,
+                    "file_name": one.filename,
+                },
+            )
+        content = answer.get("content")
+        if not isinstance(content, bytes):
+            return None
+        cache.write_bytes(key, content)
+        return one.filename, content
+
+    got = await asyncio.gather(*(fetch(one) for one in message.attachments))
+    # A list of pairs rather than a mapping: two attachments on one message may
+    # share a filename, and a mapping would silently keep one of them.
+    return tuple(one for one in got if one is not None)
+
+
+async def _read(
+    message: Message,
+    files: Sequence[tuple[str, bytes]],
+    model: Model,
+    gate: asyncio.Semaphore,
+) -> tuple[Message, Recognised]:
+    """Classify and extract every attachment of one message, once each."""
+    known = candidates()
+    fingerprint = spec.CHECKSUM[:12]
+
+    async def one(name: str, content: bytes) -> Recognised:
+        # Keyed on the content, not the filename: the same certificate is resent
+        # under a different name and would otherwise be read and paid for twice.
+        key = cache.key_for(
+            "recognise",
+            fingerprint,
+            PROMPT_VERSION,
+            str(CONFIDENCE_FLOOR),
+            hashlib.sha256(content).hexdigest(),
+        )
+        stored = cache.read(key)
+        if stored is not None:
+            return Recognised(
+                instances=tuple((str(e), dict(v)) for e, v in stored["instances"]),
+                declined=tuple(str(one) for one in stored["declined"]),
+            )
+        async with gate:
+            found = await asyncio.to_thread(recognise, name, content, known, model)
+        cache.write(
+            key,
+            {
+                "instances": [[entity, values] for entity, values in found.instances],
+                "declined": list(found.declined),
+            },
+        )
+        return found
+
+    parts = await asyncio.gather(*(one(name, content) for name, content in files))
+    return message, Recognised(
+        instances=tuple(i for part in parts for i in part.instances),
+        declined=tuple(d for part in parts for d in part.declined),
+    )
+
+
+async def shipments_awaiting(
+    tools: ToolBox, model: Model, seen: Sequence[str] = ()
+) -> tuple[str, ...]:
+    """Every shipment the mailbox names that has not been run yet.
+
+    Deliberately *not* ``runtime.harness.TriggerPoll``: that protocol asks an
+    agent to own a whole pass -- fetch, run each shipment to completion, report
+    what happened -- and running a shipment means standing up a Temporal
+    environment, which is ``run_case``'s job here. This is the half of it that
+    is actually about the mailbox, so nothing pretends to implement a contract
+    it does not.
+
+    ``seen`` is handed in rather than kept, because what counts as already
+    processed is the platform's record; an agent with its own ledger would
+    disagree with the database the first time either was restored from a backup.
+    """
+    correlation = spec.config(KEY)["correlation_key"]
+    inbox = await messages(tools)
+    downloads = asyncio.Semaphore(_DOWNLOADS)
+    readers = asyncio.Semaphore(_READERS)
+
+    shipments: set[str] = set()
+    for message in inbox:
+        files = await _download(tools, message, downloads)
+        _, recognised = await _read(message, files, model, readers)
+        shipments |= _containers(recognised, correlation)
+    return tuple(sorted(shipments - set(seen)))
+
+
+async def warm(tools: ToolBox, model: Model) -> dict[str, int]:
+    """Read the whole mailbox once, so no later case pays for it.
+
+    The cache makes a second case cheap and does nothing for the first, and a
+    cold first case can exceed the timeout the sweep gives it. That is a real
+    operational fact rather than a bug to hide, so it gets a command: run this
+    once after the mailbox changes, and every case afterwards is arithmetic over
+    documents already read.
+    """
+    inbox = await messages(tools)
+    downloads = asyncio.Semaphore(_DOWNLOADS)
+    readers = asyncio.Semaphore(_READERS)
+
+    async def one(message: Message) -> Recognised:
+        files = await _download(tools, message, downloads)
+        _, recognised = await _read(message, files, model, readers)
+        return recognised
+
+    read = await asyncio.gather(*(one(message) for message in inbox))
+    correlation = spec.config(KEY)["correlation_key"]
+    shipments = {c for recognised in read for c in _containers(recognised, correlation)}
+    return {
+        "emails": len(inbox),
+        "instances": sum(len(r.instances) for r in read),
+        "declined": sum(len(r.declined) for r in read),
+        "shipments": len(shipments),
+    }

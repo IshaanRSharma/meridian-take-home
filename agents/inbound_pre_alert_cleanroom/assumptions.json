@@ -1,0 +1,251 @@
+{
+  "spec_checksum": "9c2e2ef83e2a7b713c5e558b62bcd25a694ffac6c5259d73d698af6d487c649e",
+  "note": "Every decision this build made that the spec did not determine. Entries whose `prompted_by` is null have no anchor in the spec at all, and are the likeliest spec gaps on the board: they are listed first.",
+  "assumptions": [
+    {
+      "id": "role_receiving_supervisor_unbound",
+      "decision": "no bindings file exists in this repository, so `receiving_supervisor` resolves from MERIDIAN_ROLE_RECEIVING_SUPERVISOR and otherwise to the literal token 'unbound:receiving_supervisor' - deliberately not an address",
+      "prompted_by": null,
+      "because": "the spec names a role and identities must never enter a checksummed spec, so the address lives in bindings. There is no bindings/ directory and nothing else names a supervisor. Inventing a plausible mailbox would mean a live run mails a stranger; failing hard would error every case that finds a discrepancy and lose the row that is actually graded.",
+      "falsified_if": "a live send is expected to deliver - it cannot, and will fail at the provider - or an eval column is expected to reflect who was notified"
+    },
+    {
+      "id": "capability_email_attachment",
+      "decision": "registered a second capability key `email.attachment` (GMAIL_GET_ATTACHMENT) beside the spec's `email.fetch`",
+      "prompted_by": null,
+      "because": "`capabilities` declares email.fetch and email.send. Listing messages and downloading an attachment are separate provider actions at every mail provider, and this process is entirely about the attachments. Smuggling the second action behind email.fetch would make the shortfall invisible; declaring it makes it one line to read.",
+      "falsified_if": "`meridian bind check` or a conformance pass reports a capability the spec does not declare"
+    },
+    {
+      "id": "settle_window",
+      "decision": "the caller passes a settle window (PT30M, skipped instantly under time skipping) after which a shipment that has stopped making progress returns its row",
+      "prompted_by": null,
+      "because": "the Event declares no deadline and no max_lifetime, so the process waits indefinitely for corrected paperwork - which is correct in production and cannot terminate an eval case. The window is a property of the caller (a finite corpus, nothing more is coming) rather than of the process, so it lives on RunRequest and not in the spec's vocabulary. No default deadline was substituted.",
+      "falsified_if": "a case is expected to keep waiting, or a shipment that would have been corrected by a later email is scored on an early row"
+    },
+    {
+      "id": "check_fixed_point_stops_the_cycle",
+      "decision": "one pass stops the second time routing reaches a Check that has already run in that pass",
+      "prompted_by": "edges.e4",
+      "because": "e4 sends the report unconditionally back to the certificate Check, and e5 sends the certificate Check to the report, so the board contains a cycle with no exit. A Check is pure, so re-running it on an unchanged store must repeat itself; only new paperwork can change the answer, which is what the card says: 'When new paperwork lands, the process re-runs the whole check.' Actions are not guarded this way, so a pass that fails both Checks still reports both.",
+      "falsified_if": "a shipment is expected to report a certificate discrepancy that the four-codes path already reported, or a case hangs rather than returning"
+    },
+    {
+      "id": "summary_columns_not_pre_zeroed",
+      "decision": "the output row carries only the columns some fill actually wrote; nothing is initialised to zero",
+      "prompted_by": null,
+      "because": "a column that is zero because a Check ran and found nothing and a column that is zero because the Check never ran are different facts, and pre-filling would make them identical. A missing column shows up as a mismatch, which is the honest signal.",
+      "falsified_if": "a comparison reports a missing column where the eval set expects 0, meaning the board intends absent to mean zero"
+    },
+    {
+      "id": "blank_batch_is_not_a_listed_batch",
+      "decision": "invoice line items whose batch_no is null or blank are excluded from the certificate Check entirely - they raise neither coa_total nor failed_coa",
+      "prompted_by": "primitives.does_every_batch_have_a_matching_certificate.config.instructions",
+      "because": "the card asks about 'every batch number listed across the commercial invoices'. A line that lists none has not listed a batch whose certificate could be missing, and the four-codes Check is what reports incomplete line items. The alternative reading counts it as a missing certificate, which double-reports one bad line.",
+      "falsified_if": "coa_total is lower than expected by exactly the number of line items carrying no batch number"
+    },
+    {
+      "id": "on_missing_input_applies_to_the_read_side",
+      "decision": "`on_missing_input: fail` short-circuits the certificate Check only when the commercial invoices are absent, not when the certificates are",
+      "prompted_by": "primitives.does_every_batch_have_a_matching_certificate.config.on_missing_input",
+      "because": "no certificates at all is the finding this Check exists to make, not a missing input. Short-circuiting would report coa_total 0 for a shipment whose invoices listed nine batches, and the eval row's shape - CoA (Success) n / CoA (Total) n - says total is the number of batches expected.",
+      "falsified_if": "a shipment with invoices and no certificates expects coa_total 0 rather than the batch count"
+    },
+    {
+      "id": "invoices_total_counts_instances",
+      "decision": "the per_document roll-up totals the commercial_invoice instances that arrived, rather than the ones that produced rows (which is what runtime.check.roll_up does)",
+      "prompted_by": "primitives.does_every_invoice_line_carry_all_four_codes.config.fills",
+      "because": "an invoice extracted with an empty line_items list would otherwise vanish from invoices_total, and a column short by one because extraction failed looks exactly like a column short by one because the shipment had fewer invoices. Counting instances keeps the extraction failure visible.",
+      "falsified_if": "invoices_total is higher than expected on a shipment where an invoice was extracted with no line items"
+    },
+    {
+      "id": "lot_suffix_is_one_trailing_letter",
+      "decision": "the settled lot-suffix tolerance is implemented as: the invoice value equals the certificate value, or equals it plus exactly one trailing alphabetic character. Directional - the certificate omits, never adds.",
+      "prompted_by": "primitives.does_every_batch_have_a_matching_certificate.context.local[0]",
+      "because": "'a trailing lot suffix letter that is omitted on the certificate' is singular and names which side drops it. The accompanying negative forbids every other tolerance: 'if the letters, digits, order, or case differ in any other way, it is a different batch'. So no trimming, no case folding, and no second character. Confirmed against the corpus: invoice 3LC26082A, certificate 3LC26082.",
+      "falsified_if": "a batch fails whose certificate differs by two trailing characters, by case, or by leading/trailing whitespace"
+    },
+    {
+      "id": "discrepancy_kind_is_the_outcome_name",
+      "decision": "the 'discrepancy_kind' half of the card's idempotency key is the failing outcome name of the Check that found it - missing_information or missing_coa",
+      "prompted_by": "primitives.report_the_discrepancy_to_the_supervisor.config.idempotency_key",
+      "because": "the card names the key in prose ('container_no + batch_no + discrepancy_kind') and nothing in the spec defines a kind vocabulary. The declared outcome names are the only words the process owner actually chose for what sort of problem this is.",
+      "falsified_if": "the supervisor is expected to be told once about a batch that is both incomplete and uncertificated, rather than once per kind"
+    },
+    {
+      "id": "one_email_per_visit_per_kind",
+      "decision": "each visit to the report step sends at most one email covering every affected invoice and batch of that visit's kind; a pass that fails both Checks therefore sends two",
+      "prompted_by": "primitives.report_the_discrepancy_to_the_supervisor.context.local[0]",
+      "because": "'The supervisor gets one email for the whole shipment' is satisfied within a kind - one message rather than one per batch - and the routing puts two separate visits in one pass, which the negative describes as 'one email per distinct discrepancy'. Batching across the two visits is not expressible in the edge table.",
+      "falsified_if": "a shipment failing both Checks is expected to produce exactly one recorded email.send call"
+    },
+    {
+      "id": "report_names_only_what_is_new",
+      "decision": "a report lists the discrepancies not already reported for this shipment, and sends nothing when there are none",
+      "prompted_by": "primitives.report_the_discrepancy_to_the_supervisor.context.negative[0]",
+      "because": "'The earlier discrepancy report is not retracted or replaced when corrected paperwork arrives; the same invoice and batch stay one issue.' On the first pass this is identical to 'every affected invoice and batch'; the readings only diverge after a partial correction, where the negative settles it.",
+      "falsified_if": "a supervisor is expected to receive a full restatement of every outstanding problem on each re-check"
+    },
+    {
+      "id": "report_identity_falls_back_to_position",
+      "decision": "a failing line item that carries no batch number is identified for deduplication by its (document, line) position",
+      "prompted_by": "primitives.report_the_discrepancy_to_the_supervisor.config.idempotency_key",
+      "because": "the card's key needs a batch_no and a line missing all four codes may also be missing its batch. The identity has to stay stable across re-checks or the same line is reported on every pass, and position is the only stable thing left.",
+      "falsified_if": "a re-check sends a second email about a line item that carries no batch number"
+    },
+    {
+      "id": "instances_deduplicated_on_content",
+      "decision": "an entity instance is dropped if an instance of the same entity with byte-identical extracted content is already in the store",
+      "prompted_by": null,
+      "because": "the corpus contains pairs of emails for one shipment where the later one resends the whole set rather than a diff. Counting per arrival makes every column a multiple of how many times the process woke - wrong in a way that looks plausible, because the numbers stay consistent with each other. Nothing on the board declares an identity for an entity (identified_by says how to recognise one, not how to tell two apart), so content is what 'the same one' can mean.",
+      "falsified_if": "a shipment genuinely carrying two identical certificates for one batch expects them counted twice, or two invoices that extract identically are in fact different documents"
+    },
+    {
+      "id": "match_condition_orthographic",
+      "decision": "a subject matches when, after lowercasing, collapsing punctuation to spaces and singularising 'alerts', it contains both 'pre alert' and 'document'",
+      "prompted_by": "primitives.pre_alert_documentation_arrives.config.match_condition",
+      "because": "the card quotes two phrasings and then says 'wording and punctuation may vary, and it is usually a forward'. That is prose describing recognition, not a byte comparison - and the exact string 'Pre-Alert Documents' appears in none of the fifteen real messages. Both quoted examples satisfy both halves of the test. Semantic variation is deliberately not absorbed: a subject reading 'Shipment Documents' or 'Pre-Alert CANCELLED' is a question only the process owner can settle. Measured: all 15 mailbox messages match, and no non-pre-alert does.",
+      "falsified_if": "a real pre-alert is missed, or something that is not one is picked up"
+    },
+    {
+      "id": "envelope_built_from_the_transport",
+      "decision": "pre_alert_email is filled from the message's own headers rather than classified from an attachment, and is excluded from the candidate set pages are classified against",
+      "prompted_by": "entities.pre_alert_email.identified_by",
+      "because": "its recognition rule is 'it arrives in the pre-alert group mailbox', which describes an arrival and not a page, so no attachment could ever satisfy it. Which capture is the envelope is derived rather than named: it is the one whose fields the transport can already fill.",
+      "falsified_if": "an attachment is expected to be recognised as a pre_alert_email, or the envelope's fields are expected to come from somewhere other than the message headers"
+    },
+    {
+      "id": "extraction_is_page_segmented",
+      "decision": "one attachment is classified into a list of page-range segments, one per document instance, and each segment is extracted separately",
+      "prompted_by": "entities.commercial_invoice.identified_by",
+      "because": "identified_by describes a page header, and the corpus contains a single attachment holding an invoice and its certificates, and another holding a certificate of compliance and one of analysis. A file-level classifier would have to pick one type for both.",
+      "falsified_if": "a bundle's second document is missed, or a segment boundary splits one document into two instances"
+    },
+    {
+      "id": "confidence_floor",
+      "decision": "0.6 - a segment classified below this is declined rather than extracted",
+      "prompted_by": null,
+      "because": "nothing in the spec sets one. A certificate of compliance reads almost exactly like a certificate of analysis, and extracting against the wrong schema yields fields that look right and are not, which is worse than an absent entity because nothing downstream can tell.",
+      "falsified_if": "a document that should have been read appears in the declined list, or a wrong-type document was extracted anyway"
+    },
+    {
+      "id": "text_before_vision",
+      "decision": "a page with 120 or more characters of text layer is read as text; below that it is rendered at 150 dpi and looked at, up to 16 pages per call",
+      "prompted_by": null,
+      "because": "the corpus is mixed - invoices are native PDFs, certificates are scans, and one 13-page attachment has no text at all. The floor is well above zero because a scanned page often still carries a stamp or footer in its text layer. All four numbers are tunable and none is a business decision.",
+      "falsified_if": "a scanned page is read as text and comes back mostly empty, or a native page is sent to vision, or a bundle longer than 16 scanned pages loses its later documents"
+    },
+    {
+      "id": "non_pdf_attachments_skipped_unread",
+      "decision": "an attachment whose media type is not application/pdf is declined before it is downloaded",
+      "prompted_by": null,
+      "because": "the corpus carries spreadsheets and signature images. The SOP says to *locate* the invoice among the attachments, so something matching no declared entity is not part of this process - and a byte of it never has to be paid for. Recorded rather than silent.",
+      "falsified_if": "a declared entity arrives as a spreadsheet or an image rather than a PDF"
+    },
+    {
+      "id": "correlation_compared_after_stripping",
+      "decision": "the extracted container_no is compared to the case's shipment_no after stripping surrounding whitespace, and otherwise exactly",
+      "prompted_by": "primitives.pre_alert_documentation_arrives.config.correlation_key",
+      "because": "surrounding whitespace is an artefact of reading a PDF rather than anything the document says. Anything beyond that would be inventing a rule about container numbers that nobody stated.",
+      "falsified_if": "a case returns an empty row because the extracted container differs from the case key by case or punctuation"
+    },
+    {
+      "id": "email_may_name_several_containers",
+      "decision": "an email whose invoices name more than one container contributes all of its documents to each of them",
+      "prompted_by": null,
+      "because": "nothing says how certificates in a multi-container email are apportioned. Certificates only ever serve as candidates for a match, so over-attaching can mask a missing certificate but cannot invent a batch; the batch counts come from the invoices, which carry their own container.",
+      "falsified_if": "a shipment's failed_coa is lower than expected because a certificate from another container matched one of its batches"
+    },
+    {
+      "id": "extraction_prefilter_excludes_only_when_certain",
+      "decision": "an email is skipped without being read only when every page of every attachment has a text layer and none names the container",
+      "prompted_by": null,
+      "because": "reading costs a model call per attachment and the mailbox holds fifteen shipments' worth, but a scanned invoice's container number exists only as pixels. Excluding on absence of a text hit would silently lose all of that shipment's paperwork and make the row look merely small rather than wrong.",
+      "falsified_if": "a shipment's row is short and its documents sit in an email that was never read"
+    },
+    {
+      "id": "cold_cache_exceeds_the_case_timeout",
+      "decision": "extraction results and downloaded attachments are cached under agents/<slug>/.cache/, and a cold cache is warmed deliberately rather than during a sweep",
+      "prompted_by": null,
+      "because": "reading the whole mailbox is roughly 150 attachments and several hundred model calls. The sweep gives a case 180 seconds, which a cold first case can exceed. This is an operational fact rather than a bug to hide, so it has a command (events.pre_alert_documentation_arrives.warm) and an entry here.",
+      "falsified_if": "the first case of a sweep on a fresh checkout times out"
+    },
+    {
+      "id": "activity_timeout_and_retries",
+      "decision": "the notify activity gets a 60 second start-to-close timeout and the runtime's default retry policy (3 attempts, 1s initial, x2 backoff)",
+      "prompted_by": null,
+      "because": "the card sets neither `timeout` nor `on_failure`, and Temporal requires a start-to-close timeout. Both are implementation numbers with an oracle: pick them wrong and a case fails.",
+      "falsified_if": "a send is expected to keep retrying past three attempts, or a slow provider is expected to fail rather than be waited for"
+    },
+    {
+      "id": "neutral_send_arguments",
+      "decision": "the Action builds {to, subject, body} and the provider adapter translates those into the mail provider's own argument names",
+      "prompted_by": null,
+      "because": "the spec carries no input_schema for email.send, so the argument names had to be chosen. Putting the provider's names in the Action's file would put an integration detail in the one file a repair is most likely to touch.",
+      "falsified_if": "a registry input_schema for email.send names different arguments, or a live send is rejected for a missing field"
+    },
+    {
+      "id": "extraction_model_and_toolkit_pin",
+      "decision": "documents are read with OPENAI_MODEL (gpt-5.4-mini) at temperature 0, and the Gmail toolkit is pinned to 20260817_00",
+      "prompted_by": null,
+      "because": "the same spec against a different model is a different build, and Composio refuses 'latest' for manual execution outright. Temperature 0 is load-bearing rather than cosmetic: instances are deduplicated on extracted content, so the same document read twice has to produce the same bytes.",
+      "falsified_if": "counts move between two sweeps of identical code, which would mean extraction is not reproducible and the dedup key is unstable"
+    },
+    {
+      "id": "trace_evidence_caps",
+      "decision": "a certificate failure lists at most 12 available batch numbers, and the arrival step names at most 8 instances per entity",
+      "prompted_by": null,
+      "because": "one shipment in the corpus carries eleven invoices and fourteen certificates, and a trace nobody reads is worth as little as no trace. Enough to show the near miss that explains a failure, few enough that the trace underneath stays visible.",
+      "falsified_if": "a failure bundle is missing the candidate that would have explained the mismatch"
+    },
+    {
+      "id": "directory_slug_differs_from_the_spec",
+      "decision": "the agent lives in agents/inbound_pre_alert_cleanroom/ while spec.lock.json carries slug 'inbound_pre_alert_validation_final'; the spec was copied byte for byte and not edited",
+      "prompted_by": "slug",
+      "because": "the slug arrives as an argument and must be stable across regenerations, and the spec is immutable. `meridian build register` resolves the agent directory from spec.slug, so registering this build against this spec needs the directory name overridden.",
+      "falsified_if": "`meridian build register` looks for agents/inbound_pre_alert_validation_final and does not find this build"
+    },
+    {
+      "id": "no_normalisation_beyond_the_settled_rule",
+      "decision": "batch numbers are compared exactly on both sides - no trimming, no case folding - with the lot-suffix rule as the only tolerance",
+      "prompted_by": "primitives.does_every_batch_have_a_matching_certificate.context.negative[1]",
+      "because": "'if the letters, digits, order, or case differ in any other way, it is a different batch and must be reported.' Whitespace is not named, and trimming would both invent a rule and hide it: a batch failing on a trailing space is legible in the trace as 'UCB26016 ' against ['UCB26016'], which a reader solves in one look. Blanks are dropped as absent values rather than trimmed.",
+      "falsified_if": "a batch fails whose only difference from a certificate is leading or trailing whitespace, which would mean the corpus needs a tolerance nobody stated"
+    },
+    {
+      "id": "vacuous_pass_on_zero_rows",
+      "decision": "an invoice that arrived but extracted with no line items contributes no rows, so the quantifier is vacuously satisfied and the Check passes with total 0",
+      "prompted_by": "primitives.does_every_invoice_line_carry_all_four_codes.config.quantifier",
+      "because": "'all' over zero rows is standard semantics and what runtime.check.satisfied implements. `on_missing_input` covers an absent entity, not an empty one. The counts are recorded honestly (total 0, examined_anything false) so the trace can tell the two apart even though the outcome cannot.",
+      "falsified_if": "invoices_successful counts an invoice whose line items failed to extract, which would show as invoices_total matching but goods_failed short"
+    },
+    {
+      "id": "model_transient_failures_retried_locally",
+      "decision": "rate limits, timeouts and connection errors from the extraction model are retried up to 6 times with exponential backoff inside the reader",
+      "prompted_by": null,
+      "because": "reading the mailbox is a burst of concurrent calls and the account's tokens-per-minute limit is reached routinely rather than exceptionally - it was, on the first full pass. Extraction happens outside the workflow, so Temporal's retry policy does not cover it, and an unretried 429 turns a busy minute into an errored eval case.",
+      "falsified_if": "a case errors with a 429 or a timeout, meaning the ceiling or the backoff is too low for the concurrency"
+    },
+    {
+      "id": "correlation_key_read_only_from_the_invoice",
+      "decision": "the container number is taken only from commercial_invoice.container_no, even though the email subject carries it verbatim ('Container No: MMAU1407799') and the waybill attachment carries it as a field",
+      "prompted_by": "primitives.pre_alert_documentation_arrives.config.correlation_key",
+      "because": "the spec names one source and reading a second one would be inventing a correlation rule nobody settled - which document is authoritative for a container is exactly the kind of choice two competent people would make differently and the customer would care about. Measured consequence: of fifteen real emails, four yield a clean container from the invoice. Most invoices in this corpus put the value in a combined 'MARKS & NOS. / CONTAINER NO.' column that actually holds marks - an address, a booking reference, a carrier name - so a case keyed on a container whose invoice does not state it finds no paperwork and returns an empty row.",
+      "falsified_if": "cases return empty rows for shipments whose paperwork is plainly in the mailbox, which would mean the board has to name a different source for the correlation key"
+    },
+    {
+      "id": "text_read_in_layout_order",
+      "decision": "page text is extracted in layout order (pymupdf sort=True) rather than content-stream order",
+      "prompted_by": null,
+      "because": "these invoices are forms. The PDF emits every label first and then every value, so 'CONTAINER NO.' lands a dozen lines from the container and the four codes arrive as a loose run of numbers. Sorting by position puts a label back beside its value, which is the difference between an extractor reading a field and one guessing which of thirty values belongs to it. Pure implementation, with an oracle: pick it wrong and columns move.",
+      "falsified_if": "a field extracts worse than it did from stream-order text, which would mean a document whose columns interleave badly under sorting"
+    },
+    {
+      "id": "one_batch_per_line_item",
+      "decision": "commercial_invoice.line_items[].batch_no is read as the single string the schema declares; a cell listing several batches arrives as one value and is matched as one value, so coa_total counts line items with a batch cell rather than batches",
+      "prompted_by": "entities.commercial_invoice.fields.line_items.items.properties.batch_no",
+      "because": "the schema declares one nullable string. The entity's own instructions say a line item has 'the batch numbers it covers' - plural - and certificate_of_analysis.cardinality is one_per(line_items[].batch_no), which only makes sense if the path yields one batch each. The schema and the prose disagree, and splitting the cell on a delimiter would be inventing a rule nobody stated on a column that is graded. Observed on the corpus: line items reading 'GXSB26008B, ZASA25026B, ZASA25026C' and '3LC26078A, 3LC26079A' come through as single unmatched values.",
+      "falsified_if": "coa_total is materially lower than expected on shipments whose invoices list several batches per line - which would mean batch_no must be an array and this is a spec revision, not a patch"
+    }
+  ]
+}
