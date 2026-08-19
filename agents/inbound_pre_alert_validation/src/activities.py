@@ -15,9 +15,11 @@ outcome, which branch — happens above the boundary where it is replayable.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 import cache
 import mail
@@ -26,7 +28,28 @@ import spec
 from reading import Classifier, Document, Extractor, read_pages, readable, split
 from temporalio import activity
 
-from meridian.runtime.ingest import Pipeline, candidates_from, ingest
+from meridian.runtime.ingest import Candidate, Pipeline, candidates_from, ingest
+
+
+def hints() -> dict[str, list[str]]:
+    """What previous runs worked out about reading these documents.
+
+    The one part of this agent that changes without a code edit. `meridian gym
+    train` proposes a hint from the evidence in a failure, scores the suite with
+    it, and keeps it only if the score went up — so the loop has a parameter to
+    fit rather than only code to rewrite.
+
+    Read per activity rather than at import, because the trainer rewrites the
+    file between sweeps and a module-level read would pin the first version for
+    the life of the process. Absent is the ordinary state, so an unreadable file
+    is an empty dict and never an error.
+    """
+    where = Path(__file__).resolve().parent.parent / "hints.json"
+    try:
+        loaded = json.loads(where.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
 
 
 @dataclass
@@ -94,6 +117,124 @@ class Gathered:
         return [(str(a), str(b)) for a, b in json.loads(self.declined)]
 
 
+DECLARED_BATCHES = "_declared_batch_nos"
+"""Where a page's `BATCH NOS:` list rides until the readings are merged.
+
+A private key rather than a schema field. `_identity` keys on scalars and skips
+lists, so this cannot change which readings are considered one document; and
+`_combine` appends lists, so a three-page invoice arrives at the merge with the
+block from whichever page carried it. Stripped again before anything downstream
+sees it.
+"""
+
+_BATCH_BLOCK = re.compile(r"BATCH\s*NO(?:S|\.)?\s*[:\-]?\s*(.+)", re.IGNORECASE | re.DOTALL)
+_LOOKS_LIKE_A_BATCH = re.compile(r"^(?=\S*[A-Za-z])(?=\S*\d)[A-Za-z0-9]{6,}$")
+
+
+def declared_batches(text: str) -> list[str]:
+    """The batch numbers an invoice states, read off the label that states them.
+
+    **This invoice does not carry a batch number per line item.** It carries one
+    `BATCH NOS:` block listing every lot in the shipment, and the extraction
+    schema asks for `line_items[].batch_no` — a shape the document does not
+    have. Asked for something that is not there, the model fills the field
+    anyway: correct on the page holding the block, `None` on continuation pages,
+    and on a totals page whatever number is nearest, which is how `3291840`
+    became a batch number nobody could find a certificate for.
+
+    So the block is read directly rather than inferred. It is labelled, it is
+    unambiguous, and it is the only place on the document that claims to be the
+    list of batches — which makes this reading a field off a page, not a
+    judgement about what a batch is.
+
+    The list runs until the first token that cannot be one. Batch numbers here
+    carry letters and digits and no spaces; what follows them is weights, dates
+    and pack counts, which the shape test rejects and which mark the end of the
+    list rather than a gap in it.
+    """
+    found = _BATCH_BLOCK.search(text)
+    if not found:
+        return []
+    batches: list[str] = []
+    # Split on whitespace as well as commas. The list wraps mid-line as
+    # `HPSA26020A, \nQASB26078A`, and a comma-or-newline separator leaves the
+    # space between them as an empty token — which reads as the end of the list
+    # and stopped it at three of six.
+    for token in re.split(r"[,\s]+", found.group(1)):
+        if not _LOOKS_LIKE_A_BATCH.match(token):
+            break
+        batches.append(token)
+    return batches
+
+
+def with_declared_batches(extract: Extractor, entity: str = "commercial_invoice") -> Extractor:
+    """Carry each page's stated batch list along with what the model extracted.
+
+    Wrapping rather than replacing: the model is still what reads the line items,
+    their codes and their descriptions, and it is good at that. The one field it
+    cannot read is the one the document does not put there.
+    """
+
+    def extracted(text: str, candidate: Candidate) -> Sequence[Mapping[str, Any]]:
+        rows = extract(text, candidate)
+        if candidate.entity != entity:
+            return rows
+        stated = declared_batches(text)
+        return [dict(row) | {DECLARED_BATCHES: list(stated)} for row in rows]
+
+    return cast("Extractor", extracted)
+
+
+def _spread(items: Sequence[Mapping[str, Any]], stated: Sequence[str]) -> list[dict[str, Any]]:
+    """Lay a declared batch list over the line items that carry it.
+
+    Two layouts, and they want opposite handling. Most invoices print one lot per
+    line, so the batches go across the lines in order and any line past the end
+    of the list is a totals row the reader mistook for goods — dropped, because
+    keeping it reports a missing certificate for something that was never a batch.
+
+    Some invoices print every lot in a single cell instead. There the line count
+    is genuinely one and the batch count is three, and spreading positionally
+    throws two batches away; so the surplus is packed back into the last cell it
+    reached, comma separated, which is the form `coas_valid` already splits. That
+    is not a special case for one document — it is the same list written the way
+    that document writes it.
+    """
+    if not items:
+        return []
+    laid = [dict(item) | {"batch_no": batch} for item, batch in zip(items, stated, strict=False)]
+    spare = list(stated[len(laid) :])
+    if spare:
+        last = laid[-1]
+        last["batch_no"] = ", ".join([str(last["batch_no"]), *spare])
+    return laid
+
+
+def reconciled(instances: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Give each line item the batch the invoice actually declared for it.
+
+    One batch per line item where the document works that way, and every
+    remaining batch packed into the last cell where it does not — see `_spread`,
+    because the two layouts appear in this corpus and a rule for one silently
+    destroys the other.
+
+    An invoice with no block is left exactly as it was read. Only a document that
+    states its batches is entitled to have this applied to it, and a document
+    that does not may well be one where the model was right.
+    """
+    out: list[dict[str, Any]] = []
+    for instance in instances:
+        row = dict(instance)
+        stated = row.pop(DECLARED_BATCHES, None)
+        items = row.get("line_items")
+        if not stated or not isinstance(items, list):
+            out.append(row)
+            continue
+        row["line_items"] = _spread(items, stated)
+        out.append(row)
+    return out
+
+
 class Ingestion:
     """Attachments to entity instances, over the live mailbox.
 
@@ -105,8 +246,12 @@ class Ingestion:
     def __init__(self, gmail: mail.Gmail, model_client: Any) -> None:
         """Hold the mailbox and the model this environment wants used."""
         self._gmail = gmail
-        self._classify = Classifier(model_client)
-        self._extract = Extractor(model_client)
+        # Loaded per activity rather than at import: the trainer rewrites this
+        # file between sweeps, and a module-level read would pin the first
+        # version for the life of the process.
+        found = hints()
+        self._classify = Classifier(model_client, hints=found)
+        self._extract = with_declared_batches(Extractor(model_client, hints=found))
         self._model = model_client
 
     @activity.defn(name="read_documents")
@@ -175,7 +320,12 @@ class Ingestion:
             )
 
         declined.extend((s.source, s.reason) for s in store.skipped)
-        kept = {key: _distinct(store.instances(key)) for key in store.counts()}
+        # Reconciled after merging, never before: an invoice is read one page at
+        # a time and only one of those pages carries the block, so the batch list
+        # and the line items it describes are not in the same reading until here.
+        kept = {
+            key: reconciled(_distinct(store.instances(key))) for key in store.counts()
+        }
         return Gathered(
             instances=json.dumps(kept),
             declined=json.dumps(declined),
@@ -216,8 +366,8 @@ def _distinct(instances: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     to examine, and a check that examines fewer rows reports fewer failures.
     """
     merged: dict[str, dict[str, Any]] = {}
-    for position, instance in enumerate(instances):
-        key = _identity(instance, position)
+    for instance in instances:
+        key = _identity(instance)
         merged[key] = _combine(merged[key], instance) if key in merged else dict(instance)
     return list(merged.values())
 
@@ -248,29 +398,25 @@ def _combine(into: Mapping[str, Any], addition: Mapping[str, Any]) -> dict[str, 
     return combined
 
 
-def _identity(instance: Mapping[str, Any], position: int) -> str:
+def _identity(instance: Mapping[str, Any]) -> str:
     """What two readings of the same document agree on.
 
     Scalars only. A list is where a partial reading differs — one page of line
     items against five — so including it would make every fragment its own
     document, which is the behaviour being fixed.
 
-    **An instance with no scalars at all is not identifiable, and therefore not
-    a duplicate of anything.** Agreeing on nothing is not agreement: when
-    extraction returns no batch number and no product code, the empty key made
-    every such certificate the same certificate, and ten read became four kept.
-    The check then had six fewer certificates to match against and reported the
-    batches as missing — a failure that looks like a matching bug and is a
-    counting one. Absence of evidence is not evidence of sameness, so an
-    unidentifiable reading stands on its own.
+    **An instance with no scalars is still merged**, and that is deliberate.
+    Standing them apart was tried and reverted: at a deep page cap a scanned
+    bundle yields many partial readings that name nothing, and each one became
+    its own document — inflating `coa_total` from 9 to 47 on HLBU6302759. A
+    fragment nothing identifies is far more often another view of a document
+    already seen than a new one.
     """
     scalars = {
         field: value
         for field, value in sorted(instance.items())
         if value is not None and not isinstance(value, list | dict) and str(value).strip()
     }
-    if not scalars:
-        return f"\x00unidentified:{position}"
     return json.dumps(scalars, sort_keys=True, default=str)
 
 

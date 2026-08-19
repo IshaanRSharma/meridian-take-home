@@ -23,7 +23,7 @@ which is why the bundle carries the trace as well as the file.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -35,6 +35,66 @@ from meridian.runtime.trace import Step
 Detector = Literal["assertion", "output_diff", "conformance"]
 
 ENTRY_POINT = "entry_point"
+
+ERRORED = 1
+"""The case raised, so it measured nothing and hides everything beneath it."""
+
+ABSENT = 2
+"""A card fills this column and the code returned nothing. Authorised, undelivered."""
+
+WRONG = 3
+"""The step ran and disagreed. The ordinary repair."""
+
+UNFILLABLE = 4
+"""No card fills this column, so no patch can ever move it. Not a repair at all."""
+
+WHY = {
+    ERRORED: "the case raised — it measured nothing, so every count beneath it is meaningless",
+    ABSENT: "a card fills this column and the code returned nothing — the step never ran",
+    WRONG: "the step ran and disagreed with the expected value",
+    UNFILLABLE: "no card on the board fills this column, so no patch can produce it",
+}
+
+
+def triage(detector: str, detail: Mapping[str, Any], reachable: Collection[str]) -> int:
+    """How urgent one failure is, and — at the bottom — whether it is a repair at all.
+
+    **Bucket size is the wrong ranking and it misfires in two specific ways this
+    ordering exists to stop.** Ranking by how many cases share a signature sent
+    this loop at `invoices_mismatched_asn`, a column nothing on the board fills,
+    and the bundle could only answer `FILE unknown` — a whole iteration spent on
+    a number no patch can reach. It then sent the loop at `coas_valid` while
+    every case in that bucket had `actual: None`, because the check had never
+    run: the file named was the one file the bug was definitely not in.
+
+    Both are size winning over kind. A big bucket of *symptoms* outranks a small
+    bucket of *causes* under counting, and the causes are what a repair needs.
+
+    So kind decides and size only breaks ties within a kind:
+
+        1  errored     nothing was measured, so nothing below can be trusted
+        2  absent      the board asked for this column and the code did not write it
+        3  wrong       the step ran and got a different answer
+        4  unfillable  the board never asked for this column
+
+    Rank 2 above rank 3 is the one worth arguing for. A column that came back
+    `None` did not disagree — it never happened, which means a step upstream did
+    not run or did not produce what the step reading it needed. That is a
+    structural failure, and structural failures make every count downstream of
+    them wrong for free.
+
+    Rank 4 is not urgency at all; it is a different owner. It sorts last so that
+    it is only ever reached when nothing else is failing, and even then it is a
+    thread rather than a patch.
+    """
+    if detector == "assertion":
+        # `locate_error` produces exactly one of these per errored case, and it
+        # is the only detector that means "there is no comparison here".
+        return ERRORED
+    column = detail.get("column")
+    if column not in reachable:
+        return UNFILLABLE
+    return ABSENT if detail.get("actual") is None else WRONG
 
 
 @dataclass(frozen=True)

@@ -224,6 +224,82 @@ export interface Evals {
   shipments: EvalRow[];
 }
 
+
+// ── the gymnasium ────────────────────────────────────────────────────────────
+
+/** One (case, column) measurement.
+ *
+ * `state` has three values and the third one carries the whole point.
+ * `blocked` means no card on the board fills that column, so no patch can ever
+ * move it — it is the board's problem, not the code's. Rendering it as a
+ * failure makes a converged agent read as 78% and sends the next repair at a
+ * file that cannot contain the fix.
+ *
+ * `nearness` is closeness, between 0 and 1, and it never scores — a binary cell
+ * cannot separate 13-of-14 from 0-of-14, and those are different states of the
+ * same agent. */
+export interface GymCell {
+  case: string;
+  column: string;
+  state: 'pass' | 'fail' | 'blocked';
+  expected: unknown;
+  actual: unknown;
+  nearness: number;
+}
+
+/** One point on the reward curve.
+ *
+ * `reachable` is the denominator that matters. Drawn against `measured` the
+ * curve flattens at the ceiling and reads as a stall while the agent is
+ * actually finished. */
+export interface GymPoint {
+  iteration: number;
+  agreed: number;
+  measured: number;
+  reachable: number;
+  /** How many cases this build was swept on.
+   *
+   * Carried because without it the curve invites a comparison that is not
+   * valid. Builds are swept on whatever set somebody ran at the time, so a
+   * point measured on two cases and one measured on ten have different
+   * denominators — joined by a line they draw a collapse that never happened. */
+  cases: number;
+}
+
+/** A decision the generator made that the spec did not determine.
+ *
+ * `falsified_if` is the prediction that would disprove it, which is what makes
+ * this a scientific record rather than a changelog. `falsified` is true only
+ * when a recorded repair named this assumption by id — a belief nothing has
+ * tested is standing, never confirmed. */
+export interface Belief {
+  id: string;
+  decision: string;
+  because: string;
+  prompted_by: string | null;
+  falsified_if: string;
+  falsified: boolean;
+}
+
+export interface Gym {
+  build: { iteration: number; source_ref: string; created_by: string; model: string | null };
+  builds: number[];
+  cases: string[];
+  columns: string[];
+  cells: GymCell[];
+  splits: Record<string, string>;
+  errored: Record<string, string>;
+  blocked: string[];
+  green: string[];
+  score: { agreed: number; measured: number; reachable: number; nearness: number };
+  terminated: boolean;
+  curve: GymPoint[];
+  attempts: Record<string, string[]>;
+  resisted: string[];
+  steps_to_green: Record<string, number | null>;
+  beliefs: Belief[];
+}
+
 // ── failure, as something a screen can render ────────────────────────────────
 
 /** What the API refused, with the parts a screen needs kept separate.
@@ -377,5 +453,7 @@ export const api = {
     cycle: (cycleId: string) => request<CycleEvent[]>(`/events/${cycleId}`),
     evals: (boardId?: string) =>
       request<Evals>(`/evals${boardId ? `?board_id=${boardId}` : ''}`),
+    gym: (boardId: string, build?: number) =>
+      request<Gym>(`/boards/${boardId}/gym${build ? `?build=${build}` : ''}`),
   },
 };

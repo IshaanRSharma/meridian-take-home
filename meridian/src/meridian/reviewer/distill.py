@@ -291,7 +291,7 @@ def _as_object(literal: str | None) -> dict[str, object] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _payload(board: Board, thread: Thread, recorded: Sequence[Assertion] = ()) -> str:
+def _payload(board: Board, thread: Thread, settled: Sequence[Assertion] = ()) -> str:
     """The conversation, what its elements already know, and what may be anchored to.
 
     ``already_known`` is scoped by ``reaches`` rather than being the whole set,
@@ -307,14 +307,17 @@ def _payload(board: Board, thread: Thread, recorded: Sequence[Assertion] = ()) -
     nobody loses. The other framing deletes a settled answer.
     """
     about = [
-        board.p(anchor.key)
-        for anchor in thread.anchors
-        if anchor.kind == "primitive" and anchor.key and board.has(anchor.key)
+        board.p(a.key)
+        for a in thread.anchors
+        # `a.key` is what narrows the anchor to a string. Only a board anchor is
+        # keyless, so the check reads as redundant beside `kind == "primitive"`
+        # and is not: dropping it is a mypy --strict failure, not a style choice.
+        if a.kind == "primitive" and a.key and board.has(a.key)
     ]
     known = sorted(
         {
             f"[{a.kind}] {a.statement}"
-            for a in recorded
+            for a in settled
             if a.is_active()
             and (
                 a.anchor in thread.anchors or any(context.reaches(card, a.anchor) for card in about)

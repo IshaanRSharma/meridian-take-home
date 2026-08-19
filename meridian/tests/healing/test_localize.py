@@ -17,8 +17,19 @@ from __future__ import annotations
 from meridian.domain.frozen import FrozenSpec, SpecPrimitive
 from meridian.domain.primitives import CheckConfig, FieldRef, Fill
 from meridian.healing.compare import Mismatch
-from meridian.healing.localize import locate, locate_error, owners_from_spec
+from meridian.healing.localize import (
+    ABSENT,
+    ERRORED,
+    UNFILLABLE,
+    WRONG,
+    locate,
+    locate_error,
+    owners_from_spec,
+    triage,
+)
 from meridian.runtime.trace import Step
+
+REACHABLE = frozenset({"coa_total", "coa_success", "failed_coa"})
 
 
 def check(key: str, *fills: tuple[str, str]) -> SpecPrimitive:
@@ -155,3 +166,52 @@ def test_an_error_after_a_step_that_is_not_a_card_names_no_primitive():
 
     assert found.signature == "extract :: assertion :: ValueError"
     assert found.primitive_key is None
+
+
+# ── triage: which failure is worth opening next ──────────────────────────────
+#
+# Every case below is built so that ranking by BUCKET SIZE gives a different
+# answer from ranking by kind. That is the whole point: size and kind disagree
+# exactly where the loop was wasting its iterations, and a test where they agree
+# would pass against the implementation this replaces.
+
+
+def test_a_column_nothing_fills_ranks_last_however_many_cases_it_covers():
+    # The failure that sent a whole iteration nowhere. `invoices_mismatched_asn`
+    # failed on every case in the suite, so it won on size — and the bundle could
+    # only answer `FILE unknown`, because no card fills it and no patch can.
+    unfilled = {"column": "invoices_mismatched_asn", "actual": None}
+    everywhere = triage("output_diff", unfilled, REACHABLE)
+    one_case = triage("output_diff", {"column": "coa_success", "actual": 2}, REACHABLE)
+
+    assert everywhere == UNFILLABLE
+    assert one_case == WRONG
+    assert one_case < everywhere
+
+
+def test_a_column_that_came_back_none_outranks_one_that_came_back_wrong():
+    # `None` is not a disagreement, it is a step that never ran — so something
+    # upstream did not produce what this one reads, and every count downstream
+    # of it is wrong for free. A wrong number is one number.
+    never_ran = triage("output_diff", {"column": "coa_total", "actual": None}, REACHABLE)
+    disagreed = triage("output_diff", {"column": "coa_success", "actual": 2}, REACHABLE)
+
+    assert never_ran == ABSENT
+    assert never_ran < disagreed
+
+
+def test_an_errored_case_outranks_every_comparison():
+    # A case that raised measured nothing, so every column it "failed" is
+    # meaningless — including the ones that would otherwise look like the
+    # biggest bucket in the sweep.
+    raised = triage("assertion", {"error": "KeyError: 'batch_no'"}, REACHABLE)
+
+    assert raised == ERRORED
+    assert raised < ABSENT < WRONG < UNFILLABLE
+
+
+def test_a_none_in_an_unfillable_column_is_still_the_boards_problem():
+    # Both conditions hold at once and only one of them decides. A column
+    # nothing fills comes back `None` on every case by construction, so testing
+    # `actual is None` first would classify every spec gap as a repair target.
+    assert triage("output_diff", {"column": "status", "actual": None}, REACHABLE) == UNFILLABLE

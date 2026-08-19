@@ -35,6 +35,16 @@ async def pool(dsn: str | None = None) -> asyncpg.Pool:
             min_size=1,
             max_size=10,
             statement_cache_size=_STATEMENT_CACHE_SIZE,
+            # asyncpg reaps a pool connection idle for five minutes, and it does
+            # so whether or not that connection is holding an open transaction.
+            # A sweep is one transaction across every case, and a case that
+            # spends six minutes reading scanned documents issues no query while
+            # it does — so the pool closed the connection under a sweep that was
+            # working fine, and the whole run was lost at case seven of ten.
+            # Nothing here is idle in the sense the default is protecting
+            # against; the connection is held on purpose, for as long as the
+            # work takes.
+            max_inactive_connection_lifetime=0,
         )
     return _pool
 

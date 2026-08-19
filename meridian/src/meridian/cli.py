@@ -43,8 +43,10 @@ from meridian.domain.review import Assertion, DocKind, ReferenceDoc, Thread
 from meridian.healing import bundle as bundle_
 from meridian.healing import record
 from meridian.healing import sweep as sweep_
+from meridian.healing import train as train_
 from meridian.healing.compare import compare, score
 from meridian.healing.gate import Verdict
+from meridian.healing.gym import Episode, Scoreboard, episode, observe
 from meridian.repositories import assertions as assertions_repo
 from meridian.repositories import boards, reference_docs, specs
 from meridian.repositories import builds as builds_repo
@@ -1068,6 +1070,217 @@ def _thread(thread: Thread, *, with_id: bool = False) -> None:
     for message in thread.messages:
         typer.echo(f"     {message.author:>6}  {message.body}")
     typer.echo("")
+
+
+@app.command("gym")
+def gym(
+    board_id: BoardId,
+    iteration: Iteration = None,
+    split: Annotated[str | None, typer.Option(help="score one split only")] = None,
+) -> None:
+    """Score the agent directory against the suite, and the loop against itself.
+
+    Two questions, and they are not the same one. *Is this build passing* is a
+    row of columns; *is the loop converging* is the whole episode — every build,
+    where each case first went green, and which signatures resisted. The second
+    is the one nothing answered before, and it is the one that says whether
+    repair is diagnosing or guessing.
+
+    Reads what is stored; runs nothing. Sweep first.
+    """
+
+    async def work(
+        connection: asyncpg.Connection,
+    ) -> tuple[Scoreboard, Episode]:
+        spec, spec_id = await _spec(connection, board_id)
+        built = await _build(connection, spec_id, iteration)
+        return (
+            await observe(connection, build=built, spec=spec, spec_id=spec_id),
+            await episode(connection, spec=spec, spec_id=spec_id),
+        )
+
+    board, run = _run(work)
+    _gym_report(board, run, split)
+
+
+def _gym_matrix(board: Scoreboard, split: str | None) -> None:
+    """Every case against every column, with a legend rather than truncation."""
+    columns = board.columns()
+    width = max((len(c) for c in board.cases()), default=8)
+    # Numbered columns with a legend underneath, rather than truncated headers.
+    # Nine column names do not fit a terminal and cutting them to width turns
+    # `invoices_failed` and `invoices_mismatched_asn` into the same string —
+    # which is the one thing a scoreboard may never do.
+    at = {column: index for index, column in enumerate(columns, start=1)}
+    shown = {"pass": "ok", "fail": "FL", "blocked": "--"}
+
+    typer.echo(f"\nGYM  build {board.build.iteration}  ·  {board.build.source_ref}\n")
+    numbers = " ".join(str(at[c]).rjust(2) for c in columns)
+    typer.echo(f"  {'case'.ljust(width)}  split     {numbers}")
+    typer.echo(f"  {'-' * width}  --------  {' '.join('--' for _ in columns)}")
+
+    for case in board.cases():
+        if split and board.splits.get(case) != split:
+            continue
+        marks = []
+        for column in columns:
+            cell = next((c for c in board.cells if c.case == case and c.column == column), None)
+            marks.append(shown[cell.state()] if cell else " ?")
+        typer.echo(
+            f"  {case.ljust(width)}  {(board.splits.get(case) or '?').ljust(8)}  "
+            + " ".join(m.rjust(2) for m in marks)
+        )
+
+    typer.echo("")
+    for row in range(0, len(columns), 3):
+        typer.echo(
+            "  " + "".join(f"{at[c]:>2} {c:<24}" for c in columns[row : row + 3]).rstrip()
+        )
+
+
+def _gym_report(board: Scoreboard, run: Episode, split: str | None) -> None:
+    """The scoreboard, the curve, and the verdict."""
+    if not board.cells:
+        typer.echo("no sweep on this build yet — `meridian eval sweep` first")
+        return
+
+    blocked = set(board.blocked())
+    width = max((len(c) for c in board.cases()), default=8)
+    _gym_matrix(board, split)
+
+    typer.echo("")
+    for scope in ([split] if split else ["train", "val", "test", "holdout", None]):
+        agreed, measured, reachable = board.score(scope)
+        if not measured:
+            continue
+        green = len(board.green(scope))
+        cases = len({c.case for c in board.within(scope)})
+        name = (scope or "ALL").ljust(6)
+        typer.echo(
+            f"  {name}  {agreed}/{reachable} reachable   "
+            f"{agreed}/{measured} of suite   {green}/{cases} cases green   "
+            f"{board.nearness(scope):.0%} near"
+        )
+
+    if blocked:
+        typer.echo(
+            f"\n  BLOCKED  {', '.join(sorted(blocked))} — no card fills these, so `--`\n"
+            "           is the board's problem, not the code's. A review round, not a repair."
+        )
+    for case, why in board.errored.items():
+        typer.echo(f"\n  ERRORED  {case}: {why.splitlines()[0][:100]}")
+
+    typer.echo("\n  CURVE  (build: reachable columns agreed · cases swept)")
+    widest = max((c for *_, c in run.curve()), default=0)
+    for build, agreed, _measured, reachable, cases in run.curve():
+        bar = "#" * round(20 * agreed / reachable) if reachable else ""
+        # A build swept on fewer cases is not comparable to one swept on more,
+        # so it is marked rather than quietly plotted beside it.
+        mark = "" if cases == widest else f"  ({cases} of {widest} cases)"
+        typer.echo(f"    build {build:<3} {agreed:>3}/{reachable:<3} {bar}{mark}")
+
+    typer.echo("\n  ITERATIONS TO GREEN")
+    for case, at in sorted(run.steps_to_green().items()):
+        typer.echo(f"    {case.ljust(width)}  {'build ' + str(at) if at else 'never'}")
+
+    if run.resisted():
+        typer.echo(
+            "\n  RESISTED  attempted 3+ times, never accepted — the repair skill calls\n"
+            "            this a misdiagnosis rather than persistence:"
+        )
+        for signature in run.resisted():
+            typer.echo(f"    {signature}")
+
+    agreed, _measured, reachable = board.score(split)
+    typer.echo(
+        f"\n  VERDICT  {'PASSING' if board.terminated(split) else 'NOT PASSING'} — "
+        f"{agreed}/{reachable} reachable columns\n"
+    )
+
+
+@app.command("train")
+def train(  # noqa: PLR0913, PLR0917 - what to fit, against what, for how long
+    board_id: BoardId,
+    rounds: Annotated[int, typer.Option(help="how many proposals to try")] = 4,
+    case: Annotated[list[str] | None, typer.Option(help="fit against these keys")] = None,
+    threshold: Annotated[int, typer.Option(help="columns a hint must win by")] = 1,
+    seconds: Annotated[float, typer.Option("--timeout")] = sweep_.CASE_TIMEOUT_SECONDS,
+    agents: AgentsRoot = "agents",
+) -> None:
+    """Fit `hints.json` against the suite: propose, sweep, keep or revert.
+
+    The loop's only true parameter. Every other improvement is a code edit, which
+    needs a coding agent and produces a commit; a hint is read at run time, so it
+    can be proposed, scored and discarded automatically.
+
+    Four rounds by default, because measured repair loops take most of their
+    gain in the first three or four and almost none after.
+
+    Keeping only what wins is the whole mechanism — the file accumulates
+    statements that paid for themselves on the suite, and nothing else.
+    """
+    root = _repo_root() / agents
+    spec, _ = _run(lambda c: _spec(c, board_id))
+    agent_dir = root / spec.slug
+    reachable = train_.gym_reachable(spec)
+
+    def score() -> tuple[int, list[dict[str, object]]]:
+        async def work(connection: asyncpg.Connection) -> tuple[int, list[dict[str, object]]]:
+            found, spec_id = await _spec(connection, board_id)
+            built = await _build(connection, spec_id, None)
+            cases = await evals_repo.cases_for(connection, spec_id, keys=case)
+            swept = await sweep_.sweep(
+                connection,
+                build=built,
+                spec=found,
+                cases=cases,
+                agents_root=root,
+                cycle_id=sweep_.new_cycle(),
+                case_timeout=seconds,
+            )
+            return train_.reachable_score(swept, reachable), train_.failing(swept)
+
+        return _run(work)
+
+    hints = train_.load(agent_dir)
+    best, failed = score()
+    typer.echo(f"\nTRAIN  {spec.slug}  ·  start {best} reachable columns\n")
+
+    history: list[train_.Attempt] = []
+    for turn in range(1, rounds + 1):
+        # Bound as defaults, not captured: a closure over the loop variables
+        # would propose against whatever the LAST round left behind.
+        async def asked(
+            _c: asyncpg.Connection,
+            seen: list[dict[str, object]] = failed,
+            known: dict[str, list[str]] = hints,
+        ) -> tuple[str, str] | None:
+            return await train_.propose(train_.ask_model, seen, known)
+
+        made = _run(asked)
+        if made is None:
+            typer.echo(f"  {turn}. no hint proposed — this failure is not one a hint reaches")
+            break
+        entity, hint = made
+        typer.echo(f"  {turn}. [{entity}] {hint}")
+
+        train_.save(agent_dir, train_.with_hint(hints, entity, hint))
+        now, failing_now = score()
+        kept = now - best >= threshold
+        history.append(train_.Attempt(entity, hint, best, now, kept))
+
+        if kept:
+            hints = train_.with_hint(hints, entity, hint)
+            best, failed = now, failing_now
+            typer.echo(f"     KEPT     {history[-1].gain():+d}  ->  {now}")
+        else:
+            # Reverted rather than argued with. A proposal that did not pay for
+            # itself must not be in the file the next run reads.
+            train_.save(agent_dir, hints)
+            typer.echo(f"     REVERTED {history[-1].gain():+d}  (needed +{threshold})")
+
+    typer.echo(f"\n  {best} reachable columns  ·  {sum(a.kept for a in history)} of "
+               f"{len(history)} proposals kept\n")
 
 
 def main() -> None:

@@ -415,3 +415,103 @@ async def test_no_hints_file_is_not_an_error(
     text = await rendered(connection, build, agents_root=agent_dir.parent)
 
     assert "FAILING SIGNATURE" in text
+
+
+# ── choosing what to open next ───────────────────────────────────────────────
+#
+# `failures_for` returns rows already ordered by bucket size, so these fixtures
+# put the BIGGEST bucket first — which is what the previous implementation would
+# have picked. Every assertion below is a case where that answer was wrong.
+
+REACHABLE = frozenset({"coa_total", "coa_success", "failed_coa"})
+
+
+def a_failure(signature: str, column: str, actual: object, detector: str = "output_diff"):
+    return {
+        "signature": signature,
+        "detector": detector,
+        "primitive_key": signature.split(" :: ", maxsplit=1)[0],
+        "detail": {"column": column, "expected": 5, "actual": actual},
+        "case_key": "CAAU4056270",
+    }
+
+
+def test_a_huge_unfillable_bucket_loses_to_a_single_fixable_one():
+    # The iteration this ranking exists to stop. Ten cases failed on a column no
+    # card fills, one case failed on a column a check owns, and size chose the
+    # one no patch can move — then printed `FILE unknown` and asked somebody to
+    # fix it.
+    asn = a_failure(
+        "invoices_mismatched_asn :: output_diff :: unfilled", "invoices_mismatched_asn", None
+    )
+    found = [*[asn] * 10, a_failure("coas_valid :: output_diff :: coa_success", "coa_success", 2)]
+
+    chosen, rank = bundle_._choose(found, REACHABLE, asked=None)
+
+    assert chosen == "coas_valid :: output_diff :: coa_success"
+    assert rank != bundle_.UNFILLABLE
+
+
+def test_a_step_that_never_ran_beats_a_bigger_bucket_that_merely_disagreed():
+    # Both are real repair targets and both are fixable, so kind is the only
+    # thing separating them. `None` means an input never arrived, which makes
+    # every count reading it wrong for free.
+    found = [
+        *[a_failure("invoice_complete :: output_diff :: goods_failed", "failed_coa", 6)] * 5,
+        a_failure("coas_valid :: output_diff :: coa_total", "coa_total", None),
+    ]
+
+    chosen, _ = bundle_._choose(found, REACHABLE, asked=None)
+
+    assert chosen == "coas_valid :: output_diff :: coa_total"
+
+
+def test_within_one_kind_the_bigger_bucket_still_wins():
+    # Size is not wrong, it is subordinate. Two failures of the same kind are
+    # ranked the way they always were — and the order `failures_for` returns is
+    # what carries that, so this also pins that we do not re-sort and lose it.
+    found = [
+        a_failure("invoice_complete :: output_diff :: goods_failed", "failed_coa", 6),
+        a_failure("coas_valid :: output_diff :: coa_success", "coa_success", 2),
+    ]
+
+    chosen, _ = bundle_._choose(found, REACHABLE, asked=None)
+
+    assert chosen == "invoice_complete :: output_diff :: goods_failed"
+
+
+def test_an_errored_case_is_chosen_over_every_comparison():
+    found = [
+        *[a_failure("coas_valid :: output_diff :: coa_success", "coa_success", 2)] * 9,
+        a_failure("coas_valid :: assertion :: KeyError", "", None, detector="assertion"),
+    ]
+
+    chosen, rank = bundle_._choose(found, REACHABLE, asked=None)
+
+    assert chosen == "coas_valid :: assertion :: KeyError"
+    assert rank == bundle_.triage("assertion", {}, REACHABLE)
+
+
+def test_an_unfillable_signature_asked_for_by_name_is_reported_as_a_spec_gap():
+    # Honouring the request means answering what it IS, not handing back a
+    # repair bundle with no file in it.
+    found = [a_failure("status :: output_diff :: unfilled", "status", None)]
+
+    _, rank = bundle_._choose(found, REACHABLE, asked="status :: output_diff :: unfilled")
+
+    assert rank == bundle_.UNFILLABLE
+
+
+def test_the_spec_gap_block_names_the_command_that_raises_the_thread():
+    # A reader who has to go and look up the arguments has left the paste, and
+    # this is the one path that must never be skipped for friction.
+    block = "\n".join(
+        bundle_._unfillable(
+            [a_failure("status :: output_diff :: unfilled", "status", None)],
+            "status :: output_diff :: unfilled",
+        )
+    )
+
+    assert "--class spec_gap" in block
+    assert "No --thread is needed." in block
+    assert "CAAU4056270" in block

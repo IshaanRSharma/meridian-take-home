@@ -159,6 +159,27 @@ def split(source: str, pages: Sequence[str], candidates: Sequence[Candidate]) ->
     ]
 
 
+def learned(hints: Mapping[str, Sequence[str]], key: str) -> str:
+    """What previous runs worked out about reading this kind of document.
+
+    **This is the only part of the agent that changes without a code edit.**
+    Everything else the healing loop can improve, it improves by writing Python,
+    which needs a coding agent in the loop. Hints are a parameter: the trainer
+    proposes one from the evidence in a failure, scores the suite with it, and
+    keeps it only if the score went up — so the loop has something it can fit
+    rather than only something it can rewrite.
+
+    Kept outside the checksummed spec on purpose. A hint is an observation about
+    what the documents look like, never a decision about what the business
+    means, so it must not be able to drift the build from the contract.
+    """
+    said = [*hints.get("*", ()), *hints.get(key, ())]
+    if not said:
+        return ""
+    lines = "\n".join(f"- {one}" for one in said)
+    return f"Known about these documents, from previous runs:\n{lines}\n\n"
+
+
 class Classifier:
     """Which entity a document is, decided by a model over a closed set.
 
@@ -168,10 +189,13 @@ class Classifier:
     paths on different runs, which costs the suite its meaning.
     """
 
-    def __init__(self, client: Any, model: str = MODEL) -> None:
-        """Hold the model client this environment wants used."""
+    def __init__(
+        self, client: Any, model: str = MODEL, hints: Mapping[str, Sequence[str]] | None = None
+    ) -> None:
+        """Hold the model client and whatever the loop has learned so far."""
         self._client = client
         self._model = model
+        self._hints = hints or {}
 
     def __call__(self, text: str, candidates: Sequence[Candidate]) -> Verdict:
         """One verdict for one document."""
@@ -187,6 +211,8 @@ class Classifier:
                 {
                     "role": "system",
                     "content": (
+                        learned(self._hints, "*")
+                        +
                         "Identify which kind of document this is. Reply as JSON: "
                         '{"entity": <one key or "unrecognised">, "confidence": 0.0-1.0}. '
                         "Answer unrecognised when it matches none of them. A certificate "
@@ -238,10 +264,13 @@ class Extractor:
     to an entity changes what is extracted with no change here.
     """
 
-    def __init__(self, client: Any, model: str = MODEL) -> None:
-        """Hold the model client this environment wants used."""
+    def __init__(
+        self, client: Any, model: str = MODEL, hints: Mapping[str, Sequence[str]] | None = None
+    ) -> None:
+        """Hold the model client and whatever the loop has learned so far."""
         self._client = client
         self._model = model
+        self._hints = hints or {}
 
     def __call__(self, text: str, candidate: Candidate) -> Sequence[Mapping[str, Any]]:
         """Every instance of one entity found in one document.
@@ -259,7 +288,8 @@ class Extractor:
                 {
                     "role": "system",
                     "content": (
-                        "Extract every instance of this document type from the text. "
+                        learned(self._hints, candidate.entity)
+                        + "Extract every instance of this document type from the text. "
                         'Reply as JSON: {"instances": [ ... ]}, each matching the schema. '
                         "Use null for a field that is genuinely absent — never invent, "
                         "never omit a row because a field is missing, never normalise a "

@@ -587,3 +587,87 @@ async def test_files_touched_is_scoped_to_the_agent_that_was_repaired(
     )
 
     assert repair.files_touched == ("agents/toy_prealert/src/checks/coas_valid.py",)
+
+
+# ── the repair log a skill leaves behind ─────────────────────────────────────
+
+SIGNATURE = "coas_valid :: output_diff :: coa_success"
+ELSEWHERE = "coas_valid :: output_diff :: coa_total"
+
+
+def a_log(agent_dir: Path, *lines: dict) -> Path:
+    where = agent_dir / "repairs"
+    where.mkdir(parents=True, exist_ok=True)
+    path = where / "coas_valid__output_diff__coa_success.jsonl"
+    path.write_text("\n".join(json.dumps(line) for line in lines) + "\n")
+    return path
+
+
+def test_the_signature_is_read_from_the_line_not_from_the_filename(tmp_path: Path):
+    # The real corpus does this: a session that started on `coa_success` wrote
+    # its third attempt against `coa_total` into the same file, because that is
+    # where the work led. Trusting the filename drops the attempt that changed
+    # its mind — which is the one worth keeping.
+    a_log(
+        tmp_path,
+        {"attempt": 1, "signature": SIGNATURE, "tried": "page cap", "outcome": "accepted"},
+        {"attempt": 3, "signature": ELSEWHERE, "tried": "merge on batch_no", "outcome": "stopped"},
+    )
+
+    assert [a.attempt for a in record.attempts_for(tmp_path, SIGNATURE)] == [1]
+    assert [a.attempt for a in record.attempts_for(tmp_path, ELSEWHERE)] == [3]
+
+
+def test_a_half_written_line_costs_only_that_line(tmp_path: Path):
+    # The file is appended to by a coding agent between runs, so a truncated
+    # last line is ordinary. Losing the whole record over it would punish the
+    # party that did the work.
+    path = a_log(
+        tmp_path,
+        {"attempt": 1, "signature": SIGNATURE, "tried": "page cap", "outcome": "accepted"},
+    )
+    path.write_text(path.read_text() + '{"attempt": 2, "signature": "coas_v')
+
+    assert [a.attempt for a in record.attempts_for(tmp_path, SIGNATURE)] == [1]
+
+
+def test_a_stopped_attempts_conclusion_survives_into_the_summary(tmp_path: Path):
+    # The most expensive sentence in the file to lose, and the only one nothing
+    # else in the system records.
+    a_log(
+        tmp_path,
+        {
+            "attempt": 2,
+            "signature": SIGNATURE,
+            "tried": "stood unidentifiable fragments apart",
+            "outcome": "regressed",
+            "regressed": ["HLBU6302759.coa_total"],
+            "note": "REVERTED — inflated coa_total from 9 to 47. Do not retry this.",
+        },
+    )
+
+    written = record.with_attempts("Raised the cap.", record.attempts_for(tmp_path, SIGNATURE))
+
+    assert "Raised the cap." in written
+    assert "Do not retry this." in written
+    assert "HLBU6302759.coa_total" in written
+
+
+def test_an_agent_with_no_repairs_directory_is_an_ordinary_state(tmp_path: Path):
+    # A fresh agent has attempted nothing. Raising here would make the first
+    # repair of every build fail on the absence of a file nobody wrote yet.
+    assert record.attempts_for(tmp_path, SIGNATURE) == ()
+    assert record.with_attempts("Only what I typed.", ()) == "Only what I typed."
+
+
+def test_attempts_are_ordered_by_attempt_number_not_by_file_order(tmp_path: Path):
+    # Two files can each hold attempts against one signature, and the directory
+    # is read in name order. A reader following a chain of reasoning needs the
+    # order the work happened in.
+    a_log(
+        tmp_path,
+        {"attempt": 2, "signature": SIGNATURE, "tried": "second", "outcome": "regressed"},
+        {"attempt": 1, "signature": SIGNATURE, "tried": "first", "outcome": "accepted"},
+    )
+
+    assert [a.attempt for a in record.attempts_for(tmp_path, SIGNATURE)] == [1, 2]

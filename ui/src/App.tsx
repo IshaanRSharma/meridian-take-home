@@ -14,6 +14,7 @@ import Boards from '@/routes/Boards';
 import Whiteboard from '@/routes/Whiteboard';
 import Spec from '@/routes/Spec';
 import Runs from '@/routes/Runs';
+import GymPage from '@/routes/Gym';
 
 /** Signed in, or the gate is open because there is no gate. */
 function Guarded({ children }: { children: React.ReactNode }) {
@@ -71,6 +72,16 @@ export default function App() {
             <Guarded>
               <Shell>
                 <Runs />
+              </Shell>
+            </Guarded>
+          }
+        />
+        <Route
+          path="/gym"
+          element={
+            <Guarded>
+              <Shell>
+                <GymPage />
               </Shell>
             </Guarded>
           }

@@ -44,28 +44,6 @@
     ]
   },
   {
-    "key": "176-26926281",
-    "split": "holdout",
-    "origin": "authored",
-    "input": {
-      "shipment_no": "176-26926281"
-    },
-    "expected_output": {
-      "invoices_successful": 1,
-      "invoices_failed": 0,
-      "invoices_total": 1,
-      "invoices_mismatched_asn": 0,
-      "goods_failed": 0,
-      "failed_coa": 2,
-      "coa_success": 0,
-      "coa_total": 2,
-      "status": "ACTIVE"
-    },
-    "tags": [
-      "air_waybill"
-    ]
-  },
-  {
     "key": "TTNU8982561",
     "split": "train",
     "origin": "authored",

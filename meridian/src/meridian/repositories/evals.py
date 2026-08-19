@@ -187,17 +187,37 @@ async def save_failure(  # noqa: PLR0913 - a failure names its run, its bucket a
     return failure_id
 
 
-async def clear_runs(connection: asyncpg.Connection, build_id: UUID) -> int:
-    """Drop a build's previous sweep so a re-run replaces rather than accumulates.
+async def clear_runs(
+    connection: asyncpg.Connection, build_id: UUID, *, case_ids: Sequence[UUID] | None = None
+) -> int:
+    """Drop this build's previous results for the cases about to be re-run.
 
     Sweeping the same build twice is ordinary — it is how you check a flake, and
     how you re-measure after fixing the fixtures. Without this the second sweep
     doubles every count the gate and the curve are computed from.
 
+    **Scoped to the cases being swept, not to the build.** Clearing everything
+    made inspecting a single case destroy the baseline: `meridian eval case`
+    runs one, wipes the other nine, and the build silently drops from ten
+    measurements to one — which the gate then refuses to judge and the curve
+    plots as a collapse. Nobody asked for that, and it happened twice in one
+    afternoon. A single-case sweep is now an update to that case and leaves
+    every other measurement standing.
+
+    `case_ids` of None still clears the build, because a full sweep genuinely
+    does replace everything and naming all ten would be ceremony.
+
     `run_steps` and `failures` cascade from `runs`, which is why this is one
     statement rather than three.
     """
-    deleted: str = await connection.execute("delete from runs where build_id = $1", build_id)
+    if case_ids is None:
+        deleted: str = await connection.execute("delete from runs where build_id = $1", build_id)
+    else:
+        deleted = await connection.execute(
+            "delete from runs where build_id = $1 and case_id = any($2::uuid[])",
+            build_id,
+            list(case_ids),
+        )
     return int(deleted.rsplit(" ", 1)[-1])
 
 

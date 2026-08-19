@@ -10,7 +10,7 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, FileLock2, LayoutGrid, LogOut, PenLine } from 'lucide-react';
+import { Activity, Dumbbell, FileLock2, LayoutGrid, LogOut, PenLine } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/features/auth/session';
 import { Badge, cx } from '@/components/ui';
@@ -42,8 +42,12 @@ export default function Shell({ children, boardId }: { children: ReactNode; boar
           badge: spec ? `v${spec.version}` : undefined,
         },
         { to: '/runs', label: 'Runs', icon: Activity, on: true },
+        { to: '/gym', label: 'Gym', icon: Dumbbell, on: true },
       ]
-    : [{ to: '/runs', label: 'Runs', icon: Activity, on: true }];
+    : [
+        { to: '/runs', label: 'Runs', icon: Activity, on: true },
+        { to: '/gym', label: 'Gym', icon: Dumbbell, on: true },
+      ];
 
   return (
     <div className="flex h-full flex-col">

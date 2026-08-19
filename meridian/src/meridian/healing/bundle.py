@@ -38,6 +38,8 @@ import asyncpg
 from meridian.domain.build import Build, RunResult
 from meridian.domain.frozen import FrozenSpec
 from meridian.healing.compare import compare, is_empty_sweep, score
+from meridian.healing.gym import reachable_columns
+from meridian.healing.localize import UNFILLABLE, WRONG, triage
 from meridian.repositories import evals as evals_repo
 from meridian.repositories import repairs as repairs_repo
 
@@ -60,10 +62,14 @@ async def bundle(
 ) -> str:
     """Assemble the failure block for one signature of one build's last sweep.
 
-    With no signature the largest bucket is chosen: "which file do I open next"
-    is a ranking question, and the answer is the bucket covering the most cases.
-    A bucket covering *every* case is itself evidence — a per-check bug fails
-    some cases, an infrastructure bug fails all of them the same way.
+    With no signature one is chosen, and **by kind rather than by size** — see
+    `localize.triage` for why counting cases picks the wrong bucket, and for the
+    two ways it demonstrably did on this corpus. Size only breaks ties between
+    failures of the same kind.
+
+    A bucket covering *every* case is still evidence, and still worth noticing —
+    a per-check bug fails some cases, an infrastructure bug fails all of them the
+    same way. That signal now lives inside a rank rather than deciding the rank.
     """
     results = await evals_repo.results_for(connection, build.identity)
     compared = [
@@ -80,10 +86,78 @@ async def bundle(
         lines.append("nothing failing" if compared else "no sweep on this build yet")
         return "\n".join(lines) + "\n"
 
-    bucket = [row for row in found if row["signature"] == found[0]["signature"]]
-    chosen = str(found[0]["signature"])
+    lines += await _prior(connection, build.spec_id)
+
+    chosen, rank = _choose(found, reachable_columns(spec), asked=signature)
+    bucket = [row for row in found if row["signature"] == chosen]
+    if rank == UNFILLABLE:
+        # Never handed to a repair agent as work. A patch that produced this
+        # column would be inventing a business rule nobody approved, and it
+        # would pass the suite while breaking conformance — the one shape of
+        # "green" this loop must never reward.
+        lines += _unfillable(bucket, chosen)
+        return "\n".join(lines) + "\n"
+
     lines += await _bucket(connection, bucket, chosen, results, spec, build, agents_root)
     return "\n".join(lines) + "\n"
+
+
+def _choose(
+    found: Sequence[dict[str, Any]], reachable: frozenset[str], *, asked: str | None
+) -> tuple[str, int]:
+    """Which signature to work on, and what kind of failure it is.
+
+    `found` arrives ordered by bucket size, so taking the first of the best rank
+    keeps size as the tie-break without sorting for it again — and keeps the
+    order stable, which matters because a paste target that moves between
+    identical runs is a paste target nobody trusts.
+
+    An explicitly asked-for signature is never re-ranked away from — somebody
+    naming one has a reason, and overriding them would make the flag useless in
+    exactly the case it exists for. Its *kind* is still reported, so asking for
+    an unfillable column gets the spec-gap block rather than a repair bundle
+    with no file in it. That is honouring the request, not refusing it: the
+    answer to "show me this one" is what this one actually is.
+    """
+    ranked = [(triage(str(row["detector"]), row["detail"], reachable), row) for row in found]
+    if asked is not None:
+        best = next((rank for rank, _ in ranked), WRONG)
+        return asked, best
+    rank, row = min(ranked, key=lambda pair: pair[0])
+    return str(row["signature"]), rank
+
+
+def _unfillable(bucket: Sequence[dict[str, Any]], signature: str) -> list[str]:
+    """The bundle for a failure that is nobody's patch to write.
+
+    Not an empty bundle and not an apology: the finding *is* that the board is
+    missing a card, and the block says so in the same shape a repair bundle
+    takes so a reader does not have to notice they are in a different mode. It
+    names the command, because the escalation raises the thread itself and the
+    one path that must never be skipped should not also require somebody to
+    remember its arguments.
+    """
+    cases = ", ".join(str(row["case_key"]) for row in bucket)
+    column = bucket[0]["detail"].get("column", signature)
+    return [
+        f"NOT A REPAIR  {signature}   ({len(bucket)} case(s))",
+        "",
+        f"  No card on this board fills `{column}`, so the sweep scores it as a",
+        "  permanent failure that localises to no file. No patch can move it, and",
+        "  code that produced it would be inventing a rule nobody approved.",
+        "",
+        f"  FAILING   {cases}",
+        "",
+        "  This is a spec gap. Send it back to the board:",
+        "",
+        '    meridian repair record <board> --class spec_gap \\',
+        f'      --signature "{signature}" \\',
+        '      --summary "<what the column counts, and what nobody has said>"',
+        "",
+        "  The escalation raises the thread itself, anchored on the card the",
+        "  signature names. No --thread is needed.",
+        "",
+    ]
 
 
 async def _bucket(  # noqa: PLR0913, PLR0917 - one section, and it needs the whole picture
@@ -268,7 +342,18 @@ def _evidence(steps: Sequence[dict[str, Any]]) -> list[str]:
     lines = []
     for step in steps:
         for failure in (step.get("output") or {}).get("failing") or []:
-            available = failure.get("detail", {}).get("available")
+            # `failing` is written by two different producers and they disagree
+            # in shape. A Check's own result carries whole `Failure` records;
+            # `apply_fills` projects the SAME key into the output row as a list
+            # of bare subjects, because an email naming the batches wants names
+            # and not evidence rows. A bundle that assumed either one crashes on
+            # the other — and the bundle is the deliverable, so it renders both.
+            if isinstance(failure, str):
+                lines.append(f"     {step['primitive_key']}: {failure!r}")
+                continue
+            if not isinstance(failure, dict):
+                continue
+            available = (failure.get("detail") or {}).get("available")
             against = f"   against {available}" if available else ""
             lines.append(
                 f"     {step['primitive_key']}: {failure.get('subject')!r}"
@@ -295,6 +380,64 @@ def _context(spec: FrozenSpec, primitive: str | None) -> list[str]:
     # a statement about the world, not about this step.
     lines += [f"  [never] {line}" for line in card.context.negative]
     return [*lines, ""]
+
+
+async def _prior(connection: asyncpg.Connection, spec_id: UUID | None) -> list[str]:
+    """What every earlier attempt against this spec adds up to.
+
+    `REPAIR HISTORY` answers *has this exact signature been tried* and nothing
+    answers the question a reader actually opens with: **where do the bugs in
+    this corpus live?** Those are different, and the second is the one that
+    stops a session re-deriving a shape somebody already found. On this repo the
+    answer was lopsided — reading and extraction produced almost every accepted
+    fix and check logic produced a regression — and a reader who knows that
+    opens the reader first, which is exactly where the next bug was.
+
+    Grouped by the primitive a signature names, because that is the coarsest
+    grouping that still says *which part of the agent*, and it is free: it is
+    the leading segment of a string already stored.
+
+    **Refuted attempts are reproduced in full and never summarised.** An
+    approach recorded as regressed or stopped is the single most expensive thing
+    to rediscover, and a count of them tells a reader nothing about which
+    approach to avoid.
+
+    Read here rather than through a repository function because there is no
+    `for_spec` on the repairs repository and adding one is outside this change;
+    `gym.episode` reads the same table the same way for the same reason.
+    """
+    if spec_id is None:
+        return []
+    rows = await connection.fetch(
+        "select r.failure_signature, r.status, r.summary from repairs r "
+        "join agent_builds b on b.id = r.build_id where b.spec_id = $1 "
+        "order by r.created_at",
+        spec_id,
+    )
+    if not rows:
+        return []
+
+    tally: dict[str, dict[str, int]] = {}
+    refuted: list[tuple[str, str]] = []
+    for row in rows:
+        signature = str(row["failure_signature"])
+        where = signature.split(" :: ", 1)[0] if " :: " in signature else signature
+        counted = tally.setdefault(where, {"proposed": 0, "regressed": 0, "escalated": 0})
+        status = str(row["status"])
+        counted[status] = counted.get(status, 0) + 1
+        if status in {"regressed", "rejected"}:
+            refuted.append((signature, str(row["summary"])))
+
+    lines = ["WHAT THIS CORPUS HAS ALREADY TAUGHT THE LOOP"]
+    for where, counted in sorted(tally.items(), key=lambda pair: -sum(pair[1].values())):
+        said = ", ".join(f"{n} {name}" for name, n in counted.items() if n)
+        lines.append(f"  {where:<28} {said}")
+    for signature, summary in refuted:
+        lines.append(f"  REFUTED — do not retry  [{signature}]")
+        for wrapped in summary.splitlines():
+            lines.append(f"      {wrapped}")
+    lines.append("")
+    return lines
 
 
 async def _history(connection: asyncpg.Connection, signature: str, spec_id: UUID) -> list[str]:

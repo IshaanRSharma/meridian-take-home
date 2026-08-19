@@ -129,6 +129,13 @@
       "prompted_by": null,
       "because": "no card fills status. The rule fits all nine historical rows, and MNBU3974949 rules out ASN being part of it: 14 mismatched ASNs and RESOLVED.",
       "falsified_if": "a shipment with no check failure is ACTIVE, or one with a failure is RESOLVED. Nobody on the board authorised this column; raised as a spec gap."
+    },
+    {
+      "id": "batches_come_from_the_declared_block",
+      "decision": "read each invoice's batch numbers from its labelled `BATCH NOS:` block rather than from whatever the extractor put in line_items[].batch_no",
+      "prompted_by": "primitives.coas_valid.criteria[0].left",
+      "because": "the invoice does not carry a batch number per line item. It carries one block listing every lot, and the extraction schema asks for line_items[].batch_no \u2014 a shape the document does not have. Asked for something absent the model fills it anyway: right on the page holding the block, null on continuation pages, and on a totals page the nearest number, which is how 3291840 became a batch nobody had a certificate for. The block is labelled and unambiguous, so reading it is taking a field off a page rather than deciding what a batch is",
+      "falsified_if": "an invoice states a BATCH NOS block that disagrees with its line items, or a supplier writes the list under a different label \u2014 the block is then not authoritative and the count follows the wrong source silently, because a wrong batch list still produces a self-consistent row"
     }
   ]
 }

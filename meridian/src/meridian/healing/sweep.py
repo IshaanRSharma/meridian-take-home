@@ -118,7 +118,12 @@ async def sweep(  # noqa: PLR0913 - a sweep names what it runs, against what, fo
     Optional, so a caller that has no second connection still works and simply
     sees the events at the end, as before.
     """
-    await evals_repo.clear_runs(connection, build.identity)
+    # Only the cases this sweep is about to measure. Clearing the build would
+    # make a one-case run delete the other nine, which is how a ten-case
+    # baseline silently became a one-case one.
+    await evals_repo.clear_runs(
+        connection, build.identity, case_ids=[case.id for case in cases if case.id]
+    )
 
     results: list[Comparison] = []
     rejected: list[str] = []

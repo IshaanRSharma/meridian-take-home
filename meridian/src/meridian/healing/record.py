@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID
@@ -73,6 +74,117 @@ class Manifest:
 
 class NotRegisterableError(ConflictingStateError):
     """The agent on disk cannot honestly be recorded as a build of this spec."""
+
+
+@dataclass(frozen=True)
+class Attempt:
+    """One line of `agents/<slug>/repairs/<signature>.jsonl`, as a skill wrote it.
+
+    The skill records an attempt per try; the CLI records a repair per patch.
+    Those are the same event written twice, by two parties who cannot see each
+    other — the skill has no database and must not have one, and the CLI cannot
+    see what a coding agent decided. So the file carries the half only the skill
+    knows: **what was tried, and what it concluded** — and neither survives
+    anywhere else.
+    """
+
+    attempt: int
+    signature: str
+    tried: str = ""
+    outcome: str = ""
+    falsified: str | None = None
+    note: str = ""
+    regressed: tuple[str, ...] = ()
+
+    def line(self) -> str:
+        """One attempt as a reader meets it in a bundle.
+
+        `note` last and never truncated: on a `stopped` attempt it carries the
+        conclusion that keeps the next session from re-deriving it, which is the
+        most expensive sentence in the file to lose.
+        """
+        parts = [f"  attempt {self.attempt} — {self.outcome or 'unreported'}: {self.tried}"]
+        if self.regressed:
+            parts.append(f"      regressed {', '.join(self.regressed)}")
+        if self.falsified:
+            parts.append(f"      falsified {self.falsified}")
+        if self.note:
+            parts.append(f"      {self.note}")
+        return "\n".join(parts)
+
+
+def attempts_for(agent_dir: Path, signature: str) -> tuple[Attempt, ...]:
+    """Every attempt a skill recorded against one signature.
+
+    **Every file in the directory is read, and the signature is taken from
+    inside the line rather than from the filename.** The skill is told to name a
+    file after the signature, and on the real corpus it did not: a session that
+    started on `coa_success` wrote its third attempt against `coa_total` into
+    the same file, because that is where the work had led. Trusting the filename
+    would have silently dropped exactly the attempt worth keeping — the one that
+    changed its mind.
+
+    A malformed line is skipped rather than raised on. The file is appended to
+    by a coding agent between runs, so a half-written last line is an ordinary
+    state, and losing a repair record over a truncated one would punish the
+    party that did the work.
+    """
+    where = agent_dir / "repairs"
+    if not where.is_dir():
+        return ()
+
+    found: list[Attempt] = []
+    for path in sorted(where.glob("*.jsonl")):
+        try:
+            body = path.read_text()
+        except OSError:
+            continue
+        for line in body.splitlines():
+            entry = _attempt(line, signature)
+            if entry is not None:
+                found.append(entry)
+    return tuple(sorted(found, key=lambda one: one.attempt))
+
+
+def _attempt(line: str, signature: str) -> Attempt | None:
+    if not line.strip():
+        return None
+    try:
+        body = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(body, dict) or body.get("signature") != signature:
+        return None
+    return Attempt(
+        attempt=int(body.get("attempt") or 0),
+        signature=signature,
+        tried=str(body.get("tried") or ""),
+        outcome=str(body.get("outcome") or ""),
+        falsified=body.get("falsified") or None,
+        note=str(body.get("note") or ""),
+        regressed=tuple(str(one) for one in (body.get("regressed") or ())),
+    )
+
+
+def with_attempts(summary: str, attempts: Sequence[Attempt]) -> str:
+    """The typed summary, plus what the skill wrote down and nothing else has.
+
+    Folded into `summary` rather than given a column, because the table already
+    stores this repair's *outcome* and a migration would only be storing the
+    same fact twice at a different grain. What is genuinely absent is the
+    reasoning, and reasoning is prose.
+
+    **Attempts already carried by earlier rows are dropped**, counted rather
+    than matched: `repair record` is called once per patch and the skill appends
+    once per try, so the nth call owns everything after the (n-1)th. Matching on
+    the text instead would re-fold every attempt into every row, and the bundle
+    prints one summary per repair — so a reader would meet the same refuted
+    approach as many times as the loop had turned.
+    """
+    if not attempts:
+        return summary
+    lines = [one.line() for one in attempts]
+    return f"{summary}\n\nWHAT THE SKILL RECORDED\n" + "\n".join(lines)
 
 
 def read_manifest(agent_dir: Path) -> Manifest:
@@ -191,11 +303,22 @@ async def record_repair(  # noqa: PLR0913 - a repair names what, where, why and 
     raised here**: the constraint exists to send the question back to the
     process owner, and requiring somebody to go and create a thread first is
     friction on the one path that must never be skipped.
+
+    Whatever the skill wrote into `agents/<slug>/repairs/` is folded into the
+    summary on the way past. Until now that file was written and read by nothing
+    — the skill is told this command ingests it and it did not — so the one
+    thing only the coding agent knew, *what it tried and what it concluded*,
+    stopped at the end of the session that learned it.
     """
     parent = await _parent(connection, build)
     verdict = None
     status = "escalated"
     regressed: tuple[UUID, ...] = ()
+
+    already = len(await repairs_repo.history_for(connection, signature, spec_id=build.spec_id))
+    summary = with_attempts(
+        summary, attempts_for(repo_root / build.directory(), signature)[already:]
+    )
 
     if classification == "spec_gap":
         thread_id = thread_id or await _raise_thread(connection, spec, signature, summary)
