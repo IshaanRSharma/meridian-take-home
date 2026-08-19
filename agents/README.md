@@ -28,5 +28,5 @@ answered: its invoice lists batch `HRB125012BR` and its certificate carries
 
 | | |
 |---|---|
-| `inbound_pre_alert_validation_final/` | same spec, but the generator was seeded by hand. Kept as a comparison: 52 → 61, 4 → 8 shipments |
-| `inbound_pre_alert_validation/` | first attempt against the first board, mostly hand-written. 47/63 |
+| `inbound_pre_alert_validation_final/` | the same spec, generated with prior context available. Kept as a comparison: 52 → 61, 4 → 8 shipments |
+| `inbound_pre_alert_validation/` | an earlier board and an earlier spec. 47/63 |
