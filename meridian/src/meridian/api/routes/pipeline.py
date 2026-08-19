@@ -161,7 +161,13 @@ async def _poll(built: Build, seen: Collection[str]) -> Any:
     # caller passes `_repo_root() / "agents"`; passing the root alone resolved
     # to `<repo>/<slug>/src/harness.py`, a path that has never existed, and the
     # trigger died in a background task where nobody was watching for it.
-    root = inside / "agents"
+    # Derived from the build, not fixed to `agents/`. `Build.directory()` reads
+    # the path out of `source_ref` for the reason its own docstring gives — the
+    # spec knows what an agent is CALLED and only the build knows where it was
+    # measured. Two implementations of one spec share a slug and cannot sit
+    # under one root, so a hardcoded `agents/` runs whichever of them happens to
+    # live there and files the result under the other one's build number.
+    root = inside / (Path(built.directory()).parent or Path("agents"))
 
     with agent_loaded(root, built):
         # Resolved by name rather than imported, because the module only exists
