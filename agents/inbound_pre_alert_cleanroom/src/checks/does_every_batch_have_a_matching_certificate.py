@@ -20,7 +20,9 @@ a shipment whose invoices listed nine batches.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 
 from checking import (
@@ -75,7 +77,7 @@ def does_every_batch_have_a_matching_certificate(
     if absent:
         return _nothing_arrived(card, failing, absent)
 
-    rows = tuple(row for row in rows_for(store, criterion["left"]) if _is_listed(row))
+    rows = _per_batch(tuple(row for row in rows_for(store, criterion["left"]) if _is_listed(row)))
     certified = _certified(store, criterion["right"])
 
     failures = [
@@ -118,6 +120,40 @@ def _sole_criterion(card: Mapping[str, Any]) -> Mapping[str, Any]:
             f"{len(criteria)} ({', '.join(c['op'] for c in criteria)})"
         )
     return dict(criteria[0])
+
+
+_SEPARATORS = re.compile(r"[,;\n]+")
+
+
+def _per_batch(rows: Sequence[Row]) -> tuple[Row, ...]:
+    r"""One row per batch, because a line item lists batch number*s*.
+
+    The card counts *"every batch number listed"* and the entity says a line item
+    carries "the batch numbers it covers" — plural in both. The extraction schema
+    types the field as one string, so a line covering five lots arrives as
+    ``"UCB26009A, UCB26014A, UCB26016A, UCB26017A,\nUCB26018A"``: a single value
+    no certificate can ever carry, which reported one batch missing where five
+    were listed and certified.
+
+    Splitting only. The values are left exactly as written — the one tolerance
+    this Check allows is the trailing lot letter, and that belongs to the matcher
+    where the spec put it. A separator is not a spelling.
+
+    A split batch needs its own ``indices``: ``(document, indices)`` is the place
+    a tally counts, so five batches sharing a line item's indices would collapse
+    back into one place and report the very number this exists to fix.
+    """
+    expanded: list[Row] = []
+    for row in rows:
+        values = [part.strip() for part in _SEPARATORS.split(str(row.value)) if part.strip()]
+        if len(values) <= 1:
+            expanded.append(row)
+            continue
+        expanded.extend(
+            replace(row, value=value, locator=f"{row.locator}[{n}]", indices=(*row.indices, n))
+            for n, value in enumerate(values)
+        )
+    return tuple(expanded)
 
 
 def _is_listed(row: Row) -> bool:
