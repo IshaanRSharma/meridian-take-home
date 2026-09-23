@@ -1,6 +1,16 @@
-# Meridian (https://usemeridian.io/) interviewed me with no NDA signed, asking me to rebuild their mvp in 72 hours (basically an unpaid work trial lol) and proceeded to ghost me after their founder said they use this take home structure to poach ideas from candidates and implement it themselves. Open sourcing this as I have no legal obligation not to unless they ask me to take it down. If you are a candidate, beware of founders motives. Also was promised reimbursement for token usage during the 72 hour take home -> but was ghosted!. 
+#I completed this project as part of an interview process with Meridian. The assignment involved building a substantial version of their product/MVP within a 72-hour window.
 
-## Anyways, if you are looking to build a genetic SOP -> semantic graphical representation of a workflow -> codegen agent to execute the semantics using temporal -> local self healing gymnasium -> deployment then take a look
+No NDA was signed as part of the interview process. This repository contains my implementation of the take-home assignment and is being open sourced as an example of the architecture and approach I built during that period.
+
+During the interview process, I was told that ideas and approaches surfaced through candidate take-homes could influence Meridian's own product development. I was also told that my LLM/token costs incurred while completing the assignment would be reimbursed.
+
+After submitting and interviewing, I did not receive further communication or reimbursement.
+
+I'm documenting the experience here so prospective candidates can make their own assessment of the time commitment involved in the interview process and decide whether they are comfortable participating.
+
+The Project
+
+If you're interested in building a generic SOP → semantic graphical representation of a workflow → code-generation agent that executes those semantics using Temporal → local self-healing Gymnasium/evaluation loop → deployment pipeline, take a look through the repository.
 
 self-healing agents
 
