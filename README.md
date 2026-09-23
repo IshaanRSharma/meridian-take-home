@@ -1,16 +1,16 @@
 # I completed this project as part of an interview process with Meridian. The assignment involved building a substantial version of their product/MVP within a 72-hour window.
 
-No NDA was signed as part of the interview process. This repository contains my implementation of the take-home assignment and is being open sourced as an example of the architecture and approach I built during that period.
+# No NDA was signed as part of the interview process. This repository contains my implementation of the take-home assignment and is being open sourced as an example of the architecture and approach I built during that period.
 
-During the interview process, I was told that ideas and approaches surfaced through candidate take-homes could influence Meridian's own product development. I was also told that my LLM/token costs incurred while completing the assignment would be reimbursed.
+# During the interview process, I was told that ideas and approaches surfaced through candidate take-homes could influence Meridian's own product development. I was also told that my LLM/token costs incurred while completing the assignment would be reimbursed.
 
-After submitting and interviewing, I did not receive further communication or reimbursement.
+# After submitting and interviewing, I did not receive further communication or reimbursement.
 
-I'm documenting the experience here so prospective candidates can make their own assessment of the time commitment involved in the interview process and decide whether they are comfortable participating.
+# I'm documenting the experience here so prospective candidates can make their own assessment of the time commitment involved in the interview process and decide whether they are comfortable participating.
 
-The Project
+# The Project
 
-If you're interested in building a generic SOP → semantic graphical representation of a workflow → code-generation agent that executes those semantics using Temporal → local self-healing Gymnasium/evaluation loop → deployment pipeline, take a look through the repository.
+# If you're interested in building a generic SOP → semantic graphical representation of a workflow → code-generation agent that executes those semantics using Temporal → local self-healing Gymnasium/evaluation loop → deployment pipeline, take a look through the repository.
 
 self-healing agents
 
