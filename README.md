@@ -1,4 +1,4 @@
-# I completed this project as part of an interview process with Meridian. The assignment involved building a substantial version of their product/MVP within a 72-hour window.
+# I completed this project as part of an interview process with Meridian (usemeridian.io). The assignment involved building a substantial version of their product/MVP within a 72-hour window.
 
 # No NDA was signed as part of the interview process. This repository contains my implementation of the take-home assignment and is being open sourced as an example of the architecture and approach I built during that period.
 
