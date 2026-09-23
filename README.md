@@ -1,4 +1,6 @@
-# TAKE HOME
+# Meridian (https://usemeridian.io/) interviewed me with no NDA signed, asking me to rebuild their mvp in 72 hours (basically an unpaid work trial lol) and proceeded to ghost me after their founder said they use this take home structure to poach ideas from candidates and implement it themselves. Open sourcing this as I have no legal obligation not to unless they ask me to take it down. If you are a candidate, beware of founders motives. Also was promised reimbursement for token usage during the 72 hour take home -> but was ghosted!. 
+
+## Anyways, if you are looking to build a genetic SOP -> semantic graphical representation of a workflow -> codegen agent to execute the semantics using temporal -> local self healing gymnasium -> deployment then take a look
 
 self-healing agents
 
